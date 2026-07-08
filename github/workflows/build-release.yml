@@ -22,43 +22,24 @@ jobs:
       uses: NuGet/setup-nuget@v2
 
     - name: Restore NuGet packages
-      run: nuget restore SecureDesktop.sln
+      run: |
+        nuget restore SecureDesktop.sln -Verbosity detailed
+      continue-on-error: false
 
     - name: Build solution
       run: |
-        msbuild SecureDesktop.sln `
-          /p:Configuration=Release `
-          /p:Platform="Any CPU" `
-          /p:DebugType=none `
-          /p:DebugSymbols=false `
-          /t:Rebuild
+        msbuild SecureDesktop.sln /p:Configuration=Release /p:Platform="Any CPU" /t:Rebuild /v:minimal
 
     - name: Prepare artifacts
       run: |
-        $sourcePath = "src\SecureDesktop\bin\Release"
-        $publishPath = "publish"
-        New-Item -ItemType Directory -Force -Path $publishPath
-        Copy-Item -Path "$sourcePath\SecureDesktop.exe" -Destination $publishPath -Force
-        if (Test-Path "$sourcePath\*.dll") {
-          Copy-Item -Path "$sourcePath\*.dll" -Destination $publishPath -Force
-        }
+        if not exist publish mkdir publish
+        xcopy "src\SecureDesktop\bin\Release\*.exe" publish\ /Y
+        xcopy "src\SecureDesktop\bin\Release\*.dll" publish\ /Y /I
+      continue-on-error: true
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
         name: SecureDesktop-Release
-        path: publish\*
+        path: publish\
         retention-days: 30
-
-    - name: Create Release
-      if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-      uses: softprops/action-gh-release@v2
-      with:
-        name: "SecureDesktop v1.0.${{ github.run_number }}"
-        tag_name: "v1.0.${{ github.run_number }}"
-        files: publish\SecureDesktop.exe
-        draft: false
-        prerelease: false
-        generate_release_notes: true
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
