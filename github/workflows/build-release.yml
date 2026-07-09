@@ -1,39 +1,44 @@
-name: Build and Release SecureDesktop
+name: Debug Build
 
 on:
-  push:
-    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
-  build:
+  debug:
     runs-on: windows-latest
     
     steps:
-    - name: Checkout code
+    - name: Checkout
       uses: actions/checkout@v4
 
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v2
 
-    - name: Restore NuGet packages
+    - name: List files
       run: |
-        nuget restore SecureDesktop.sln -Verbosity quiet
-      continue-on-error: true
+        echo "=== Project structure ==="
+        dir /s /b *.csproj
+        dir /s /b *.sln
+        echo "=== .NET version ==="
+        dotnet --version
 
-    - name: Build solution
+    - name: Restore with details
       run: |
-        msbuild SecureDesktop.sln /p:Configuration=Release /p:Platform="Any CPU" /t:Rebuild /v:minimal /p:WarningLevel=0
+        nuget restore SecureDesktop.sln -Verbosity detailed 2>&1 | tee restore-log.txt
 
-    - name: Prepare artifacts
-      run: |
-        if not exist publish mkdir publish
-        xcopy "src\SecureDesktop\bin\Release\*.exe" publish\ /Y
-      continue-on-error: true
-
-    - name: Upload artifact
+    - name: Upload restore log
       uses: actions/upload-artifact@v4
       with:
-        name: SecureDesktop-Release
-        path: publish\*.exe
-        retention-days: 30
+        name: restore-log
+        path: restore-log.txt
+
+    - name: Build with diagnostics
+      run: |
+        msbuild SecureDesktop.sln /p:Configuration=Release /t:Rebuild /v:diagnostic 2>&1 | tee build-log.txt
+      continue-on-error: true
+
+    - name: Upload build log
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-log
+        path: build-log.txt
