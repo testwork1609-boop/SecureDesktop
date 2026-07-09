@@ -1,18 +1,19 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
-using Microsoft.Data.Sqlite;
+using System.Linq;
+using Newtonsoft.Json;
 
 namespace SecureDesktop.Database
 {
     public class DatabaseInitializer
     {
-        private readonly string _connectionString;
         private readonly string _dbPath;
+        private DatabaseData _data;
 
         public DatabaseInitializer(string dbPath)
         {
             _dbPath = dbPath;
-            _connectionString = $"Data Source={_dbPath}";
         }
 
         public void Initialize()
@@ -23,8 +24,17 @@ namespace SecureDesktop.Database
                 if (!Directory.Exists(dbDirectory))
                     Directory.CreateDirectory(dbDirectory);
 
-                CreateTables();
-                InsertDefaultData();
+                if (File.Exists(_dbPath))
+                {
+                    var json = File.ReadAllText(_dbPath);
+                    _data = JsonConvert.DeserializeObject<DatabaseData>(json) ?? new DatabaseData();
+                }
+                else
+                {
+                    _data = new DatabaseData();
+                    InsertDefaultData();
+                    Save();
+                }
             }
             catch (Exception ex)
             {
@@ -32,99 +42,52 @@ namespace SecureDesktop.Database
             }
         }
 
-        private void CreateTables()
-        {
-            using (var conn = new SqliteConnection(_connectionString))
-            {
-                conn.Open();
-
-                string sql = @"
-                    CREATE TABLE IF NOT EXISTS Users (
-                        Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        IdentificationNumber TEXT UNIQUE NOT NULL,
-                        PasswordHash TEXT NOT NULL,
-                        Salt TEXT NOT NULL,
-                        IsAdmin INTEGER DEFAULT 0,
-                        CreatedAt TEXT DEFAULT (datetime('now')),
-                        LastLoginAt TEXT,
-                        IsActive INTEGER DEFAULT 1
-                    );
-                    
-                    CREATE TABLE IF NOT EXISTS Sessions (
-                        Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        UserId INTEGER NOT NULL,
-                        IdentificationNumber TEXT NOT NULL,
-                        LoginTime TEXT DEFAULT (datetime('now')),
-                        LogoutTime TEXT,
-                        SessionToken TEXT NOT NULL,
-                        IsActive INTEGER DEFAULT 1
-                    );
-                    
-                    CREATE TABLE IF NOT EXISTS EventLog (
-                        Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        UserId INTEGER,
-                        IdentificationNumber TEXT,
-                        OperationName TEXT NOT NULL,
-                        Result TEXT NOT NULL,
-                        Description TEXT,
-                        Timestamp TEXT DEFAULT (datetime('now')),
-                        Severity TEXT DEFAULT 'Info'
-                    );
-                    
-                    CREATE TABLE IF NOT EXISTS Patterns (
-                        Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        Name TEXT NOT NULL,
-                        Description TEXT,
-                        ImageData BLOB,
-                        MarginTop INTEGER DEFAULT 10,
-                        MarginBottom INTEGER DEFAULT 10,
-                        MarginLeft INTEGER DEFAULT 10,
-                        MarginRight INTEGER DEFAULT 10,
-                        IsActive INTEGER DEFAULT 1,
-                        CreatedAt TEXT DEFAULT (datetime('now'))
-                    );
-                ";
-
-                using (var cmd = new SqliteCommand(sql, conn))
-                {
-                    cmd.ExecuteNonQuery();
-                }
-            }
-        }
-
         private void InsertDefaultData()
         {
-            using (var conn = new SqliteConnection(_connectionString))
+            var salt = Convert.ToBase64String(Guid.NewGuid().ToByteArray());
+            var hash = Convert.ToBase64String(
+                System.Security.Cryptography.SHA256.Create().ComputeHash(
+                    System.Text.Encoding.UTF8.GetBytes("admin" + salt)
+                )
+            );
+
+            _data.Users.Add(new Models.User
             {
-                conn.Open();
+                Id = 1,
+                IdentificationNumber = "admin",
+                PasswordHash = hash,
+                Salt = salt,
+                IsAdmin = true,
+                CreatedAt = DateTime.Now,
+                IsActive = true
+            });
 
-                var checkSql = "SELECT COUNT(*) FROM Users WHERE IdentificationNumber = 'admin'";
-                using (var cmd = new SqliteCommand(checkSql, conn))
-                {
-                    if (Convert.ToInt64(cmd.ExecuteScalar()) == 0)
-                    {
-                        var salt = Convert.ToBase64String(Guid.NewGuid().ToByteArray());
-                        var hash = Convert.ToBase64String(
-                            System.Security.Cryptography.SHA256.Create().ComputeHash(
-                                System.Text.Encoding.UTF8.GetBytes("admin" + salt)
-                            )
-                        );
-
-                        var insertSql = "INSERT INTO Users (IdentificationNumber, PasswordHash, Salt, IsAdmin) VALUES ('admin', @hash, @salt, 1)";
-                        using (var insertCmd = new SqliteCommand(insertSql, conn))
-                        {
-                            insertCmd.Parameters.AddWithValue("@hash", hash);
-                            insertCmd.Parameters.AddWithValue("@salt", salt);
-                            insertCmd.ExecuteNonQuery();
-                        }
-                    }
-                }
-            }
+            _data.Settings["PatternMatchThreshold"] = "0.95";
+            _data.Settings["SearchInterval"] = "500";
+            _data.Settings["AutoStart"] = "false";
+            _data.Settings["MinimizeToTray"] = "true";
+            _data.Settings["Theme"] = "Dark";
         }
 
-        public string GetConnectionString()
+        public void Save()
         {
-            return _connectionString;
+            var json = JsonConvert.SerializeObject(_data, Formatting.Indented);
+            File.WriteAllText(_dbPath, json);
         }
+
+        public DatabaseData GetData() => _data;
+    }
+
+    public class DatabaseData
+    {
+        public List<Models.User> Users { get; set; } = new List<Models.User>();
+        public List<Models.Session> Sessions { get; set; } = new List<Models.Session>();
+        public List<Models.EventLog> EventLogs { get; set; } = new List<Models.EventLog>();
+        public List<Models.Pattern> Patterns { get; set; } = new List<Models.Pattern>();
+        public Dictionary<string, string> Settings { get; set; } = new Dictionary<string, string>();
+        public int NextUserId { get; set; } = 2;
+        public int NextSessionId { get; set; } = 1;
+        public int NextEventId { get; set; } = 1;
+        public int NextPatternId { get; set; } = 1;
     }
 }

@@ -1,37 +1,25 @@
-using System;
-using Microsoft.Data.Sqlite;
-using Dapper;
-
 namespace SecureDesktop.Services
 {
     public class ConfigurationService
     {
-        private readonly string _connectionString;
+        private readonly Database.DatabaseInitializer _db;
 
-        public ConfigurationService(string connectionString)
+        public ConfigurationService(Database.DatabaseInitializer db)
         {
-            _connectionString = connectionString;
+            _db = db;
         }
 
         public string GetSetting(string key)
         {
-            using (var conn = new SqliteConnection(_connectionString))
-            {
-                return conn.QuerySingleOrDefault<string>(
-                    "SELECT SettingValue FROM Settings WHERE SettingKey = @Key",
-                    new { Key = key });
-            }
+            var data = _db.GetData();
+            return data.Settings.ContainsKey(key) ? data.Settings[key] : null;
         }
 
         public void SetSetting(string key, string value)
         {
-            using (var conn = new SqliteConnection(_connectionString))
-            {
-                conn.Execute(@"
-                    INSERT OR REPLACE INTO Settings (SettingKey, SettingValue, UpdatedAt)
-                    VALUES (@Key, @Value, datetime('now'))",
-                    new { Key = key, Value = value });
-            }
+            var data = _db.GetData();
+            data.Settings[key] = value;
+            _db.Save();
         }
     }
 }

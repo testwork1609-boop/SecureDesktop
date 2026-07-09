@@ -16,11 +16,12 @@ namespace SecureDesktop.Forms
         private TextBox _passBox;
         private Label _errorLabel;
 
-        public LoginForm(string connectionString)
+     public LoginForm(Database.DatabaseInitializer db)
         {
-            _userRepo = new UserRepository(connectionString);
-            _sessionRepo = new SessionRepository(connectionString);
-            _eventRepo = new EventLogRepository(connectionString);
+             _db = db;
+    _userRepo = new UserRepository(_db);
+    _sessionRepo = new SessionRepository(_db);
+    _eventRepo = new EventLogRepository(_db);
             
             InitializeComponent();
         }

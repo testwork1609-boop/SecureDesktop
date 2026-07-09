@@ -1,36 +1,30 @@
-using System;
-using Microsoft.Data.Sqlite;
-using Dapper;
+using System.Linq;
 using SecureDesktop.Models;
 
 namespace SecureDesktop.Database.Repositories
 {
     public class UserRepository
     {
-        private readonly string _connectionString;
+        private readonly DatabaseInitializer _db;
 
-        public UserRepository(string connectionString)
+        public UserRepository(DatabaseInitializer db)
         {
-            _connectionString = connectionString;
+            _db = db;
         }
 
         public User GetByIdentificationNumber(string id)
         {
-            using (var conn = new SqliteConnection(_connectionString))
-            {
-                return conn.QuerySingleOrDefault<User>(
-                    "SELECT * FROM Users WHERE IdentificationNumber = @Id AND IsActive = 1",
-                    new { Id = id });
-            }
+            return _db.GetData().Users
+                .FirstOrDefault(u => u.IdentificationNumber == id && u.IsActive);
         }
 
         public void UpdateLastLogin(int userId)
         {
-            using (var conn = new SqliteConnection(_connectionString))
+            var user = _db.GetData().Users.FirstOrDefault(u => u.Id == userId);
+            if (user != null)
             {
-                conn.Execute(
-                    "UPDATE Users SET LastLoginAt = datetime('now') WHERE Id = @Id",
-                    new { Id = userId });
+                user.LastLoginAt = System.DateTime.Now;
+                _db.Save();
             }
         }
     }

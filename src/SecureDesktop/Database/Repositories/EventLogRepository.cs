@@ -1,29 +1,24 @@
 using System;
-using Microsoft.Data.Sqlite;
-using Dapper;
 using SecureDesktop.Models;
 
 namespace SecureDesktop.Database.Repositories
 {
     public class EventLogRepository
     {
-        private readonly string _connectionString;
+        private readonly DatabaseInitializer _db;
 
-        public EventLogRepository(string connectionString)
+        public EventLogRepository(DatabaseInitializer db)
         {
-            _connectionString = connectionString;
+            _db = db;
         }
 
         public void Create(EventLog entry)
         {
-            using (var conn = new SqliteConnection(_connectionString))
-            {
-                conn.Execute(@"
-                    INSERT INTO EventLog (UserId, IdentificationNumber, OperationName, Result, Description, Timestamp, Severity)
-                    VALUES (@UserId, @IdNumber, @Operation, @Result, @Description, datetime('now'), @Severity)",
-                    new { entry.UserId, IdNumber = entry.IdentificationNumber, Operation = entry.OperationName, 
-                          entry.Result, entry.Description, entry.Severity });
-            }
+            var data = _db.GetData();
+            entry.Id = data.NextEventId++;
+            entry.Timestamp = DateTime.Now;
+            data.EventLogs.Add(entry);
+            _db.Save();
         }
     }
 }

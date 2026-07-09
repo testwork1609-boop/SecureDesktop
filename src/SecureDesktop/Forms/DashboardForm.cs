@@ -11,12 +11,13 @@ namespace SecureDesktop.Forms
         private readonly User _currentUser;
         private readonly ScreenLockService _lockService;
 
-        public DashboardForm(User user)
-        {
-            _currentUser = user;
-            _lockService = new ScreenLockService();
-            InitializeComponent();
-        }
+      public DashboardForm(User user, Database.DatabaseInitializer db)
+{
+    _currentUser = user;
+    _db = db;
+    _lockService = new ScreenLockService();
+    InitializeComponent();
+}
 
         private void InitializeComponent()
         {

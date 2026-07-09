@@ -21,19 +21,18 @@ namespace SecureDesktop
                         Directory.CreateDirectory(dir);
                 }
 
-                // Inicjalizacja bazy
-                var dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "SecureDesktop.db");
-                var dbInit = new Database.DatabaseInitializer(dbPath);
-                dbInit.Initialize();
+                // Inicjalizacja bazy JSON
+                var dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
+                var db = new Database.DatabaseInitializer(dbPath);
+                db.Initialize();
 
                 // Uruchom aplikację
-                Application.Run(new Forms.LoginForm(dbInit.GetConnectionString()));
+                Application.Run(new Forms.LoginForm(db));
             }
             catch (Exception ex)
             {
                 File.WriteAllText("fatal_error.log", ex.ToString());
-                MessageBox.Show("Blad: " + ex.Message + "\n\nZapisano w fatal_error.log", 
-                    "SecureDesktop - Blad", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show("Blad: " + ex.Message, "SecureDesktop", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
     }

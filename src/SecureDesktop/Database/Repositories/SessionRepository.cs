@@ -1,28 +1,36 @@
 using System;
-using Microsoft.Data.Sqlite;
-using Dapper;
 using SecureDesktop.Models;
 
 namespace SecureDesktop.Database.Repositories
 {
     public class SessionRepository
     {
-        private readonly string _connectionString;
+        private readonly DatabaseInitializer _db;
 
-        public SessionRepository(string connectionString)
+        public SessionRepository(DatabaseInitializer db)
         {
-            _connectionString = connectionString;
+            _db = db;
         }
 
         public int Create(Session session)
         {
-            using (var conn = new SqliteConnection(_connectionString))
+            var data = _db.GetData();
+            session.Id = data.NextSessionId++;
+            session.LoginTime = DateTime.Now;
+            session.IsActive = true;
+            data.Sessions.Add(session);
+            _db.Save();
+            return session.Id;
+        }
+
+        public void EndSession(int sessionId)
+        {
+            var session = _db.GetData().Sessions.FirstOrDefault(s => s.Id == sessionId);
+            if (session != null)
             {
-                return conn.QuerySingle<int>(@"
-                    INSERT INTO Sessions (UserId, IdentificationNumber, LoginTime, SessionToken, IsActive)
-                    VALUES (@UserId, @IdNumber, datetime('now'), @Token, 1);
-                    SELECT last_insert_rowid()",
-                    new { session.UserId, IdNumber = session.IdentificationNumber, Token = session.SessionToken });
+                session.LogoutTime = DateTime.Now;
+                session.IsActive = false;
+                _db.Save();
             }
         }
     }

@@ -1,37 +1,31 @@
 using System.Collections.Generic;
-using Microsoft.Data.Sqlite;
-using Dapper;
+using System.Linq;
 using SecureDesktop.Models;
 
 namespace SecureDesktop.Database.Repositories
 {
     public class PatternRepository
     {
-        private readonly string _connectionString;
+        private readonly DatabaseInitializer _db;
 
-        public PatternRepository(string connectionString)
+        public PatternRepository(DatabaseInitializer db)
         {
-            _connectionString = connectionString;
+            _db = db;
         }
 
         public IEnumerable<Pattern> GetActivePatterns()
         {
-            using (var conn = new SqliteConnection(_connectionString))
-            {
-                return conn.Query<Pattern>("SELECT * FROM Patterns WHERE IsActive = 1");
-            }
+            return _db.GetData().Patterns.Where(p => p.IsActive);
         }
 
         public int Create(Pattern pattern)
         {
-            using (var conn = new SqliteConnection(_connectionString))
-            {
-                return conn.QuerySingle<int>(@"
-                    INSERT INTO Patterns (Name, Description, ImageData, MarginTop, MarginBottom, MarginLeft, MarginRight, IsActive, CreatedAt)
-                    VALUES (@Name, @Description, @ImageData, @MarginTop, @MarginBottom, @MarginLeft, @MarginRight, @IsActive, datetime('now'));
-                    SELECT last_insert_rowid()",
-                    pattern);
-            }
+            var data = _db.GetData();
+            pattern.Id = data.NextPatternId++;
+            pattern.CreatedAt = System.DateTime.Now;
+            data.Patterns.Add(pattern);
+            _db.Save();
+            return pattern.Id;
         }
     }
 }
