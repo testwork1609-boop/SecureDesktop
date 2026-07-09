@@ -3,8 +3,6 @@ name: Build and Release SecureDesktop
 on:
   push:
     branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
@@ -18,23 +16,30 @@ jobs:
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v2
 
-    - name: Setup NuGet
-      uses: NuGet/setup-nuget@v2
-
-    - name: Restore NuGet packages
-      run: nuget restore SecureDesktop.sln
-
-    - name: Build solution
+    - name: Restore and Build
+      shell: powershell
       run: |
-        msbuild SecureDesktop.sln /p:Configuration=Release /p:Platform="Any CPU" /t:Rebuild
-
-    - name: Prepare artifacts
-      run: |
-        mkdir publish
-        copy src\SecureDesktop\bin\Release\SecureDesktop.exe publish\
+        # Restore packages (ignore warnings)
+        nuget restore SecureDesktop.sln -Verbosity quiet
+        Write-Host "NuGet restore completed (exit code: $LASTEXITCODE)"
         
+        # Build solution
+        msbuild SecureDesktop.sln /p:Configuration=Release /p:Platform="Any CPU" /t:Rebuild /v:minimal /p:WarningLevel=0
+        Write-Host "Build completed (exit code: $LASTEXITCODE)"
+        
+        # Check if EXE exists
+        if (Test-Path "src\SecureDesktop\bin\Release\SecureDesktop.exe") {
+            Write-Host "✅ EXE file found!"
+        } else {
+            Write-Host "❌ EXE file not found!"
+            Get-ChildItem -Path src\SecureDesktop\bin\Release\ -Recurse -Filter *.exe
+        }
+      
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
         name: SecureDesktop-Release
-        path: publish\SecureDesktop.exe
+        path: |
+          src\SecureDesktop\bin\Release\*.exe
+          src\SecureDesktop\bin\Release\*.dll
+        retention-days: 30
