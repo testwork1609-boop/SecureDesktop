@@ -19,154 +19,56 @@ jobs:
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v2
 
-    - name: Restore and Build SINGLE EXE
+    - name: Build SINGLE EXE
       shell: cmd
       run: |
         echo ========================================
         echo  BUDOWANIE JEDNEGO PLIKU EXE
         echo ========================================
-        msbuild SecureDesktop.sln /t:Restore /p:Configuration=Release /v:minimal /nologo
-        msbuild SecureDesktop.sln /t:Build /p:Configuration=Release /p:Platform="Any CPU" /v:minimal /nologo
+        msbuild SecureDesktop.sln /t:Build /p:Configuration=Release /p:Platform="Any CPU" /restore /v:minimal /nologo
 
-    - name: Verify SINGLE EXE
+    - name: Verify EXE
       shell: cmd
       run: |
         echo Sprawdzanie pliku EXE...
         dir src\SecureDesktop\bin\Release\SecureDesktop.exe
-        echo.
-        echo Rozmiar pliku:
-        for %%A in (src\SecureDesktop\bin\Release\SecureDesktop.exe) do echo %%~zA bajtow
-
-    - name: Check for DLLs (should be NONE)
-      shell: cmd
-      run: |
-        echo Sprawdzanie czy sa jakies DLL (nie powinno byc)...
-        dir src\SecureDesktop\bin\Release\*.dll 2>nul || echo ✅ Brak DLL - wszystko w EXE!
+        for %%A in (src\SecureDesktop\bin\Release\SecureDesktop.exe) do echo Rozmiar: %%~zA bajtow
 
     - name: Sign EXE
       shell: powershell
       run: |
-        $cert = New-SelfSignedCertificate `
-          -Subject "CN=SecureDesktop" `
-          -Type CodeSigningCert `
-          -CertStoreLocation Cert:\CurrentUser\My `
-          -NotAfter (Get-Date).AddYears(5)
-        
+        Write-Host "Podpisywanie cyfrowe EXE..."
+        $cert = New-SelfSignedCertificate -Subject "CN=SecureDesktop" -Type CodeSigningCert -CertStoreLocation Cert:\CurrentUser\My -NotAfter (Get-Date).AddYears(5)
         $exePath = "src\SecureDesktop\bin\Release\SecureDesktop.exe"
-        
         if (Test-Path $exePath) {
-            Set-AuthenticodeSignature `
-              -FilePath $exePath `
-              -Certificate $cert `
-              -HashAlgorithm SHA256 `
-              -TimestampServer "http://timestamp.digicert.com"
-            Write-Host "✅ EXE podpisany cyfrowo"
+            Set-AuthenticodeSignature -FilePath $exePath -Certificate $cert -HashAlgorithm SHA256 -TimestampServer "http://timestamp.digicert.com"
+            Write-Host "EXE podpisany cyfrowo"
+        }
+        else {
+            Write-Host "Nie znaleziono pliku EXE"
         }
 
-    - name: Test EXE (check dependencies)
-      shell: powershell
+    - name: Prepare artifact
+      shell: cmd
       run: |
-        Write-Host "Testowanie pliku EXE..."
-        $exePath = "src\SecureDesktop\bin\Release\SecureDesktop.exe"
-        
-        if (Test-Path $exePath) {
-            $fileInfo = Get-Item $exePath
-            Write-Host "Nazwa: $($fileInfo.Name)"
-            Write-Host "Rozmiar: $('{0:N0}' -f $fileInfo.Length) bajtow"
-            Write-Host "Data: $($fileInfo.LastWriteTime)"
-            
-            # Sprawdź czy to .NET assembly
-            try {
-                $asm = [Reflection.AssemblyName]::GetAssemblyName($exePath)
-                Write-Host "Wersja: $($asm.Version)"
-                Write-Host "✅ Plik EXE jest prawidlowy!"
-            } catch {
-                Write-Host "⚠️ Nie mozna zweryfikowac assembly"
-            }
-        }
+        if not exist publish mkdir publish
+        copy src\SecureDesktop\bin\Release\SecureDesktop.exe publish\
+        echo JEDEN PLIK EXE - dziala od razu! > publish\README.txt
 
-    - name: Prepare for upload
-      shell: powershell
-      run: |
-        $publishDir = "publish"
-        New-Item -ItemType Directory -Force -Path $publishDir | Out-Null
-        
-        # Kopiuj TYLKO EXE
-        Copy-Item "src\SecureDesktop\bin\Release\SecureDesktop.exe" -Destination $publishDir -Force
-        
-        # Utwórz instrukcję
-        @"
-        ================================
-        SecureDesktop - JEDEN PLIK EXE
-        ================================
-        
-        ✅ To jest SAMODZIELNA aplikacja
-        ✅ Nie wymaga instalacji .NET
-        ✅ Nie wymaga SQLite
-        ✅ Wszystko zawarte w EXE
-        
-        Jak użyć:
-        1. Skopiuj SecureDesktop.exe w dowolne miejsce
-        2. Uruchom - aplikacja sama utworzy potrzebne foldery
-        3. Zaloguj się: admin / admin
-        
-        Wymagania:
-        - Windows 10/11 64-bit
-        - NIC więcej nie potrzeba!
-        "@ | Out-File "$publishDir\README.txt" -Encoding UTF8
-        
-        Write-Host "✅ Gotowe do pobrania:"
-        Get-ChildItem $publishDir
-
-    - name: Upload SINGLE EXE
+    - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: SecureDesktop-SingleEXE-${{ github.run_number }}
-        path: publish\SecureDesktop.exe
+        name: SecureDesktop-SingleEXE
+        path: publish\
         retention-days: 30
 
     - name: Create Release
       if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
       uses: softprops/action-gh-release@v2
       with:
-        name: "SecureDesktop v1.0.${{ github.run_number }} - JEDEN PLIK EXE"
+        name: "SecureDesktop v1.0.${{ github.run_number }}"
         tag_name: "v1.0.${{ github.run_number }}"
-        body: |
-          ## 🔒 SecureDesktop - SAMODZIELNY PLIK EXE
-          
-          ✅ **Jeden plik - zero instalacji!**
-          
-          Wszystkie zależności wbudowane:
-          - .NET Framework ❌ (nie wymagany)
-          - SQLite ✅ (wbudowany)
-          - Serilog ✅ (wbudowany)
-          - Wszystkie DLL ✅ (wbudowane)
-          
-          **Jak użyć:**
-          1. Pobierz `SecureDesktop.exe`
-          2. Uruchom (nie wymaga instalacji)
-          3. Zaloguj się: `admin` / `admin`
-          
-          **Wymagania:**
-          - Windows 10/11 64-bit
-          
-          **Plik podpisany cyfrowo** 🛡️
+        body: "SecureDesktop - JEDEN PLIK EXE - Gotowy do uzycia"
         files: publish\SecureDesktop.exe
-        draft: false
-        prerelease: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Build Summary
-      shell: powershell
-      run: |
-        Write-Host "========================================" -ForegroundColor Green
-        Write-Host "  JEDEN PLIK EXE - GOTOWY!" -ForegroundColor Green
-        Write-Host "========================================" -ForegroundColor Green
-        Write-Host ""
-        Write-Host "✅ Wszystkie zależności w EXE"
-        Write-Host "✅ Nie wymaga instalacji"
-        Write-Host "✅ Podpisany cyfrowo"
-        Write-Host "✅ Działa od ręki"
-        Write-Host ""
-        Write-Host "📥 Pobierz artifact na dole strony" -ForegroundColor Cyan
