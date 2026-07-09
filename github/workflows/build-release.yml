@@ -1,4 +1,4 @@
-name: Build
+name: Build SecureDesktop
 
 on: [push, workflow_dispatch]
 
@@ -9,13 +9,22 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Build everything in one step
-      shell: cmd
+    - name: Build with MSBuild
+      shell: powershell
       run: |
-        "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe" SecureDesktop.sln /t:Restore;Build /p:Configuration=Release /p:Platform="Any CPU" /v:minimal
+        $msbuild = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe"
+        & $msbuild SecureDesktop.sln /t:Build /p:Configuration=Release /p:Platform="Any CPU" /p:RestorePackages=true /v:q
+        Write-Host "Build finished"
     
-    - name: Upload EXE
+    - name: Show results
+      shell: powershell
+      run: |
+        Get-ChildItem -Path . -Recurse -Filter "*.exe" | Where-Object {$_.Name -like "SecureDesktop*"}
+    
+    - name: Upload
       uses: actions/upload-artifact@v4
       with:
-        name: SecureDesktop
-        path: src/SecureDesktop/bin/Release/SecureDesktop.exe
+        name: SecureDesktop-App
+        path: |
+          src/SecureDesktop/bin/Release/SecureDesktop.exe
+          src/SecureDesktop/bin/Release/*.dll
