@@ -1,45 +1,21 @@
-name: Build and Release SecureDesktop
+name: Build
 
-on:
-  push:
-    branches: [ main, master ]
-  workflow_dispatch:
+on: [push, workflow_dispatch]
 
 jobs:
   build:
     runs-on: windows-latest
     
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Setup MSBuild
-      uses: microsoft/setup-msbuild@v2
-
-    - name: Restore and Build
-      shell: powershell
+    - uses: actions/checkout@v4
+    
+    - name: Build everything in one step
+      shell: cmd
       run: |
-        # Restore packages (ignore warnings)
-        nuget restore SecureDesktop.sln -Verbosity quiet
-        Write-Host "NuGet restore completed (exit code: $LASTEXITCODE)"
-        
-        # Build solution
-        msbuild SecureDesktop.sln /p:Configuration=Release /p:Platform="Any CPU" /t:Rebuild /v:minimal /p:WarningLevel=0
-        Write-Host "Build completed (exit code: $LASTEXITCODE)"
-        
-        # Check if EXE exists
-        if (Test-Path "src\SecureDesktop\bin\Release\SecureDesktop.exe") {
-            Write-Host "✅ EXE file found!"
-        } else {
-            Write-Host "❌ EXE file not found!"
-            Get-ChildItem -Path src\SecureDesktop\bin\Release\ -Recurse -Filter *.exe
-        }
-      
-    - name: Upload artifacts
+        "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe" SecureDesktop.sln /t:Restore;Build /p:Configuration=Release /p:Platform="Any CPU" /v:minimal
+    
+    - name: Upload EXE
       uses: actions/upload-artifact@v4
       with:
-        name: SecureDesktop-Release
-        path: |
-          src\SecureDesktop\bin\Release\*.exe
-          src\SecureDesktop\bin\Release\*.dll
-        retention-days: 30
+        name: SecureDesktop
+        path: src/SecureDesktop/bin/Release/SecureDesktop.exe
