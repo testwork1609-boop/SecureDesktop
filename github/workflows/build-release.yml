@@ -1,4 +1,4 @@
-name: Build and Release SecureDesktop
+name: Build with DotNet
 
 on:
   push:
@@ -13,33 +13,33 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Setup MSBuild
-      uses: microsoft/setup-msbuild@v2
+    - name: Setup .NET SDK
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.x'
 
-    - name: Restore and Build
+    - name: Restore packages
       shell: powershell
       run: |
-        # Restore packages (ignore warnings)
-        nuget restore SecureDesktop.sln -Verbosity quiet
-        Write-Host "NuGet restore completed (exit code: $LASTEXITCODE)"
+        dotnet restore SecureDesktop.sln --verbosity minimal
+        Write-Host "Restore exit code: $LASTEXITCODE"
         
-        # Build solution
-        msbuild SecureDesktop.sln /p:Configuration=Release /p:Platform="Any CPU" /t:Rebuild /v:minimal /p:WarningLevel=0
-        Write-Host "Build completed (exit code: $LASTEXITCODE)"
+    - name: Build solution
+      shell: powershell
+      run: |
+        dotnet build SecureDesktop.sln --configuration Release --verbosity minimal
+        Write-Host "Build exit code: $LASTEXITCODE"
         
-        # Check if EXE exists
-        if (Test-Path "src\SecureDesktop\bin\Release\SecureDesktop.exe") {
-            Write-Host "✅ EXE file found!"
-        } else {
-            Write-Host "❌ EXE file not found!"
-            Get-ChildItem -Path src\SecureDesktop\bin\Release\ -Recurse -Filter *.exe
-        }
-      
+    - name: Find EXE
+      shell: powershell
+      run: |
+        Get-ChildItem -Path . -Recurse -Filter "SecureDesktop.exe" | Select-Object FullName, Length
+        
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
         name: SecureDesktop-Release
         path: |
-          src\SecureDesktop\bin\Release\*.exe
-          src\SecureDesktop\bin\Release\*.dll
+          **/bin/Release/**/SecureDesktop.exe
+          **/bin/Release/**/*.dll
         retention-days: 30
