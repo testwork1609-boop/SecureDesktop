@@ -32,3 +32,10 @@ jobs:
         name: SecureDesktop-App
         path: src\SecureDesktop\bin\Release\SecureDesktop.exe
         retention-days: 30
+
+            - name: Sign EXE (self-signed)
+      shell: powershell
+      run: |
+        $cert = New-SelfSignedCertificate -Subject "CN=SecureDesktop" -Type CodeSigningCert -CertStoreLocation Cert:\CurrentUser\My
+        $path = "src\SecureDesktop\bin\Release\SecureDesktop.exe"
+        Set-AuthenticodeSignature -FilePath $path -Certificate $cert
