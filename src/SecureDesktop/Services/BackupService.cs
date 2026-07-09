@@ -1,6 +1,5 @@
 using System;
 using System.IO;
-using Serilog;
 
 namespace SecureDesktop.Services
 {
@@ -21,13 +20,11 @@ namespace SecureDesktop.Services
                 
                 File.Copy(sourcePath, destPath, false);
                 
-                Log.Information("Backup created: {Path}", destPath);
                 return destPath;
             }
             catch (Exception ex)
             {
-                Log.Error(ex, "Backup failed for: {Path}", sourcePath);
-                throw;
+                throw new Exception("Backup failed: " + ex.Message, ex);
             }
         }
     }

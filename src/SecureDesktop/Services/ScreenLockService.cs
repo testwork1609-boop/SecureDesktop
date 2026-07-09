@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Windows.Forms;
 using SecureDesktop.Forms;
 using SecureDesktop.Models;
-using Serilog;
 
 namespace SecureDesktop.Services
 {
@@ -11,6 +10,13 @@ namespace SecureDesktop.Services
     {
         private List<Form> _overlays = new List<Form>();
         private bool _isLocked;
+
+        public event EventHandler LockActivated;
+        public event EventHandler LockDeactivated;
+
+        public ScreenLockService()
+        {
+        }
 
         public void LockAllScreens()
         {
@@ -24,20 +30,28 @@ namespace SecureDesktop.Services
             }
 
             _isLocked = true;
-            Log.Information("All screens locked");
+            LockActivated?.Invoke(this, EventArgs.Empty);
         }
 
         public void UnlockScreens()
         {
+            if (!_isLocked) return;
+
             foreach (var overlay in _overlays)
             {
-                if (!overlay.IsDisposed)
+                if (overlay != null && !overlay.IsDisposed)
                 {
-                    overlay.Invoke(new Action(() => overlay.Close()));
+                    overlay.BeginInvoke(new Action(() =>
+                    {
+                        overlay.Close();
+                        overlay.Dispose();
+                    }));
                 }
             }
+            
             _overlays.Clear();
             _isLocked = false;
+            LockDeactivated?.Invoke(this, EventArgs.Empty);
         }
     }
 }

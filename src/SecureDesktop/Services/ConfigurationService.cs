@@ -1,5 +1,5 @@
-using System.Collections.Generic;
-using System.Data.SQLite;
+using System;
+using Microsoft.Data.Sqlite;
 using Dapper;
 
 namespace SecureDesktop.Services
@@ -15,7 +15,7 @@ namespace SecureDesktop.Services
 
         public string GetSetting(string key)
         {
-            using (var conn = new SQLiteConnection(_connectionString))
+            using (var conn = new SqliteConnection(_connectionString))
             {
                 return conn.QuerySingleOrDefault<string>(
                     "SELECT SettingValue FROM Settings WHERE SettingKey = @Key",
@@ -25,11 +25,11 @@ namespace SecureDesktop.Services
 
         public void SetSetting(string key, string value)
         {
-            using (var conn = new SQLiteConnection(_connectionString))
+            using (var conn = new SqliteConnection(_connectionString))
             {
                 conn.Execute(@"
                     INSERT OR REPLACE INTO Settings (SettingKey, SettingValue, UpdatedAt)
-                    VALUES (@Key, @Value, CURRENT_TIMESTAMP)",
+                    VALUES (@Key, @Value, datetime('now'))",
                     new { Key = key, Value = value });
             }
         }
