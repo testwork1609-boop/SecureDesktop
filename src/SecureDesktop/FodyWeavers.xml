@@ -2,21 +2,16 @@
 <Weavers xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="FodyWeavers.xsd">
   <Costura>
     <IncludeAssemblies>
+      Microsoft.Data.Sqlite
       Dapper
-      System.Data.SQLite
-      Serilog
-      Serilog.Sinks.File
       Newtonsoft.Json
     </IncludeAssemblies>
     <Unmanaged32Assemblies>
-      SQLite.Interop
+      e_sqlite3
     </Unmanaged32Assemblies>
     <Unmanaged64Assemblies>
-      SQLite.Interop
+      e_sqlite3
     </Unmanaged64Assemblies>
-    <CreateTemporaryAssemblies>false</CreateTemporaryAssemblies>
-    <DisableCleanup>false</DisableCleanup>
-    <DisableCompression>true</DisableCompression>
     <LoadAtModuleInit>true</LoadAtModuleInit>
   </Costura>
 </Weavers>

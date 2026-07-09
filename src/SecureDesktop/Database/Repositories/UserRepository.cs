@@ -1,8 +1,7 @@
 using System;
-using System.Data.SQLite;
+using Microsoft.Data.Sqlite;
 using Dapper;
 using SecureDesktop.Models;
-using Serilog;
 
 namespace SecureDesktop.Database.Repositories
 {
@@ -17,7 +16,7 @@ namespace SecureDesktop.Database.Repositories
 
         public User GetByIdentificationNumber(string id)
         {
-            using (var conn = new SQLiteConnection(_connectionString))
+            using (var conn = new SqliteConnection(_connectionString))
             {
                 return conn.QuerySingleOrDefault<User>(
                     "SELECT * FROM Users WHERE IdentificationNumber = @Id AND IsActive = 1",
@@ -27,9 +26,10 @@ namespace SecureDesktop.Database.Repositories
 
         public void UpdateLastLogin(int userId)
         {
-            using (var conn = new SQLiteConnection(_connectionString))
+            using (var conn = new SqliteConnection(_connectionString))
             {
-                conn.Execute("UPDATE Users SET LastLoginAt = CURRENT_TIMESTAMP WHERE Id = @Id",
+                conn.Execute(
+                    "UPDATE Users SET LastLoginAt = datetime('now') WHERE Id = @Id",
                     new { Id = userId });
             }
         }

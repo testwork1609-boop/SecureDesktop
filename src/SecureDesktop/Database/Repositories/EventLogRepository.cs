@@ -1,5 +1,5 @@
-using System.Collections.Generic;
-using System.Data.SQLite;
+using System;
+using Microsoft.Data.Sqlite;
 using Dapper;
 using SecureDesktop.Models;
 
@@ -16,22 +16,13 @@ namespace SecureDesktop.Database.Repositories
 
         public void Create(EventLog entry)
         {
-            using (var conn = new SQLiteConnection(_connectionString))
+            using (var conn = new SqliteConnection(_connectionString))
             {
                 conn.Execute(@"
                     INSERT INTO EventLog (UserId, IdentificationNumber, OperationName, Result, Description, Timestamp, Severity)
-                    VALUES (@UserId, @IdNumber, @Operation, @Result, @Description, @Timestamp, @Severity)",
-                    new { entry.UserId, IdNumber = entry.IdentificationNumber, 
-                          Operation = entry.OperationName, entry.Result, 
-                          entry.Description, entry.Timestamp, entry.Severity });
-            }
-        }
-
-        public IEnumerable<EventLog> GetAll()
-        {
-            using (var conn = new SQLiteConnection(_connectionString))
-            {
-                return conn.Query<EventLog>("SELECT * FROM EventLog ORDER BY Timestamp DESC LIMIT 1000");
+                    VALUES (@UserId, @IdNumber, @Operation, @Result, @Description, datetime('now'), @Severity)",
+                    new { entry.UserId, IdNumber = entry.IdentificationNumber, Operation = entry.OperationName, 
+                          entry.Result, entry.Description, entry.Severity });
             }
         }
     }
