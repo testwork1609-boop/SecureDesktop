@@ -1,9 +1,7 @@
-name: Build and Release SecureDesktop
+name: Build SecureDesktop
 
 on:
   push:
-    branches: [ main, master ]
-  pull_request:
     branches: [ main, master ]
   workflow_dispatch:
 
@@ -18,23 +16,19 @@ jobs:
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v2
 
-    - name: Setup NuGet
-      uses: NuGet/setup-nuget@v2
-
-    - name: Restore NuGet packages
-      run: nuget restore SecureDesktop.sln
-
-    - name: Build solution
+    - name: Build with restore
+      shell: cmd
       run: |
-        msbuild SecureDesktop.sln /p:Configuration=Release /p:Platform="Any CPU" /t:Rebuild
+        msbuild SecureDesktop.sln /t:Build /p:Configuration=Release /p:Platform="Any CPU" /restore /v:minimal /nologo
 
-    - name: Prepare artifacts
+    - name: Check if EXE exists
+      shell: cmd
       run: |
-        mkdir publish
-        copy src\SecureDesktop\bin\Release\SecureDesktop.exe publish\
-        
-    - name: Upload artifacts
+        dir /s /b SecureDesktop.exe
+
+    - name: Upload EXE
       uses: actions/upload-artifact@v4
       with:
-        name: SecureDesktop-Release
-        path: publish\SecureDesktop.exe
+        name: SecureDesktop-App
+        path: src\SecureDesktop\bin\Release\SecureDesktop.exe
+        retention-days: 30
