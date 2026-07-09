@@ -83,6 +83,7 @@
     <Compile Include="Utils\SecurityHelper.cs" />
     <Compile Include="Core\SecurityManager.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <None Include="App.config" />
   </ItemGroup>
   
   <!-- Konfiguracja Costura.Fody -->
