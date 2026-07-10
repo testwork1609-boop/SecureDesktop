@@ -290,14 +290,14 @@ namespace SecureDesktop.Forms
                 ForeColor = primaryColor
             };
 
-            _patternPreviewBox = new PictureBox
-            {
-                Location = new Point(390, 45),
-                Size = new Size(350, 200),
-                BackColor = inputBg,
-                BorderStyle = BorderStyle.FixedSingle,
-                SizeMode = PictureBoxSizeMode.Zoom
-            };
+          _patternPreviewBox = new PictureBox
+{
+    Location = new Point(390, 45),
+    Size = new Size(350, 200),
+    BackColor = inputBg,
+    BorderStyle = BorderStyle.FixedSingle,
+    SizeMode = PictureBoxSizeMode.Zoom  // TO MUSI BYĆ!
+};
 
             // Podgląd zmienia się po kliknięciu na liście
             _patternListBox.SelectedIndexChanged += (s, e) =>

@@ -90,9 +90,42 @@ namespace SecureDesktop.Forms
             lockAllBtn.Click += (s, e) => { try { _lockService.LockAllScreens(); } catch (Exception ex) { MessageBox.Show(ex.Message); } };
             yPos += 55;
 
-            var lockPatternBtn = CreateSidebarButton("🎯  Blokuj z Pattern", yPos, primaryColor);
-            lockPatternBtn.Click += (s, e) => MessageBox.Show("Funkcja w rozwoju.\nSkonfiguruj patterny w ustawieniach.", "Pattern Lock");
-            yPos += 55;
+         var lockPatternBtn = CreateSidebarButton("🎯  Blokuj z Pattern", yPos, primaryColor);
+lockPatternBtn.Click += (s, e) =>
+{
+    try
+    {
+        // Pobierz aktywne patterny z bazy
+        var patternRepo = new Database.Repositories.PatternRepository(_db);
+        var patterns = patternRepo.GetActivePatterns().ToList();
+        
+        if (patterns.Count == 0)
+        {
+            var result = MessageBox.Show(
+                "Brak skonfigurowanych patternów.\n\nCzy chcesz przejść do konfiguracji?",
+                "Pattern Lock",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question);
+            
+            if (result == DialogResult.Yes)
+            {
+                var configForm = new ConfigurationForm();
+                configForm.ShowDialog(this);
+            }
+        }
+        else
+        {
+            // Uruchom blokadę z patternami
+            var patternService = new PatternRecognitionService(0.90);
+            _lockService.LockWithPatterns(patterns, patternService);
+        }
+    }
+    catch (Exception ex)
+    {
+        MessageBox.Show("Błąd: " + ex.Message, "Pattern Lock", 
+            MessageBoxButtons.OK, MessageBoxIcon.Error);
+    }
+};
 
             var checkpointBtn = CreateSidebarButton("⚡  CheckPoint", yPos, primaryColor);
             checkpointBtn.Click += (s, e) => { try { System.Diagnostics.Process.Start("notepad.exe"); } catch (Exception ex) { MessageBox.Show(ex.Message); } };
