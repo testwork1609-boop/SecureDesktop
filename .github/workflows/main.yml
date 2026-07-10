@@ -29,7 +29,7 @@ jobs:
         echo ========================================
         echo  BUDOWANIE APLIKACJI
         echo ========================================
-        msbuild SecureDesktop.sln /t:Build /p:Configuration=Release /p:Platform="x64" /v:minimal /nologo
+        msbuild SecureDesktop.sln /t:Build /p:Configuration=Release /p:Platform="Any CPU" /v:minimal /nologo
 
     - name: Verify build output
       shell: cmd
