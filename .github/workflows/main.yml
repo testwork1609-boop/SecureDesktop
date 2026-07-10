@@ -19,47 +19,74 @@ jobs:
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v2
 
-    - name: Build SINGLE EXE
+    - name: Restore NuGet
+      shell: cmd
+      run: nuget restore SecureDesktop.sln
+
+    - name: Build application
       shell: cmd
       run: |
         echo ========================================
-        echo  BUDOWANIE JEDNEGO PLIKU EXE
+        echo  BUDOWANIE APLIKACJI
         echo ========================================
-        msbuild SecureDesktop.sln /t:Build /p:Configuration=Release /p:Platform="Any CPU" /restore /v:minimal /nologo
+        msbuild SecureDesktop.sln /t:Build /p:Configuration=Release /p:Platform="x64" /v:minimal /nologo
 
-    - name: Verify EXE
+    - name: Verify build output
       shell: cmd
       run: |
-        echo Sprawdzanie pliku EXE...
-        dir src\SecureDesktop\bin\Release\SecureDesktop.exe
-        for %%A in (src\SecureDesktop\bin\Release\SecureDesktop.exe) do echo Rozmiar: %%~zA bajtow
+        echo Pliki po buildzie:
+        dir src\SecureDesktop\bin\Release\*.exe
+        dir src\SecureDesktop\bin\Release\*.dll
 
-    - name: Sign EXE
+    - name: Download ILMerge
       shell: powershell
       run: |
-        Write-Host "Podpisywanie cyfrowe EXE..."
-        $cert = New-SelfSignedCertificate -Subject "CN=SecureDesktop" -Type CodeSigningCert -CertStoreLocation Cert:\CurrentUser\My -NotAfter (Get-Date).AddYears(5)
-        $exePath = "src\SecureDesktop\bin\Release\SecureDesktop.exe"
-        if (Test-Path $exePath) {
-            Set-AuthenticodeSignature -FilePath $exePath -Certificate $cert -HashAlgorithm SHA256 -TimestampServer "http://timestamp.digicert.com"
-            Write-Host "EXE podpisany cyfrowo"
-        }
-        else {
-            Write-Host "Nie znaleziono pliku EXE"
-        }
+        Write-Host "Pobieranie ILMerge..."
+        Invoke-WebRequest -Uri "https://www.nuget.org/api/v2/package/ILMerge/3.0.29" -OutFile "ILMerge.zip"
+        Write-Host "Rozpakowywanie..."
+        Expand-Archive -Path "ILMerge.zip" -DestinationPath "ILMerge" -Force
+        Write-Host "ILMerge gotowy!"
 
-    - name: Prepare artifact
+    - name: Merge into SINGLE EXE
       shell: cmd
       run: |
-        if not exist publish mkdir publish
-        copy src\SecureDesktop\bin\Release\SecureDesktop.exe publish\
-        echo JEDEN PLIK EXE - dziala od razu! > publish\README.txt
+        echo ========================================
+        echo  LACZENIE W JEDEN PLIK EXE
+        echo ========================================
+        
+        mkdir publish 2>nul
+        
+        ILMerge\tools\net452\ILMerge.exe ^
+          /out:publish\SecureDesktop.exe ^
+          /target:winexe ^
+          /targetplatform:v4 ^
+          src\SecureDesktop\bin\Release\SecureDesktop.exe ^
+          src\SecureDesktop\bin\Release\Newtonsoft.Json.dll
+        
+        if %ERRORLEVEL% EQU 0 (
+          echo ========================================
+          echo  JEDEN PLIK EXE UTWORZONY!
+          echo ========================================
+        ) else (
+          echo BLAD ILMerge - kopiowanie plikow...
+          copy src\SecureDesktop\bin\Release\SecureDesktop.exe publish\
+          copy src\SecureDesktop\bin\Release\Newtonsoft.Json.dll publish\
+        )
+
+    - name: Verify final EXE
+      shell: cmd
+      run: |
+        echo Końcowy plik EXE:
+        dir publish\SecureDesktop.exe
+        echo.
+        echo Rozmiar pliku:
+        for %%A in (publish\SecureDesktop.exe) do echo %%~zA bajtow
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: SecureDesktop-SingleEXE
-        path: publish\
+        path: publish\SecureDesktop.exe
         retention-days: 30
 
     - name: Create Release
