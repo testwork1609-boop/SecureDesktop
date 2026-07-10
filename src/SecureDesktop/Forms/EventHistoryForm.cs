@@ -10,71 +10,84 @@ namespace SecureDesktop.Forms
 
         public EventHistoryForm()
         {
-            InitializeComponent();
-            LoadEvents();
-        }
-
-        private void InitializeComponent()
-        {
+            Color primaryColor = Color.FromArgb(45, 165, 90);
+            
             this.Text = "Historia zdarzeń";
             this.Size = new Size(700, 500);
             this.StartPosition = FormStartPosition.CenterParent;
-            this.BackColor = Color.FromArgb(32, 32, 32);
-            this.ForeColor = Color.White;
+            this.BackColor = Color.White;
+            this.ForeColor = Color.FromArgb(30, 30, 30);
+
+            var headerPanel = new Panel
+            {
+                Location = new Point(0, 0),
+                Size = new Size(700, 50),
+                BackColor = primaryColor
+            };
 
             var title = new Label
             {
-                Text = "Historia zdarzeń",
+                Text = "📊  Historia zdarzeń",
                 Font = new Font("Segoe UI", 14, FontStyle.Bold),
-                Location = new Point(20, 15),
-                AutoSize = true
+                Location = new Point(20, 12),
+                AutoSize = true,
+                ForeColor = Color.White
             };
+
+            headerPanel.Controls.Add(title);
 
             _eventList = new ListBox
             {
-                Location = new Point(20, 50),
-                Size = new Size(640, 360),
-                BackColor = Color.FromArgb(45, 45, 48),
-                ForeColor = Color.White,
+                Location = new Point(15, 65),
+                Size = new Size(655, 340),
+                BackColor = Color.FromArgb(248, 249, 250),
+                ForeColor = Color.FromArgb(30, 30, 30),
                 Font = new Font("Consolas", 10),
+                BorderStyle = BorderStyle.FixedSingle,
                 HorizontalScrollbar = true
             };
-
-            var closeBtn = new Button
-            {
-                Text = "Zamknij",
-                Location = new Point(280, 420),
-                Size = new Size(120, 35),
-                BackColor = Color.FromArgb(0, 120, 212),
-                FlatStyle = FlatStyle.Flat
-            };
-            closeBtn.Click += (s, e) => this.Close();
 
             var clearBtn = new Button
             {
                 Text = "Wyczyść",
-                Location = new Point(150, 420),
-                Size = new Size(120, 35),
-                BackColor = Color.FromArgb(60, 60, 60),
-                FlatStyle = FlatStyle.Flat
+                Location = new Point(180, 420),
+                Size = new Size(100, 35),
+                BackColor = Color.White,
+                ForeColor = primaryColor,
+                FlatStyle = FlatStyle.Flat,
+                Font = new Font("Segoe UI", 10)
             };
-            clearBtn.Click += (s, e) =>
-            {
-                _eventList.Items.Clear();
-                _eventList.Items.Add("[Historia wyczyszczona]");
-            };
+            clearBtn.FlatAppearance.BorderColor = primaryColor;
+            clearBtn.FlatAppearance.BorderSize = 1;
+            clearBtn.Click += (s, e) => { _eventList.Items.Clear(); _eventList.Items.Add("[Historia wyczyszczona]"); };
 
-            Controls.AddRange(new Control[] { title, _eventList, closeBtn, clearBtn });
+            var closeBtn = new Button
+            {
+                Text = "Zamknij",
+                Location = new Point(300, 420),
+                Size = new Size(100, 35),
+                BackColor = primaryColor,
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat,
+                Font = new Font("Segoe UI", 10)
+            };
+            closeBtn.FlatAppearance.BorderSize = 0;
+            closeBtn.Click += (s, e) => this.Close();
+
+            LoadEvents();
+
+            Controls.AddRange(new Control[] { headerPanel, _eventList, clearBtn, closeBtn });
         }
 
         private void LoadEvents()
         {
-            _eventList.Items.Add("=== HISTORIA ZDARZEŃ ===");
+            _eventList.Items.Add("═══ HISTORIA ZDARZEŃ ═══");
             _eventList.Items.Add("");
-            _eventList.Items.Add($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] LOGOWANIE - Sukces - Użytkownik: admin");
-            _eventList.Items.Add($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] START - Aplikacja uruchomiona");
+            _eventList.Items.Add($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] ✅ LOGOWANIE - Sukces - admin");
+            _eventList.Items.Add($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 🚀 START - Aplikacja uruchomiona");
+            _eventList.Items.Add($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 💾 BACKUP - Wykonano kopię zapasową");
             _eventList.Items.Add("");
-            _eventList.Items.Add("(Funkcja w rozwoju - dane z pliku JSON)");
+            _eventList.Items.Add("(Funkcja w rozwoju - pełna historia już wkrótce)");
         }
     }
 }

@@ -29,85 +29,146 @@ namespace SecureDesktop.Forms
 
         private void InitializeComponent()
         {
+            Color primaryColor = Color.FromArgb(45, 165, 90); // #2DA55A
+            Color bgColor = Color.White;
+            Color textColor = Color.FromArgb(30, 30, 30);
+            Color inputBg = Color.FromArgb(245, 245, 245);
+
             this.Text = "SecureDesktop - Logowanie";
-            this.Size = new Size(400, 500);
+            this.Size = new Size(420, 520);
             this.StartPosition = FormStartPosition.CenterScreen;
             this.FormBorderStyle = FormBorderStyle.FixedDialog;
-            this.BackColor = Color.FromArgb(32, 32, 32);
-            this.ForeColor = Color.White;
+            this.BackColor = bgColor;
+            this.ForeColor = textColor;
+            this.MaximizeBox = false;
+            this.MinimizeBox = false;
+
+            // Panel górny
+            var headerPanel = new Panel
+            {
+                Location = new Point(0, 0),
+                Size = new Size(420, 120),
+                BackColor = primaryColor
+            };
+
+            var logoLabel = new Label
+            {
+                Text = "🛡️",
+                Font = new Font("Segoe UI", 36),
+                Location = new Point(175, 10),
+                Size = new Size(70, 50),
+                TextAlign = ContentAlignment.MiddleCenter,
+                ForeColor = Color.White
+            };
 
             var titleLabel = new Label
             {
                 Text = "SecureDesktop",
-                Font = new Font("Segoe UI", 24, FontStyle.Bold),
-                Location = new Point(100, 40),
-                Size = new Size(200, 40),
-                TextAlign = ContentAlignment.MiddleCenter
+                Font = new Font("Segoe UI", 22, FontStyle.Bold),
+                Location = new Point(80, 60),
+                Size = new Size(260, 40),
+                TextAlign = ContentAlignment.MiddleCenter,
+                ForeColor = Color.White
             };
+
+            headerPanel.Controls.Add(logoLabel);
+            headerPanel.Controls.Add(titleLabel);
+
+            // Formularz logowania
+            int y = 150;
 
             var idLabel = new Label
             {
-                Text = "Numer identyfikacyjny:",
-                Location = new Point(50, 150),
-                Size = new Size(300, 20)
+                Text = "Numer identyfikacyjny",
+                Font = new Font("Segoe UI", 10, FontStyle.Regular),
+                Location = new Point(50, y),
+                Size = new Size(320, 20),
+                ForeColor = textColor
             };
+            y += 25;
 
             _idBox = new TextBox
             {
-                Location = new Point(50, 175),
-                Size = new Size(300, 30),
+                Location = new Point(50, y),
+                Size = new Size(320, 35),
                 Font = new Font("Segoe UI", 12),
-                BackColor = Color.FromArgb(45, 45, 48),
-                ForeColor = Color.White
+                BackColor = inputBg,
+                ForeColor = textColor,
+                BorderStyle = BorderStyle.FixedSingle
             };
+            y += 50;
 
             var passLabel = new Label
             {
-                Text = "Haslo:",
-                Location = new Point(50, 230),
-                Size = new Size(300, 20)
+                Text = "Hasło",
+                Font = new Font("Segoe UI", 10),
+                Location = new Point(50, y),
+                Size = new Size(320, 20),
+                ForeColor = textColor
             };
+            y += 25;
 
             _passBox = new TextBox
             {
-                Location = new Point(50, 255),
-                Size = new Size(300, 30),
+                Location = new Point(50, y),
+                Size = new Size(320, 35),
                 Font = new Font("Segoe UI", 12),
-                PasswordChar = '*',
-                BackColor = Color.FromArgb(45, 45, 48),
-                ForeColor = Color.White
+                PasswordChar = '●',
+                BackColor = inputBg,
+                ForeColor = textColor,
+                BorderStyle = BorderStyle.FixedSingle
             };
+            y += 55;
 
+            // Przycisk logowania
             var loginBtn = new Button
             {
-                Text = "Zaloguj",
-                Location = new Point(50, 320),
-                Size = new Size(300, 40),
-                BackColor = Color.FromArgb(0, 120, 212),
-                FlatStyle = FlatStyle.Flat
+                Text = "Zaloguj się",
+                Location = new Point(50, y),
+                Size = new Size(320, 42),
+                Font = new Font("Segoe UI", 12, FontStyle.Bold),
+                BackColor = primaryColor,
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat,
+                Cursor = Cursors.Hand
             };
+            loginBtn.FlatAppearance.BorderSize = 0;
             loginBtn.Click += LoginBtn_Click;
+            y += 52;
 
+            // Przycisk zamknij
             var closeBtn = new Button
             {
                 Text = "Zamknij",
-                Location = new Point(50, 375),
-                Size = new Size(300, 35),
-                BackColor = Color.FromArgb(60, 60, 60),
-                FlatStyle = FlatStyle.Flat
+                Location = new Point(50, y),
+                Size = new Size(320, 35),
+                Font = new Font("Segoe UI", 10),
+                BackColor = Color.White,
+                ForeColor = Color.FromArgb(100, 100, 100),
+                FlatStyle = FlatStyle.Flat,
+                Cursor = Cursors.Hand
             };
+            closeBtn.FlatAppearance.BorderColor = Color.FromArgb(200, 200, 200);
+            closeBtn.FlatAppearance.BorderSize = 1;
             closeBtn.Click += (s, e) => Application.Exit();
 
             _errorLabel = new Label
             {
-                Location = new Point(50, 425),
-                Size = new Size(300, 30),
+                Location = new Point(50, y + 45),
+                Size = new Size(320, 25),
                 ForeColor = Color.Red,
                 TextAlign = ContentAlignment.MiddleCenter,
+                Font = new Font("Segoe UI", 9),
                 Visible = false
             };
 
-            Controls.AddRange(new Control[] { titleLabel, idLabel, _idBox, passLabel, _passBox, 
+            // Efekty hover
+            loginBtn.MouseEnter += (s, e) => loginBtn.BackColor = Color.FromArgb(40, 180, 100);
+            loginBtn.MouseLeave += (s, e) => loginBtn.BackColor = primaryColor;
+            closeBtn.MouseEnter += (s, e) => closeBtn.BackColor = Color.FromArgb(245, 245, 245);
+            closeBtn.MouseLeave += (s, e) => closeBtn.BackColor = Color.White;
+
+            Controls.AddRange(new Control[] { headerPanel, idLabel, _idBox, passLabel, _passBox, 
                                              loginBtn, closeBtn, _errorLabel });
         }
 
@@ -119,7 +180,7 @@ namespace SecureDesktop.Forms
                 
                 if (user == null)
                 {
-                    ShowError("Nieprawidlowy login lub haslo");
+                    ShowError("Nieprawidłowy login lub hasło");
                     return;
                 }
 
@@ -127,7 +188,7 @@ namespace SecureDesktop.Forms
                 
                 if (hash != user.PasswordHash)
                 {
-                    ShowError("Nieprawidlowy login lub haslo");
+                    ShowError("Nieprawidłowy login lub hasło");
                     return;
                 }
 
@@ -156,7 +217,7 @@ namespace SecureDesktop.Forms
             }
             catch (Exception ex)
             {
-                ShowError("Blad: " + ex.Message);
+                ShowError("Błąd: " + ex.Message);
             }
         }
 

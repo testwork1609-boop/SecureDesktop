@@ -7,7 +7,6 @@ namespace SecureDesktop.Forms
     public class ScreenLockForm : Form
     {
         private readonly Screen _screen;
-        private PictureBox _lockIcon;
 
         public ScreenLockForm(Screen screen)
         {
@@ -17,6 +16,8 @@ namespace SecureDesktop.Forms
 
         private void InitializeComponent()
         {
+            Color primaryColor = Color.FromArgb(45, 165, 90); // #2DA55A
+
             this.FormBorderStyle = FormBorderStyle.None;
             this.ShowInTaskbar = false;
             this.TopMost = true;
@@ -24,85 +25,75 @@ namespace SecureDesktop.Forms
             this.Bounds = _screen.Bounds;
             this.Cursor = Cursors.No;
             
-            // DELIKATNA biała poświata - tylko lekko przyciemnia
+            // Delikatna biała poświata
             this.BackColor = Color.White;
-            this.Opacity = 0.15; // Tylko 15% krycia - ekran jest prawie widoczny
+            this.Opacity = 0.12;
             this.AllowTransparency = true;
             
-            // Ikona kłódki na dole po środku
-            _lockIcon = new PictureBox
+            // Panel na dole
+            var bottomPanel = new Panel
             {
-                Size = new Size(60, 60),
-                Location = new Point(
-                    (this.Width / 2) - 30,
-                    this.Height - 100
-                ),
+                Location = new Point(0, this.Height - 80),
+                Size = new Size(this.Width, 80),
+                BackColor = Color.FromArgb(240, 255, 245)
+            };
+
+            // Ikona kłódki
+            var lockIcon = new PictureBox
+            {
+                Size = new Size(50, 50),
+                Location = new Point((this.Width / 2) - 25, 15),
                 BackColor = Color.Transparent,
-                Cursor = Cursors.Hand,
-                Anchor = AnchorStyles.Bottom
+                Cursor = Cursors.Hand
             };
             
-            // Rysuj ikonę kłódki
-            var bmp = new Bitmap(60, 60);
+            var bmp = new Bitmap(50, 50);
             using (var g = Graphics.FromImage(bmp))
             {
                 g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
                 
-                // Ciało kłódki
-                using (var brush = new SolidBrush(Color.FromArgb(200, 50, 50, 50)))
+                // Kłódka
+                using (var brush = new SolidBrush(primaryColor))
                 {
-                    g.FillRectangle(brush, 15, 25, 30, 30);
+                    g.FillRectangle(brush, 12, 22, 26, 24);
                 }
-                
-                // Pałąk kłódki
-                using (var pen = new Pen(Color.FromArgb(200, 50, 50, 50), 5))
+                using (var pen = new Pen(primaryColor, 4))
                 {
-                    g.DrawArc(pen, 18, 8, 24, 22, 180, 180);
+                    g.DrawArc(pen, 15, 7, 20, 18, 180, 180);
                 }
-                
-                // Dziurka na klucz
-                using (var brush = new SolidBrush(Color.FromArgb(200, 255, 255, 255)))
+                // Dziurka
+                using (var brush = new SolidBrush(Color.White))
                 {
-                    g.FillEllipse(brush, 25, 33, 10, 6);
-                    g.FillRectangle(brush, 28, 38, 4, 10);
+                    g.FillEllipse(brush, 20, 30, 10, 6);
+                    g.FillRectangle(brush, 23, 34, 4, 8);
                 }
             }
-            _lockIcon.Image = bmp;
-            
-            // Kliknięcie w kłódkę = odblokowanie
-            _lockIcon.Click += (s, e) => ShowUnlockDialog();
-            
-            // Kliknięcie gdziekolwiek też pokazuje dialog
-            this.Click += (s, e) => ShowUnlockDialog();
-            
-            this.Controls.Add(_lockIcon);
-            
-            // Blokuj klawiaturę
-            this.KeyDown += (s, e) =>
-            {
-                e.SuppressKeyPress = true;
-                // ESC też pokazuje dialog odblokowania
-                if (e.KeyCode == Keys.Escape)
-                    ShowUnlockDialog();
-            };
-            
-            // Tekst pomocy
+            lockIcon.Image = bmp;
+            lockIcon.Click += (s, e) => ShowUnlockDialog();
+
+            // Tekst
             var helpLabel = new Label
             {
-                Text = "Kliknij kłódkę lub naciśnij ESC aby odblokować",
+                Text = "Kliknij kłódkę aby odblokować",
                 Font = new Font("Segoe UI", 10),
-                ForeColor = Color.FromArgb(180, 50, 50, 50),
-                Location = new Point((this.Width / 2) - 170, this.Height - 40),
-                AutoSize = true,
-                Anchor = AnchorStyles.Bottom
+                ForeColor = primaryColor,
+                Location = new Point((this.Width / 2) - 120, 65),
+                AutoSize = true
             };
-            this.Controls.Add(helpLabel);
+
+            bottomPanel.Controls.Add(lockIcon);
+            bottomPanel.Controls.Add(helpLabel);
+            
+            this.Controls.Add(bottomPanel);
+            this.Click += (s, e) => ShowUnlockDialog();
+            this.KeyDown += (s, e) => { if (e.KeyCode == Keys.Escape) ShowUnlockDialog(); };
         }
 
         private void ShowUnlockDialog()
         {
-            // Okno wpisywania hasła
-            var passwordForm = new Form
+            Color primaryColor = Color.FromArgb(45, 165, 90);
+
+            var dialog = new Form
             {
                 Text = "Odblokuj ekran",
                 Size = new Size(350, 200),
@@ -111,32 +102,41 @@ namespace SecureDesktop.Forms
                 MaximizeBox = false,
                 MinimizeBox = false,
                 TopMost = true,
-                BackColor = Color.FromArgb(32, 32, 32),
-                ForeColor = Color.White
+                BackColor = Color.White
             };
 
-            var passLabel = new Label
+            var icon = new Label
             {
-                Text = "Wprowadź hasło:",
-                Font = new Font("Segoe UI", 11),
-                Location = new Point(20, 30),
-                AutoSize = true
+                Text = "🔒",
+                Font = new Font("Segoe UI", 24),
+                Location = new Point(20, 20),
+                Size = new Size(50, 40),
+                TextAlign = ContentAlignment.MiddleCenter
+            };
+
+            var title = new Label
+            {
+                Text = "Wprowadź hasło aby odblokować",
+                Font = new Font("Segoe UI", 11, FontStyle.Bold),
+                Location = new Point(70, 25),
+                AutoSize = true,
+                ForeColor = Color.FromArgb(30, 30, 30)
             };
 
             var passBox = new TextBox
             {
-                Location = new Point(20, 60),
-                Size = new Size(290, 25),
-                PasswordChar = '*',
+                Location = new Point(30, 70),
+                Size = new Size(280, 30),
+                PasswordChar = '●',
                 Font = new Font("Segoe UI", 12),
-                BackColor = Color.FromArgb(45, 45, 48),
-                ForeColor = Color.White
+                BorderStyle = BorderStyle.FixedSingle,
+                BackColor = Color.FromArgb(245, 245, 245)
             };
 
             var errorLabel = new Label
             {
-                Location = new Point(20, 95),
-                Size = new Size(290, 20),
+                Location = new Point(30, 105),
+                Size = new Size(280, 20),
                 ForeColor = Color.Red,
                 Visible = false
             };
@@ -144,51 +144,45 @@ namespace SecureDesktop.Forms
             var unlockBtn = new Button
             {
                 Text = "Odblokuj",
-                Location = new Point(80, 120),
-                Size = new Size(80, 35),
-                BackColor = Color.FromArgb(0, 120, 212),
+                Location = new Point(80, 130),
+                Size = new Size(90, 35),
+                BackColor = primaryColor,
                 ForeColor = Color.White,
-                FlatStyle = FlatStyle.Flat
+                FlatStyle = FlatStyle.Flat,
+                Font = new Font("Segoe UI", 10, FontStyle.Bold)
             };
-
-            var cancelBtn = new Button
-            {
-                Text = "Anuluj",
-                Location = new Point(180, 120),
-                Size = new Size(80, 35),
-                BackColor = Color.FromArgb(60, 60, 60),
-                ForeColor = Color.White,
-                FlatStyle = FlatStyle.Flat
-            };
-
+            unlockBtn.FlatAppearance.BorderSize = 0;
             unlockBtn.Click += (s, args) =>
             {
-                // Sprawdź hasło (domyślnie "admin")
                 if (passBox.Text == "admin")
                 {
-                    passwordForm.Close();
-                    this.Close(); // Usuń nakładkę
+                    dialog.Close();
+                    this.Close();
                 }
                 else
                 {
                     errorLabel.Text = "Nieprawidłowe hasło!";
                     errorLabel.Visible = true;
                     passBox.Text = "";
-                    passBox.Focus();
                 }
             };
 
-            cancelBtn.Click += (s, args) =>
+            var cancelBtn = new Button
             {
-                passwordForm.Close();
+                Text = "Anuluj",
+                Location = new Point(180, 130),
+                Size = new Size(90, 35),
+                BackColor = Color.White,
+                ForeColor = Color.FromArgb(100, 100, 100),
+                FlatStyle = FlatStyle.Flat,
+                Font = new Font("Segoe UI", 10)
             };
+            cancelBtn.FlatAppearance.BorderColor = Color.FromArgb(200, 200, 200);
+            cancelBtn.FlatAppearance.BorderSize = 1;
+            cancelBtn.Click += (s, args) => dialog.Close();
 
-            passwordForm.Controls.AddRange(new Control[]
-            {
-                passLabel, passBox, errorLabel, unlockBtn, cancelBtn
-            });
-
-            passwordForm.ShowDialog(this);
+            dialog.Controls.AddRange(new Control[] { icon, title, passBox, errorLabel, unlockBtn, cancelBtn });
+            dialog.ShowDialog(this);
         }
     }
 }

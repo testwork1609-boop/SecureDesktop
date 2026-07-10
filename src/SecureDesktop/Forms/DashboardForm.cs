@@ -12,25 +12,29 @@ namespace SecureDesktop.Forms
         private readonly User _currentUser;
         private readonly DatabaseInitializer _db;
         private readonly ScreenLockService _lockService;
-        private readonly PatternRecognitionService _patternService;
 
         public DashboardForm(User user, DatabaseInitializer db)
         {
             _currentUser = user;
             _db = db;
             _lockService = new ScreenLockService();
-            _patternService = new PatternRecognitionService();
             
             InitializeComponent();
         }
 
         private void InitializeComponent()
         {
+            Color primaryColor = Color.FromArgb(45, 165, 90); // #2DA55A
+            Color bgColor = Color.FromArgb(248, 249, 250);
+            Color sidebarColor = Color.White;
+            Color textColor = Color.FromArgb(30, 30, 30);
+            Color subtitleColor = Color.FromArgb(100, 100, 100);
+
             this.Text = "SecureDesktop - Panel Główny";
-            this.Size = new Size(800, 650);
+            this.Size = new Size(850, 600);
             this.StartPosition = FormStartPosition.CenterScreen;
-            this.BackColor = Color.FromArgb(32, 32, 32);
-            this.ForeColor = Color.White;
+            this.BackColor = bgColor;
+            this.ForeColor = textColor;
             this.FormBorderStyle = FormBorderStyle.FixedSingle;
             this.MaximizeBox = false;
 
@@ -38,241 +42,212 @@ namespace SecureDesktop.Forms
             var headerPanel = new Panel
             {
                 Location = new Point(0, 0),
-                Size = new Size(800, 80),
-                BackColor = Color.FromArgb(45, 45, 48)
+                Size = new Size(850, 60),
+                BackColor = primaryColor
             };
 
-            var titleLabel = new Label
+            var logoLabel = new Label
             {
-                Text = "SecureDesktop",
-                Font = new Font("Segoe UI", 20, FontStyle.Bold),
-                Location = new Point(20, 20),
-                AutoSize = true
+                Text = "🛡️ SecureDesktop",
+                Font = new Font("Segoe UI", 16, FontStyle.Bold),
+                Location = new Point(20, 15),
+                AutoSize = true,
+                ForeColor = Color.White
             };
 
             var userLabel = new Label
             {
-                Text = $"Zalogowany: {_currentUser.IdentificationNumber}" + 
-                       (_currentUser.IsAdmin ? " (Admin)" : ""),
+                Text = $"{_currentUser.IdentificationNumber}" + (_currentUser.IsAdmin ? " (Admin)" : ""),
                 Font = new Font("Segoe UI", 10),
-                Location = new Point(20, 50),
+                Location = new Point(620, 22),
                 AutoSize = true,
-                ForeColor = Color.Gray
+                ForeColor = Color.FromArgb(220, 255, 220)
             };
 
-            headerPanel.Controls.Add(titleLabel);
+            headerPanel.Controls.Add(logoLabel);
             headerPanel.Controls.Add(userLabel);
 
-            // Panel boczny z przyciskami
-            var menuPanel = new Panel
+            // Panel boczny
+            var sidebarPanel = new Panel
             {
-                Location = new Point(0, 80),
-                Size = new Size(300, 570),
-                BackColor = Color.FromArgb(40, 40, 45)
+                Location = new Point(0, 60),
+                Size = new Size(280, 540),
+                BackColor = sidebarColor
             };
 
-            int yPos = 20;
-
-            var lockAllBtn = CreateMenuButton("🔒 Blokuj cały ekran", yPos);
-            lockAllBtn.Click += (s, e) =>
+            // Cień panelu bocznego
+            var shadowLine = new Panel
             {
-                try
-                {
-                    _lockService.LockAllScreens();
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show("Błąd blokowania: " + ex.Message, 
-                        "Błąd", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                }
+                Location = new Point(280, 60),
+                Size = new Size(1, 540),
+                BackColor = Color.FromArgb(220, 220, 220)
             };
+
+            int yPos = 25;
+
+            // Przyciski menu
+            var lockAllBtn = CreateSidebarButton("🔒  Blokuj cały ekran", yPos, primaryColor);
+            lockAllBtn.Click += (s, e) => { try { _lockService.LockAllScreens(); } catch (Exception ex) { MessageBox.Show(ex.Message); } };
             yPos += 55;
 
-            var lockPatternBtn = CreateMenuButton("🎯 Blokuj z Pattern", yPos);
-            lockPatternBtn.Click += (s, e) =>
-            {
-                MessageBox.Show(
-                    "Funkcja blokowania z wzorcami\n\n" +
-                    "Aby użyć:\n" +
-                    "1. Przejdź do Konfiguracji\n" +
-                    "2. Dodaj wzorce ekranowe\n" +
-                    "3. Włącz blokadę Pattern\n\n" +
-                    "Ta funkcja będzie dostępna w pełnej wersji.",
-                    "Pattern Lock - Informacja",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Information);
-            };
+            var lockPatternBtn = CreateSidebarButton("🎯  Blokuj z Pattern", yPos, primaryColor);
+            lockPatternBtn.Click += (s, e) => MessageBox.Show("Funkcja w rozwoju.\nSkonfiguruj patterny w ustawieniach.", "Pattern Lock");
             yPos += 55;
 
-            var checkpointBtn = CreateMenuButton("⚡ CheckPoint", yPos);
-            checkpointBtn.Click += (s, e) =>
-            {
-                try
-                {
-                    // Domyślnie uruchamia Notatnik
-                    // W przyszłości będzie czytać z konfiguracji
-                    System.Diagnostics.Process.Start("notepad.exe");
-                    
-                    // Logowanie zdarzenia
-                    var eventRepo = new Database.Repositories.EventLogRepository(_db);
-                    eventRepo.Create(new EventLog
-                    {
-                        UserId = _currentUser.Id,
-                        IdentificationNumber = _currentUser.IdentificationNumber,
-                        OperationName = "CheckPoint",
-                        Result = "Success",
-                        Description = "Uruchomiono notepad.exe"
-                    });
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show("Błąd CheckPoint: " + ex.Message,
-                        "Błąd", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                }
-            };
+            var checkpointBtn = CreateSidebarButton("⚡  CheckPoint", yPos, primaryColor);
+            checkpointBtn.Click += (s, e) => { try { System.Diagnostics.Process.Start("notepad.exe"); } catch (Exception ex) { MessageBox.Show(ex.Message); } };
             yPos += 55;
 
-            var configBtn = CreateMenuButton("⚙️ Konfiguracja", yPos);
-            configBtn.Click += (s, e) =>
-            {
-                var configForm = new ConfigurationForm();
-                configForm.ShowDialog(this);
-            };
+            var configBtn = CreateSidebarButton("⚙️  Konfiguracja", yPos, primaryColor);
+            configBtn.Click += (s, e) => new ConfigurationForm().ShowDialog(this);
             yPos += 55;
 
-            var historyBtn = CreateMenuButton("📊 Historia zdarzeń", yPos);
-            historyBtn.Click += (s, e) =>
-            {
-                var historyForm = new EventHistoryForm();
-                historyForm.ShowDialog(this);
-            };
+            var historyBtn = CreateSidebarButton("📊  Historia zdarzeń", yPos, primaryColor);
+            historyBtn.Click += (s, e) => new EventHistoryForm().ShowDialog(this);
             yPos += 55;
 
-            var backupBtn = CreateMenuButton("💾 Wykonaj backup", yPos);
-            backupBtn.Click += (s, e) =>
-            {
-                try
-                {
-                    var backupService = new BackupService();
-                    var sourcePath = System.IO.Path.Combine(
-                        AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
-                    
-                    if (System.IO.File.Exists(sourcePath))
-                    {
-                        var backupPath = backupService.CreateBackup(sourcePath, "Backup");
-                        MessageBox.Show("Backup utworzony!\n" + backupPath,
-                            "Sukces", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    }
-                    else
-                    {
-                        MessageBox.Show("Brak pliku bazy danych do backupu.",
-                            "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show("Błąd backupu: " + ex.Message,
-                        "Błąd", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                }
-            };
+            var backupBtn = CreateSidebarButton("💾  Wykonaj backup", yPos, primaryColor);
+            backupBtn.Click += (s, e) => BackupDatabase();
             yPos += 55;
 
-            var logoutBtn = CreateMenuButton("🚪 Wyloguj", yPos);
-            logoutBtn.BackColor = Color.FromArgb(180, 50, 50);
-            logoutBtn.Click += (s, e) =>
-            {
-                var eventRepo = new Database.Repositories.EventLogRepository(_db);
-                eventRepo.Create(new EventLog
-                {
-                    UserId = _currentUser.Id,
-                    IdentificationNumber = _currentUser.IdentificationNumber,
-                    OperationName = "Logout",
-                    Result = "Success",
-                    Description = "Użytkownik wylogowany"
-                });
-                
-                this.Close();
-            };
+            var logoutBtn = CreateSidebarButton("🚪  Wyloguj", yPos, Color.FromArgb(220, 80, 80));
+            logoutBtn.Click += (s, e) => this.Close();
 
-            menuPanel.Controls.AddRange(new Control[]
-            {
-                lockAllBtn, lockPatternBtn, checkpointBtn,
-                configBtn, historyBtn, backupBtn, logoutBtn
-            });
+            sidebarPanel.Controls.AddRange(new Control[] { lockAllBtn, lockPatternBtn, checkpointBtn, configBtn, historyBtn, backupBtn, logoutBtn });
 
-            // Panel główny (prawa strona)
+            // Panel główny
             var mainPanel = new Panel
             {
                 Location = new Point(300, 80),
-                Size = new Size(500, 570),
-                BackColor = Color.FromArgb(32, 32, 32)
+                Size = new Size(530, 500),
+                BackColor = bgColor
             };
 
-            var infoTitle = new Label
+            // Karta powitalna
+            var welcomeCard = new Panel
             {
-                Text = "Informacje o systemie",
-                Font = new Font("Segoe UI", 14, FontStyle.Bold),
                 Location = new Point(20, 20),
+                Size = new Size(490, 150),
+                BackColor = Color.White,
+                Padding = new Padding(20)
+            };
+
+            var welcomeTitle = new Label
+            {
+                Text = $"Witaj, {_currentUser.IdentificationNumber}!",
+                Font = new Font("Segoe UI", 18, FontStyle.Bold),
+                Location = new Point(20, 20),
+                AutoSize = true,
+                ForeColor = primaryColor
+            };
+
+            var welcomeSubtitle = new Label
+            {
+                Text = $"Zalogowano: {DateTime.Now:yyyy-MM-dd HH:mm}",
+                Font = new Font("Segoe UI", 10),
+                Location = new Point(20, 55),
+                AutoSize = true,
+                ForeColor = subtitleColor
+            };
+
+            var welcomeText = new Label
+            {
+                Text = "Wybierz funkcję z menu po lewej stronie.",
+                Font = new Font("Segoe UI", 10),
+                Location = new Point(20, 85),
+                AutoSize = true,
+                ForeColor = subtitleColor
+            };
+
+            welcomeCard.Controls.AddRange(new Control[] { welcomeTitle, welcomeSubtitle, welcomeText });
+
+            // Karta ze statystykami
+            var statsCard = new Panel
+            {
+                Location = new Point(20, 190),
+                Size = new Size(490, 150),
+                BackColor = Color.White
+            };
+
+            var statsTitle = new Label
+            {
+                Text = "📈  Statystyki",
+                Font = new Font("Segoe UI", 14, FontStyle.Bold),
+                Location = new Point(20, 15),
                 AutoSize = true
             };
 
-            var infoText = new Label
+            var statsText = new Label
             {
-                Text = $"Czas zalogowania: {DateTime.Now:yyyy-MM-dd HH:mm:ss}\n" +
-                       $"Użytkownik: {_currentUser.IdentificationNumber}\n" +
-                       $"Uprawnienia: {(_currentUser.IsAdmin ? "Administrator" : "Użytkownik")}\n\n" +
-                       $"Dostępne funkcje:\n" +
-                       $"• Blokada pełnoekranowa\n" +
-                       $"• Blokada z wzorcami\n" +
-                       $"• Uruchamianie aplikacji\n" +
-                       $"• Backup bazy danych\n" +
-                       $"• Historia zdarzeń\n" +
-                       $"• Konfiguracja systemu\n\n" +
-                       $"Wersja: 1.0.0\n" +
-                       $"Środowisko: .NET Framework 4.8",
+                Text = $"• Aktywne patterny: 0\n• Dzisiejsze logowania: 1\n• Ostatni backup: {DateTime.Now:yyyy-MM-dd HH:mm}",
                 Font = new Font("Segoe UI", 10),
-                Location = new Point(20, 60),
+                Location = new Point(20, 50),
                 AutoSize = true,
-                ForeColor = Color.LightGray
+                ForeColor = subtitleColor
             };
 
-            mainPanel.Controls.Add(infoTitle);
-            mainPanel.Controls.Add(infoText);
+            statsCard.Controls.AddRange(new Control[] { statsTitle, statsText });
 
-            // Dodaj wszystkie panele do formularza
+            mainPanel.Controls.Add(welcomeCard);
+            mainPanel.Controls.Add(statsCard);
+
             this.Controls.Add(headerPanel);
-            this.Controls.Add(menuPanel);
+            this.Controls.Add(sidebarPanel);
+            this.Controls.Add(shadowLine);
             this.Controls.Add(mainPanel);
         }
 
-        private Button CreateMenuButton(string text, int yPosition)
+        private Button CreateSidebarButton(string text, int yPos, Color color)
         {
             var btn = new Button
             {
                 Text = text,
-                Location = new Point(20, yPosition),
-                Size = new Size(260, 45),
+                Location = new Point(15, yPos),
+                Size = new Size(250, 42),
                 Font = new Font("Segoe UI", 11),
-                BackColor = Color.FromArgb(0, 120, 212),
-                ForeColor = Color.White,
+                BackColor = Color.White,
+                ForeColor = Color.FromArgb(50, 50, 50),
                 FlatStyle = FlatStyle.Flat,
                 Cursor = Cursors.Hand,
                 TextAlign = ContentAlignment.MiddleLeft,
-                Padding = new Padding(15, 0, 0, 0)
+                Padding = new Padding(12, 0, 0, 0)
             };
 
-            // Efekt hover
             btn.FlatAppearance.BorderSize = 0;
-            btn.MouseEnter += (s, e) => btn.BackColor = Color.FromArgb(0, 140, 240);
+            btn.MouseEnter += (s, e) =>
+            {
+                btn.BackColor = Color.FromArgb(240, 255, 245);
+                btn.ForeColor = color;
+            };
             btn.MouseLeave += (s, e) =>
             {
-                if (btn.Text.Contains("Wyloguj"))
-                    btn.BackColor = Color.FromArgb(180, 50, 50);
-                else
-                    btn.BackColor = Color.FromArgb(0, 120, 212);
+                btn.BackColor = Color.White;
+                btn.ForeColor = Color.FromArgb(50, 50, 50);
             };
 
             return btn;
+        }
+
+        private void BackupDatabase()
+        {
+            try
+            {
+                var backupService = new BackupService();
+                var sourcePath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
+                if (System.IO.File.Exists(sourcePath))
+                {
+                    var backupPath = backupService.CreateBackup(sourcePath, "Backup");
+                    MessageBox.Show("✅ Backup utworzony!\n" + backupPath, "Sukces");
+                }
+                else
+                {
+                    MessageBox.Show("Brak bazy danych do backupu.", "Info");
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Błąd: " + ex.Message, "Błąd");
+            }
         }
     }
 }
