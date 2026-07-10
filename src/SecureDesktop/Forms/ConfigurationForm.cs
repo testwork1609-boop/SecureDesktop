@@ -243,7 +243,7 @@ namespace SecureDesktop.Forms
                 ForeColor = textColor,
                 BorderStyle = BorderStyle.FixedSingle,
                 Font = new Font("Segoe UI", 10),
-                PlaceholderText = "Wybierz plik..."
+                                Text = ""
             };
 
             var monitorBrowseBtn = new Button
@@ -502,7 +502,7 @@ namespace SecureDesktop.Forms
                 ForeColor = textColor,
                 BorderStyle = BorderStyle.FixedSingle,
                 Font = new Font("Segoe UI", 10),
-                PlaceholderText = "np. /config /silent"
+                Text = ""
             };
 
             var workDirLabel = new Label
