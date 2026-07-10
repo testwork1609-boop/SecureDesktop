@@ -1,14 +1,15 @@
 using System;
 using System.Drawing;
 using System.Windows.Forms;
+using SecureDesktop.Database;
 using SecureDesktop.Database.Repositories;
 using SecureDesktop.Models;
-using SecureDesktop.Services;
 
 namespace SecureDesktop.Forms
 {
     public class LoginForm : Form
     {
+        private readonly DatabaseInitializer _db;
         private readonly UserRepository _userRepo;
         private readonly SessionRepository _sessionRepo;
         private readonly EventLogRepository _eventRepo;
@@ -16,12 +17,12 @@ namespace SecureDesktop.Forms
         private TextBox _passBox;
         private Label _errorLabel;
 
-     public LoginForm(Database.DatabaseInitializer db)
+        public LoginForm(DatabaseInitializer db)
         {
-             _db = db;
-    _userRepo = new UserRepository(_db);
-    _sessionRepo = new SessionRepository(_db);
-    _eventRepo = new EventLogRepository(_db);
+            _db = db;
+            _userRepo = new UserRepository(_db);
+            _sessionRepo = new SessionRepository(_db);
+            _eventRepo = new EventLogRepository(_db);
             
             InitializeComponent();
         }
@@ -55,12 +56,14 @@ namespace SecureDesktop.Forms
             {
                 Location = new Point(50, 175),
                 Size = new Size(300, 30),
-                Font = new Font("Segoe UI", 12)
+                Font = new Font("Segoe UI", 12),
+                BackColor = Color.FromArgb(45, 45, 48),
+                ForeColor = Color.White
             };
 
             var passLabel = new Label
             {
-                Text = "Hasło:",
+                Text = "Haslo:",
                 Location = new Point(50, 230),
                 Size = new Size(300, 20)
             };
@@ -70,7 +73,9 @@ namespace SecureDesktop.Forms
                 Location = new Point(50, 255),
                 Size = new Size(300, 30),
                 Font = new Font("Segoe UI", 12),
-                PasswordChar = '●'
+                PasswordChar = '*',
+                BackColor = Color.FromArgb(45, 45, 48),
+                ForeColor = Color.White
             };
 
             var loginBtn = new Button
@@ -114,7 +119,7 @@ namespace SecureDesktop.Forms
                 
                 if (user == null)
                 {
-                    ShowError("Nieprawidłowy login lub hasło");
+                    ShowError("Nieprawidlowy login lub haslo");
                     return;
                 }
 
@@ -122,18 +127,16 @@ namespace SecureDesktop.Forms
                 
                 if (hash != user.PasswordHash)
                 {
-                    ShowError("Nieprawidłowy login lub hasło");
+                    ShowError("Nieprawidlowy login lub haslo");
                     return;
                 }
 
-                // Successful login
                 _userRepo.UpdateLastLogin(user.Id);
                 
                 var session = new Session
                 {
                     UserId = user.Id,
                     IdentificationNumber = user.IdentificationNumber,
-                    LoginTime = DateTime.Now,
                     SessionToken = Utils.SecurityHelper.GenerateSessionToken()
                 };
                 _sessionRepo.Create(session);
@@ -143,18 +146,17 @@ namespace SecureDesktop.Forms
                     UserId = user.Id,
                     IdentificationNumber = user.IdentificationNumber,
                     OperationName = "Login",
-                    Result = "Success",
-                    Timestamp = DateTime.Now
+                    Result = "Success"
                 });
 
                 this.Hide();
-                var dashboard = new DashboardForm(user);
+                var dashboard = new DashboardForm(user, _db);
                 dashboard.FormClosed += (s, args) => this.Close();
                 dashboard.Show();
             }
             catch (Exception ex)
             {
-                ShowError("Błąd logowania: " + ex.Message);
+                ShowError("Blad: " + ex.Message);
             }
         }
 
