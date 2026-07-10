@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
@@ -25,7 +26,7 @@ namespace SecureDesktop.Forms
 
         private void InitializeComponent()
         {
-            Color primaryColor = Color.FromArgb(45, 165, 90); // #2DA55A
+            Color primaryColor = Color.FromArgb(45, 165, 90);
             Color bgColor = Color.FromArgb(248, 249, 250);
             Color sidebarColor = Color.White;
             Color textColor = Color.FromArgb(30, 30, 30);
@@ -76,7 +77,6 @@ namespace SecureDesktop.Forms
                 BackColor = sidebarColor
             };
 
-            // Cień panelu bocznego
             var shadowLine = new Panel
             {
                 Location = new Point(280, 60),
@@ -86,68 +86,173 @@ namespace SecureDesktop.Forms
 
             int yPos = 25;
 
-            // Przyciski menu
+            // === PRZYCISK: Blokuj cały ekran ===
             var lockAllBtn = CreateSidebarButton("🔒  Blokuj cały ekran", yPos, primaryColor);
-            lockAllBtn.Click += (s, e) => { try { _lockService.LockAllScreens(); } catch (Exception ex) { MessageBox.Show(ex.Message); } };
+            lockAllBtn.Click += (s, e) =>
+            {
+                try
+                {
+                    _lockService.LockAllScreens();
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show("Błąd blokowania: " + ex.Message, "Błąd",
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            };
             yPos += 55;
 
-         var lockPatternBtn = CreateSidebarButton("🎯  Blokuj z Pattern", yPos, primaryColor);
-lockPatternBtn.Click += (s, e) =>
-{
-    try
-    {
-        // Pobierz aktywne patterny z bazy
-        var patternRepo = new Database.Repositories.PatternRepository(_db);
-        var patterns = patternRepo.GetActivePatterns().ToList();
-        
-        if (patterns.Count == 0)
-        {
-            var result = MessageBox.Show(
-                "Brak skonfigurowanych patternów.\n\nCzy chcesz przejść do konfiguracji?",
-                "Pattern Lock",
-                MessageBoxButtons.YesNo,
-                MessageBoxIcon.Question);
-            
-            if (result == DialogResult.Yes)
+            // === PRZYCISK: Blokuj z Pattern ===
+            var lockPatternBtn = CreateSidebarButton("🎯  Blokuj z Pattern", yPos, primaryColor);
+            lockPatternBtn.Click += (s, e) =>
+            {
+                try
+                {
+                    // POBIERZ PATTERNY BEZPOŚREDNIO Z BAZY
+                    var patterns = _db.GetData().Patterns?.Where(p => p.IsActive).ToList() ?? new List<Pattern>();
+
+                    if (patterns.Count == 0)
+                    {
+                        var result = MessageBox.Show(
+                            "Brak aktywnych wzorców (Pattern).\n\n" +
+                            "Czy chcesz przejść do konfiguracji i dodać wzorce?",
+                            "Pattern Lock - Brak wzorców",
+                            MessageBoxButtons.YesNo,
+                            MessageBoxIcon.Question);
+
+                        if (result == DialogResult.Yes)
+                        {
+                            var configForm = new ConfigurationForm();
+                            configForm.ShowDialog(this);
+                        }
+                    }
+                    else
+                    {
+                        // Uruchom blokadę z patternami
+                        var patternService = new PatternRecognitionService(0.90);
+                        _lockService.LockWithPatterns(patterns, patternService);
+
+                        // Logowanie
+                        var eventRepo = new Database.Repositories.EventLogRepository(_db);
+                        eventRepo.Create(new EventLog
+                        {
+                            UserId = _currentUser.Id,
+                            IdentificationNumber = _currentUser.IdentificationNumber,
+                            OperationName = "PatternLock",
+                            Result = "Success",
+                            Description = $"Uruchomiono blokadę z {patterns.Count} wzorcami"
+                        });
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show("Błąd Pattern Lock: " + ex.Message, "Błąd",
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            };
+            yPos += 55;
+
+            // === PRZYCISK: CheckPoint ===
+            var checkpointBtn = CreateSidebarButton("⚡  CheckPoint", yPos, primaryColor);
+            checkpointBtn.Click += (s, e) =>
+            {
+                try
+                {
+                    var path = _db.GetData().Settings.ContainsKey("CheckpointPath")
+                        ? _db.GetData().Settings["CheckpointPath"]
+                        : "notepad.exe";
+                    var args = _db.GetData().Settings.ContainsKey("CheckpointArgs")
+                        ? _db.GetData().Settings["CheckpointArgs"]
+                        : "";
+
+                    System.Diagnostics.Process.Start(path, args);
+
+                    var eventRepo = new Database.Repositories.EventLogRepository(_db);
+                    eventRepo.Create(new EventLog
+                    {
+                        UserId = _currentUser.Id,
+                        IdentificationNumber = _currentUser.IdentificationNumber,
+                        OperationName = "CheckPoint",
+                        Result = "Success",
+                        Description = $"Uruchomiono: {path} {args}"
+                    });
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show("Błąd CheckPoint: " + ex.Message, "Błąd",
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            };
+            yPos += 55;
+
+            // === PRZYCISK: Konfiguracja ===
+            var configBtn = CreateSidebarButton("⚙️  Konfiguracja", yPos, primaryColor);
+            configBtn.Click += (s, e) =>
             {
                 var configForm = new ConfigurationForm();
                 configForm.ShowDialog(this);
-            }
-        }
-        else
-        {
-            // Uruchom blokadę z patternami
-            var patternService = new PatternRecognitionService(0.90);
-            _lockService.LockWithPatterns(patterns, patternService);
-        }
-    }
-    catch (Exception ex)
-    {
-        MessageBox.Show("Błąd: " + ex.Message, "Pattern Lock", 
-            MessageBoxButtons.OK, MessageBoxIcon.Error);
-    }
-};
-
-            var checkpointBtn = CreateSidebarButton("⚡  CheckPoint", yPos, primaryColor);
-            checkpointBtn.Click += (s, e) => { try { System.Diagnostics.Process.Start("notepad.exe"); } catch (Exception ex) { MessageBox.Show(ex.Message); } };
+            };
             yPos += 55;
 
-            var configBtn = CreateSidebarButton("⚙️  Konfiguracja", yPos, primaryColor);
-            configBtn.Click += (s, e) => new ConfigurationForm().ShowDialog(this);
-            yPos += 55;
-
+            // === PRZYCISK: Historia ===
             var historyBtn = CreateSidebarButton("📊  Historia zdarzeń", yPos, primaryColor);
-            historyBtn.Click += (s, e) => new EventHistoryForm().ShowDialog(this);
+            historyBtn.Click += (s, e) =>
+            {
+                var historyForm = new EventHistoryForm();
+                historyForm.ShowDialog(this);
+            };
             yPos += 55;
 
+            // === PRZYCISK: Backup ===
             var backupBtn = CreateSidebarButton("💾  Wykonaj backup", yPos, primaryColor);
-            backupBtn.Click += (s, e) => BackupDatabase();
+            backupBtn.Click += (s, e) =>
+            {
+                try
+                {
+                    var sourcePath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
+                    if (System.IO.File.Exists(sourcePath))
+                    {
+                        var backupService = new BackupService();
+                        var backupPath = _db.GetData().Settings.ContainsKey("BackupPath")
+                            ? _db.GetData().Settings["BackupPath"]
+                            : "Backup";
+                        var result = backupService.CreateBackup(sourcePath, backupPath);
+                        MessageBox.Show("✅ Backup utworzony!\n" + result, "Sukces");
+                    }
+                    else
+                    {
+                        MessageBox.Show("Brak pliku bazy danych.", "Info");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show("Błąd backupu: " + ex.Message, "Błąd");
+                }
+            };
             yPos += 55;
 
+            // === PRZYCISK: Wyloguj ===
             var logoutBtn = CreateSidebarButton("🚪  Wyloguj", yPos, Color.FromArgb(220, 80, 80));
-            logoutBtn.Click += (s, e) => this.Close();
+            logoutBtn.Click += (s, e) =>
+            {
+                try
+                {
+                    var eventRepo = new Database.Repositories.EventLogRepository(_db);
+                    eventRepo.Create(new EventLog
+                    {
+                        UserId = _currentUser.Id,
+                        IdentificationNumber = _currentUser.IdentificationNumber,
+                        OperationName = "Logout",
+                        Result = "Success",
+                        Description = "Użytkownik wylogowany"
+                    });
+                }
+                catch { }
+                this.Close();
+            };
 
-            sidebarPanel.Controls.AddRange(new Control[] { lockAllBtn, lockPatternBtn, checkpointBtn, configBtn, historyBtn, backupBtn, logoutBtn });
+            sidebarPanel.Controls.AddRange(new Control[] { lockAllBtn, lockPatternBtn, checkpointBtn, 
+                                                           configBtn, historyBtn, backupBtn, logoutBtn });
 
             // Panel główny
             var mainPanel = new Panel
@@ -162,8 +267,7 @@ lockPatternBtn.Click += (s, e) =>
             {
                 Location = new Point(20, 20),
                 Size = new Size(490, 150),
-                BackColor = Color.White,
-                Padding = new Padding(20)
+                BackColor = Color.White
             };
 
             var welcomeTitle = new Label
@@ -184,9 +288,11 @@ lockPatternBtn.Click += (s, e) =>
                 ForeColor = subtitleColor
             };
 
+            // Pokaż liczbę patternów
+            var patternCount = _db.GetData().Patterns?.Count(p => p.IsActive) ?? 0;
             var welcomeText = new Label
             {
-                Text = "Wybierz funkcję z menu po lewej stronie.",
+                Text = $"Aktywne patterny: {patternCount} | Wybierz funkcję z menu.",
                 Font = new Font("Segoe UI", 10),
                 Location = new Point(20, 85),
                 AutoSize = true,
@@ -195,7 +301,7 @@ lockPatternBtn.Click += (s, e) =>
 
             welcomeCard.Controls.AddRange(new Control[] { welcomeTitle, welcomeSubtitle, welcomeText });
 
-            // Karta ze statystykami
+            // Karta statystyk
             var statsCard = new Panel
             {
                 Location = new Point(20, 190),
@@ -211,9 +317,15 @@ lockPatternBtn.Click += (s, e) =>
                 AutoSize = true
             };
 
+            var totalPatterns = _db.GetData().Patterns?.Count ?? 0;
+            var activePatterns = _db.GetData().Patterns?.Count(p => p.IsActive) ?? 0;
+            var totalEvents = _db.GetData().EventLogs?.Count ?? 0;
+
             var statsText = new Label
             {
-                Text = $"• Aktywne patterny: 0\n• Dzisiejsze logowania: 1\n• Ostatni backup: {DateTime.Now:yyyy-MM-dd HH:mm}",
+                Text = $"• Wszystkie patterny: {totalPatterns}\n" +
+                       $"• Aktywne patterny: {activePatterns}\n" +
+                       $"• Zdarzenia: {totalEvents}",
                 Font = new Font("Segoe UI", 10),
                 Location = new Point(20, 50),
                 AutoSize = true,
@@ -260,28 +372,6 @@ lockPatternBtn.Click += (s, e) =>
             };
 
             return btn;
-        }
-
-        private void BackupDatabase()
-        {
-            try
-            {
-                var backupService = new BackupService();
-                var sourcePath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
-                if (System.IO.File.Exists(sourcePath))
-                {
-                    var backupPath = backupService.CreateBackup(sourcePath, "Backup");
-                    MessageBox.Show("✅ Backup utworzony!\n" + backupPath, "Sukces");
-                }
-                else
-                {
-                    MessageBox.Show("Brak bazy danych do backupu.", "Info");
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show("Błąd: " + ex.Message, "Błąd");
-            }
         }
     }
 }
