@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
 
@@ -7,16 +8,18 @@ namespace SecureDesktop.Forms
     public class ScreenLockForm : Form
     {
         private readonly Screen _screen;
+        private List<Rectangle> _unlockRegions;
 
         public ScreenLockForm(Screen screen)
         {
             _screen = screen;
+            _unlockRegions = new List<Rectangle>();
             InitializeComponent();
         }
 
         private void InitializeComponent()
         {
-            Color primaryColor = Color.FromArgb(45, 165, 90); // #2DA55A
+            Color primaryColor = Color.FromArgb(45, 165, 90);
 
             this.FormBorderStyle = FormBorderStyle.None;
             this.ShowInTaskbar = false;
@@ -25,7 +28,6 @@ namespace SecureDesktop.Forms
             this.Bounds = _screen.Bounds;
             this.Cursor = Cursors.No;
             
-            // Delikatna biała poświata
             this.BackColor = Color.White;
             this.Opacity = 0.12;
             this.AllowTransparency = true;
@@ -38,7 +40,6 @@ namespace SecureDesktop.Forms
                 BackColor = Color.FromArgb(240, 255, 245)
             };
 
-            // Ikona kłódki
             var lockIcon = new PictureBox
             {
                 Size = new Size(50, 50),
@@ -51,8 +52,6 @@ namespace SecureDesktop.Forms
             using (var g = Graphics.FromImage(bmp))
             {
                 g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-                
-                // Kłódka
                 using (var brush = new SolidBrush(primaryColor))
                 {
                     g.FillRectangle(brush, 12, 22, 26, 24);
@@ -61,7 +60,6 @@ namespace SecureDesktop.Forms
                 {
                     g.DrawArc(pen, 15, 7, 20, 18, 180, 180);
                 }
-                // Dziurka
                 using (var brush = new SolidBrush(Color.White))
                 {
                     g.FillEllipse(brush, 20, 30, 10, 6);
@@ -71,10 +69,9 @@ namespace SecureDesktop.Forms
             lockIcon.Image = bmp;
             lockIcon.Click += (s, e) => ShowUnlockDialog();
 
-            // Tekst
             var helpLabel = new Label
             {
-                Text = "Kliknij kłódkę aby odblokować",
+                Text = "Kliknij klodke aby odblokowac",
                 Font = new Font("Segoe UI", 10),
                 ForeColor = primaryColor,
                 Location = new Point((this.Width / 2) - 120, 65),
@@ -87,6 +84,72 @@ namespace SecureDesktop.Forms
             this.Controls.Add(bottomPanel);
             this.Click += (s, e) => ShowUnlockDialog();
             this.KeyDown += (s, e) => { if (e.KeyCode == Keys.Escape) ShowUnlockDialog(); };
+        }
+
+        /// <summary>
+        /// Adds a transparent unlock region to the overlay
+        /// </summary>
+        public void AddUnlockRegion(Rectangle region)
+        {
+            if (!_unlockRegions.Contains(region))
+            {
+                _unlockRegions.Add(region);
+                this.Invalidate();
+            }
+        }
+
+        /// <summary>
+        /// Removes all unlock regions
+        /// </summary>
+        public void RemoveUnlockRegions()
+        {
+            _unlockRegions.Clear();
+            this.Invalidate();
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            
+            foreach (var region in _unlockRegions)
+            {
+                // Przezroczysty obszar
+                using (var brush = new SolidBrush(Color.FromArgb(1, Color.White)))
+                {
+                    e.Graphics.FillRectangle(brush, region);
+                }
+                // Zielona ramka
+                using (var pen = new Pen(Color.FromArgb(100, 45, 165, 90), 2))
+                {
+                    e.Graphics.DrawRectangle(pen, region);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Allows clicks to pass through unlock regions
+        /// </summary>
+        protected override void WndProc(ref Message m)
+        {
+            const int WM_NCHITTEST = 0x0084;
+            const int HTTRANSPARENT = -1;
+
+            if (m.Msg == WM_NCHITTEST)
+            {
+                var screenPoint = new Point(m.LParam.ToInt32() & 0xffff, m.LParam.ToInt32() >> 16);
+                var clientPoint = this.PointToClient(screenPoint);
+
+                foreach (var region in _unlockRegions)
+                {
+                    if (region.Contains(clientPoint))
+                    {
+                        m.Result = (IntPtr)HTTRANSPARENT;
+                        return;
+                    }
+                }
+            }
+
+            base.WndProc(ref m);
         }
 
         private void ShowUnlockDialog()
@@ -105,52 +168,12 @@ namespace SecureDesktop.Forms
                 BackColor = Color.White
             };
 
-            var icon = new Label
-            {
-                Text = "🔒",
-                Font = new Font("Segoe UI", 24),
-                Location = new Point(20, 20),
-                Size = new Size(50, 40),
-                TextAlign = ContentAlignment.MiddleCenter
-            };
-
-            var title = new Label
-            {
-                Text = "Wprowadź hasło aby odblokować",
-                Font = new Font("Segoe UI", 11, FontStyle.Bold),
-                Location = new Point(70, 25),
-                AutoSize = true,
-                ForeColor = Color.FromArgb(30, 30, 30)
-            };
-
-            var passBox = new TextBox
-            {
-                Location = new Point(30, 70),
-                Size = new Size(280, 30),
-                PasswordChar = '●',
-                Font = new Font("Segoe UI", 12),
-                BorderStyle = BorderStyle.FixedSingle,
-                BackColor = Color.FromArgb(245, 245, 245)
-            };
-
-            var errorLabel = new Label
-            {
-                Location = new Point(30, 105),
-                Size = new Size(280, 20),
-                ForeColor = Color.Red,
-                Visible = false
-            };
-
-            var unlockBtn = new Button
-            {
-                Text = "Odblokuj",
-                Location = new Point(80, 130),
-                Size = new Size(90, 35),
-                BackColor = primaryColor,
-                ForeColor = Color.White,
-                FlatStyle = FlatStyle.Flat,
-                Font = new Font("Segoe UI", 10, FontStyle.Bold)
-            };
+            var icon = new Label { Text = "🔒", Font = new Font("Segoe UI", 24), Location = new Point(20, 20), Size = new Size(50, 40) };
+            var title = new Label { Text = "Wprowadz haslo aby odblokowac", Font = new Font("Segoe UI", 11, FontStyle.Bold), Location = new Point(70, 25), AutoSize = true };
+            var passBox = new TextBox { Location = new Point(30, 70), Size = new Size(280, 30), PasswordChar = '*', Font = new Font("Segoe UI", 12) };
+            var errorLabel = new Label { Location = new Point(30, 105), Size = new Size(280, 20), ForeColor = Color.Red, Visible = false };
+            
+            var unlockBtn = new Button { Text = "Odblokuj", Location = new Point(80, 130), Size = new Size(90, 35), BackColor = primaryColor, ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
             unlockBtn.FlatAppearance.BorderSize = 0;
             unlockBtn.Click += (s, args) =>
             {
@@ -161,24 +184,13 @@ namespace SecureDesktop.Forms
                 }
                 else
                 {
-                    errorLabel.Text = "Nieprawidłowe hasło!";
+                    errorLabel.Text = "Nieprawidlowe haslo!";
                     errorLabel.Visible = true;
                     passBox.Text = "";
                 }
             };
 
-            var cancelBtn = new Button
-            {
-                Text = "Anuluj",
-                Location = new Point(180, 130),
-                Size = new Size(90, 35),
-                BackColor = Color.White,
-                ForeColor = Color.FromArgb(100, 100, 100),
-                FlatStyle = FlatStyle.Flat,
-                Font = new Font("Segoe UI", 10)
-            };
-            cancelBtn.FlatAppearance.BorderColor = Color.FromArgb(200, 200, 200);
-            cancelBtn.FlatAppearance.BorderSize = 1;
+            var cancelBtn = new Button { Text = "Anuluj", Location = new Point(180, 130), Size = new Size(90, 35), BackColor = Color.White, FlatStyle = FlatStyle.Flat };
             cancelBtn.Click += (s, args) => dialog.Close();
 
             dialog.Controls.AddRange(new Control[] { icon, title, passBox, errorLabel, unlockBtn, cancelBtn });
