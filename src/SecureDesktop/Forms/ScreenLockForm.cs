@@ -86,9 +86,6 @@ namespace SecureDesktop.Forms
             this.KeyDown += (s, e) => { if (e.KeyCode == Keys.Escape) ShowUnlockDialog(); };
         }
 
-        /// <summary>
-        /// Adds a transparent unlock region to the overlay
-        /// </summary>
         public void AddUnlockRegion(Rectangle region)
         {
             if (!_unlockRegions.Contains(region))
@@ -98,9 +95,6 @@ namespace SecureDesktop.Forms
             }
         }
 
-        /// <summary>
-        /// Removes all unlock regions
-        /// </summary>
         public void RemoveUnlockRegions()
         {
             _unlockRegions.Clear();
@@ -119,16 +113,13 @@ namespace SecureDesktop.Forms
                     e.Graphics.FillRectangle(brush, region);
                 }
                 // Zielona ramka
-                using (var pen = new Pen(Color.FromArgb(100, 45, 165, 90), 2))
+                using (var pen = new Pen(Color.FromArgb(200, 45, 165, 90), 3))
                 {
                     e.Graphics.DrawRectangle(pen, region);
                 }
             }
         }
 
-        /// <summary>
-        /// Allows clicks to pass through unlock regions
-        /// </summary>
         protected override void WndProc(ref Message m)
         {
             const int WM_NCHITTEST = 0x0084;
