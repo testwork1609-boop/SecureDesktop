@@ -40,14 +40,13 @@ namespace SecureDesktop.Services
                 
                 if (!_cts.Token.IsCancellationRequested && _currentPatterns != null)
                 {
-                    int screenWidth = Screen.PrimaryScreen.Bounds.Width;
-                    int screenHeight = Screen.PrimaryScreen.Bounds.Height;
+                    int screenWidth = System.Windows.Forms.Screen.PrimaryScreen.Bounds.Width;
+                    int screenHeight = System.Windows.Forms.Screen.PrimaryScreen.Bounds.Height;
                     
                     foreach (var pattern in _currentPatterns.Where(p => p.IsActive))
                     {
                         if (_cts.Token.IsCancellationRequested) break;
                         
-                        // Testowa lokalizacja - środek ekranu
                         var testLocation = new Rectangle(
                             screenWidth / 2 - 150,
                             screenHeight / 2 - 100,
@@ -61,8 +60,6 @@ namespace SecureDesktop.Services
                             Location = testLocation,
                             Confidence = 1.0
                         });
-                        
-                        System.Diagnostics.Debug.WriteLine($"TEST: Pattern '{pattern.Name}' found at {testLocation}");
                     }
                 }
 
@@ -94,10 +91,7 @@ namespace SecureDesktop.Services
                             }
                         }
                     }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"Scan error: {ex.Message}");
-                    }
+                    catch { }
                     
                     Thread.Sleep(500);
                 }
@@ -117,7 +111,7 @@ namespace SecureDesktop.Services
         {
             try
             {
-                var bounds = Screen.PrimaryScreen.Bounds;
+                var bounds = System.Windows.Forms.Screen.PrimaryScreen.Bounds;
                 var bitmap = new Bitmap(bounds.Width, bounds.Height, PixelFormat.Format24bppRgb);
                 
                 using (var g = Graphics.FromImage(bitmap))
@@ -127,9 +121,8 @@ namespace SecureDesktop.Services
                 
                 return bitmap;
             }
-            catch (Exception ex)
+            catch
             {
-                System.Diagnostics.Debug.WriteLine($"Screen capture error: {ex.Message}");
                 return null;
             }
         }
@@ -147,7 +140,6 @@ namespace SecureDesktop.Services
                     if (patternBmp.Width > screenshot.Width || patternBmp.Height > screenshot.Height)
                         return Rectangle.Empty;
 
-                    // Proste skanowanie co 20 pikseli dla wydajności
                     for (int y = 0; y < screenshot.Height - patternBmp.Height; y += 20)
                     {
                         for (int x = 0; x < screenshot.Width - patternBmp.Width; x += 20)
@@ -162,10 +154,7 @@ namespace SecureDesktop.Services
                     }
                 }
             }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Find pattern error: {ex.Message}");
-            }
+            catch { }
             
             return Rectangle.Empty;
         }
@@ -175,7 +164,6 @@ namespace SecureDesktop.Services
             int matchCount = 0;
             int totalChecks = 0;
             
-            // Sprawdź co 10 piksel dla wydajności
             for (int py = 0; py < pattern.Height; py += 10)
             {
                 for (int px = 0; px < pattern.Width; px += 10)
