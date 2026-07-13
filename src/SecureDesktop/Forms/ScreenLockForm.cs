@@ -27,12 +27,11 @@ namespace SecureDesktop.Forms
             this.StartPosition = FormStartPosition.Manual;
             this.Bounds = _screen.Bounds;
             this.Cursor = Cursors.No;
-            
             this.BackColor = Color.White;
-            this.Opacity = 0.12;
+            this.Opacity = 0.10;
             this.AllowTransparency = true;
             this.DoubleBuffered = true;
-            
+
             // Panel na dole
             var bottomPanel = new Panel
             {
@@ -48,7 +47,7 @@ namespace SecureDesktop.Forms
                 BackColor = Color.Transparent,
                 Cursor = Cursors.Hand
             };
-            
+
             var bmp = new Bitmap(50, 50);
             using (var g = Graphics.FromImage(bmp))
             {
@@ -81,7 +80,7 @@ namespace SecureDesktop.Forms
 
             bottomPanel.Controls.Add(lockIcon);
             bottomPanel.Controls.Add(helpLabel);
-            
+
             this.Controls.Add(bottomPanel);
             this.Click += (s, e) => ShowUnlockDialog();
             this.KeyDown += (s, e) => { if (e.KeyCode == Keys.Escape) ShowUnlockDialog(); };
@@ -89,13 +88,12 @@ namespace SecureDesktop.Forms
 
         public void AddUnlockRegion(Rectangle region)
         {
+            System.Diagnostics.Debug.WriteLine($"AddUnlockRegion called: {region}");
+            
             if (!_unlockRegions.Contains(region))
             {
                 _unlockRegions.Add(region);
                 this.Invalidate();
-                
-                // Aktualizuj region formularza
-                UpdateFormRegion();
             }
         }
 
@@ -103,63 +101,68 @@ namespace SecureDesktop.Forms
         {
             _unlockRegions.Clear();
             this.Invalidate();
-            UpdateFormRegion();
-        }
-
-        /// <summary>
-        /// Tworzy region formularza z dziurami
-        /// </summary>
-        private void UpdateFormRegion()
-        {
-            if (_unlockRegions.Count == 0)
-            {
-                this.Region = null;
-                return;
-            }
-
-            try
-            {
-                // Utwórz region całego ekranu
-                var fullRegion = new Region(new Rectangle(0, 0, this.Width, this.Height));
-                
-                // Wytnij dziury
-                foreach (var rect in _unlockRegions)
-                {
-                    fullRegion.Exclude(rect);
-                }
-                
-                this.Region = fullRegion;
-            }
-            catch
-            {
-                this.Region = null;
-            }
         }
 
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);
-            
+
             foreach (var region in _unlockRegions)
             {
-                // Zielona ramka wokół odblokowanego obszaru
-                using (var pen = new Pen(Color.FromArgb(200, 45, 165, 90), 3))
+                // Wypełnij przezroczystym kolorem
+                using (var brush = new SolidBrush(Color.FromArgb(1, 255, 255, 255)))
+                {
+                    e.Graphics.FillRectangle(brush, region);
+                }
+
+                // Narysuj zieloną ramkę
+                using (var pen = new Pen(Color.FromArgb(255, 45, 165, 90), 4))
                 {
                     e.Graphics.DrawRectangle(pen, region);
                 }
-                
-                // Tekst "ODBLOKOWANE"
-                using (var font = new Font("Segoe UI", 10, FontStyle.Bold))
+
+                // Napis "ODBLOKOWANE"
+                using (var font = new Font("Segoe UI", 12, FontStyle.Bold))
                 {
-                    var text = "✓ ODBLOKOWANE";
+                    var text = "ODBLOKOWANE";
                     var textSize = e.Graphics.MeasureString(text, font);
                     var textX = region.X + (region.Width - (int)textSize.Width) / 2;
-                    var textY = region.Y - 20;
-                    if (textY < 0) textY = region.Y + region.Height + 5;
+                    var textY = region.Y - 25;
+                    if (textY < 0) textY = region.Y + 5;
                     
-                    e.Graphics.DrawString(text, font, Brushes.Green, textX, textY);
+                    // Tło dla tekstu
+                    var textRect = new Rectangle((int)textX - 5, (int)textY - 2, (int)textSize.Width + 10, (int)textSize.Height + 4);
+                    e.Graphics.FillRectangle(Brushes.Black, textRect);
+                    e.Graphics.DrawString(text, font, Brushes.LimeGreen, textX, textY);
                 }
             }
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            const int WM_NCHITTEST = 0x0084;
+            const int HTTRANSPARENT = -1;
+            const int HTCLIENT = 1;
+
+            if (m.Msg == WM_NCHITTEST)
+            {
+                var screenPoint = new Point(m.LParam.ToInt32() & 0xffff, m.LParam.ToInt32() >> 16);
+                var clientPoint = this.PointToClient(screenPoint);
+
+                foreach (var region in _unlockRegions)
+                {
+                    if (region.Contains(clientPoint))
+                    {
+                        m.Result = (IntPtr)HTTRANSPARENT;
+                        return;
+                    }
+                }
+
+                m.Result = (IntPtr)HTCLIENT;
+                return;
+            }
+
+            base.WndProc(ref m);
         }
 
         private void ShowUnlockDialog()
@@ -183,15 +186,12 @@ namespace SecureDesktop.Forms
             var title = new Label { Text = "Wprowadz haslo aby odblokowac", Font = new Font("Segoe UI", 11, FontStyle.Bold), Location = new Point(70, 25), AutoSize = true };
             var passBox = new TextBox { Location = new Point(30, 70), Size = new Size(280, 30), PasswordChar = '*', Font = new Font("Segoe UI", 12) };
             var errorLabel = new Label { Location = new Point(30, 105), Size = new Size(280, 20), ForeColor = Color.Red, Visible = false };
-            
+
             var unlockBtn = new Button { Text = "Odblokuj", Location = new Point(80, 130), Size = new Size(90, 35), BackColor = primaryColor, ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
             unlockBtn.FlatAppearance.BorderSize = 0;
-            
-            var cancelBtn = new Button { Text = "Anuluj", Location = new Point(180, 130), Size = new Size(90, 35), BackColor = Color.White, FlatStyle = FlatStyle.Flat };
-            cancelBtn.FlatAppearance.BorderColor = Color.FromArgb(200, 200, 200);
-            cancelBtn.FlatAppearance.BorderSize = 1;
 
-            // Akcja odblokowania
+            var cancelBtn = new Button { Text = "Anuluj", Location = new Point(180, 130), Size = new Size(90, 35), BackColor = Color.White, FlatStyle = FlatStyle.Flat };
+
             Action unlockAction = () =>
             {
                 if (passBox.Text == "admin")
@@ -211,7 +211,6 @@ namespace SecureDesktop.Forms
             unlockBtn.Click += (s, args) => unlockAction();
             cancelBtn.Click += (s, args) => dialog.Close();
 
-            // ENTER w polu hasła = odblokuj
             passBox.KeyDown += (s, args) =>
             {
                 if (args.KeyCode == Keys.Enter)
@@ -221,7 +220,6 @@ namespace SecureDesktop.Forms
                 }
             };
 
-            // ENTER na formularzu = odblokuj
             dialog.KeyDown += (s, args) =>
             {
                 if (args.KeyCode == Keys.Enter)
@@ -236,10 +234,7 @@ namespace SecureDesktop.Forms
             };
 
             dialog.Controls.AddRange(new Control[] { icon, title, passBox, errorLabel, unlockBtn, cancelBtn });
-            
-            // Ustaw fokus na pole hasła
             dialog.Shown += (s, args) => passBox.Focus();
-            
             dialog.ShowDialog(this);
         }
     }

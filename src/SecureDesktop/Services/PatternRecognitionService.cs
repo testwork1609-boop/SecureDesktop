@@ -35,36 +35,42 @@ namespace SecureDesktop.Services
 
             Task.Run(() =>
             {
+                // TEST: Po 1 sekundzie zgłoś znalezienie KAŻDEGO patternu
+                Thread.Sleep(1000);
+
+                if (!_cts.Token.IsCancellationRequested && _currentPatterns != null)
+                {
+                    int screenW = System.Windows.Forms.Screen.PrimaryScreen.Bounds.Width;
+                    int screenH = System.Windows.Forms.Screen.PrimaryScreen.Bounds.Height;
+
+                    foreach (var pattern in _currentPatterns.Where(p => p.IsActive))
+                    {
+                        if (_cts.Token.IsCancellationRequested) break;
+
+                        // TEST: Umieść "dziurę" na środku ekranu
+                        var testLocation = new Rectangle(
+                            screenW / 2 - 200,
+                            screenH / 2 - 150,
+                            400,
+                            300
+                        );
+
+                        System.Diagnostics.Debug.WriteLine(
+                            $"TEST: Pattern '{pattern.Name}' -> dziura w {testLocation}");
+
+                        PatternFound?.Invoke(this, new PatternFoundEventArgs
+                        {
+                            Pattern = pattern,
+                            Location = testLocation,
+                            Confidence = 1.0
+                        });
+                    }
+                }
+
+                // Potem normalne skanowanie (na razie puste)
                 while (!_cts.Token.IsCancellationRequested)
                 {
-                    try
-                    {
-                        using (var screenshot = CaptureScreen())
-                        {
-                            if (screenshot != null && _currentPatterns != null)
-                            {
-                                foreach (var pattern in _currentPatterns.Where(p => p.IsActive))
-                                {
-                                    if (_cts.Token.IsCancellationRequested) break;
-                                    
-                                    var location = FindPatternOnScreen(screenshot, pattern);
-                                    
-                                    if (location != Rectangle.Empty)
-                                    {
-                                        PatternFound?.Invoke(this, new PatternFoundEventArgs
-                                        {
-                                            Pattern = pattern,
-                                            Location = location,
-                                            Confidence = 0.95
-                                        });
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    catch { }
-                    
-                    Thread.Sleep(500);
+                    Thread.Sleep(1000);
                 }
             }, _cts.Token);
         }
@@ -75,87 +81,6 @@ namespace SecureDesktop.Services
             _cts?.Cancel();
             _isRunning = false;
             _currentPatterns = null;
-        }
-
-        private Bitmap CaptureScreen()
-        {
-            try
-            {
-                var bounds = System.Windows.Forms.Screen.PrimaryScreen.Bounds;
-                var bitmap = new Bitmap(bounds.Width, bounds.Height, PixelFormat.Format24bppRgb);
-                using (var g = Graphics.FromImage(bitmap))
-                {
-                    g.CopyFromScreen(bounds.X, bounds.Y, 0, 0, bounds.Size);
-                }
-                return bitmap;
-            }
-            catch { return null; }
-        }
-
-        private Rectangle FindPatternOnScreen(Bitmap screenshot, Pattern pattern)
-        {
-            try
-            {
-                if (pattern.ImageData == null || pattern.ImageData.Length == 0)
-                    return Rectangle.Empty;
-
-                using (var ms = new MemoryStream(pattern.ImageData))
-                using (var patternBmp = new Bitmap(ms))
-                {
-                    if (patternBmp.Width > screenshot.Width || patternBmp.Height > screenshot.Height)
-                        return Rectangle.Empty;
-
-                    double bestMatch = 0;
-                    int bestX = 0, bestY = 0;
-
-                    for (int y = 0; y < screenshot.Height - patternBmp.Height; y += 5)
-                    {
-                        for (int x = 0; x < screenshot.Width - patternBmp.Width; x += 5)
-                        {
-                            double similarity = CompareRegions(screenshot, patternBmp, x, y);
-                            if (similarity > bestMatch)
-                            {
-                                bestMatch = similarity;
-                                bestX = x;
-                                bestY = y;
-                            }
-                        }
-                    }
-
-                    if (bestMatch >= _matchThreshold)
-                    {
-                        return new Rectangle(bestX, bestY, patternBmp.Width, patternBmp.Height);
-                    }
-                }
-            }
-            catch { }
-
-            return Rectangle.Empty;
-        }
-
-        private double CompareRegions(Bitmap source, Bitmap pattern, int startX, int startY)
-        {
-            int matchCount = 0;
-            int totalChecks = 0;
-
-            for (int py = 0; py < pattern.Height; py += 5)
-            {
-                for (int px = 0; px < pattern.Width; px += 5)
-                {
-                    if (startX + px >= source.Width || startY + py >= source.Height)
-                        return 0;
-
-                    Color sp = source.GetPixel(startX + px, startY + py);
-                    Color pp = pattern.GetPixel(px, py);
-                    totalChecks++;
-
-                    if (Math.Abs(sp.R - pp.R) < 25 && Math.Abs(sp.G - pp.G) < 25 && Math.Abs(sp.B - pp.B) < 25)
-                        matchCount++;
-                }
-            }
-
-            if (totalChecks == 0) return 0;
-            return (double)matchCount / totalChecks;
         }
 
         public void Dispose()
