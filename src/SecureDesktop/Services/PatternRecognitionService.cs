@@ -18,14 +18,16 @@ namespace SecureDesktop.Services
         private bool _isRunning;
         private List<Pattern> _currentPatterns;
         private Dictionary<int, Rectangle> _lastFoundLocations;
+        private bool _testMode;
 
         public event EventHandler<PatternFoundEventArgs> PatternFound;
         public event EventHandler<PatternLostEventArgs> PatternLost;
 
-        public PatternRecognitionService(double matchThreshold = 0.55)
+        public PatternRecognitionService(double matchThreshold = 0.50)
         {
             _matchThreshold = matchThreshold;
             _lastFoundLocations = new Dictionary<int, Rectangle>();
+            _testMode = true;
         }
 
         public void Start(List<Pattern> patterns)
@@ -39,6 +41,47 @@ namespace SecureDesktop.Services
 
             Task.Run(() =>
             {
+                // Test: najpierw pokaż dziurę na środku
+                if (_testMode && _currentPatterns != null && _currentPatterns.Count > 0)
+                {
+                    Thread.Sleep(1500);
+                    
+                    if (!_cts.Token.IsCancellationRequested)
+                    {
+                        int screenW = System.Windows.Forms.Screen.PrimaryScreen.Bounds.Width;
+                        int screenH = System.Windows.Forms.Screen.PrimaryScreen.Bounds.Height;
+                        
+                        var testLocation = new Rectangle(
+                            screenW / 2 - 150,
+                            screenH / 2 - 100,
+                            300, 200
+                        );
+
+                        foreach (var pattern in _currentPatterns.Where(p => p.IsActive))
+                        {
+                            _lastFoundLocations[pattern.Id] = testLocation;
+                            PatternFound?.Invoke(this, new PatternFoundEventArgs
+                            {
+                                Pattern = pattern,
+                                Location = testLocation,
+                                Confidence = 1.0
+                            });
+                        }
+
+                        Thread.Sleep(3000);
+                        
+                        // Usuń testową dziurę
+                        foreach (var pattern in _currentPatterns.Where(p => p.IsActive))
+                        {
+                            _lastFoundLocations.Remove(pattern.Id);
+                            PatternLost?.Invoke(this, new PatternLostEventArgs { Pattern = pattern });
+                        }
+
+                        _testMode = false;
+                    }
+                }
+
+                // Normalne skanowanie
                 while (!_cts.Token.IsCancellationRequested)
                 {
                     try
@@ -55,7 +98,6 @@ namespace SecureDesktop.Services
                                     
                                     if (location != Rectangle.Empty)
                                     {
-                                        // Sprawdź czy lokalizacja się zmieniła
                                         if (!_lastFoundLocations.ContainsKey(pattern.Id) ||
                                             _lastFoundLocations[pattern.Id] != location)
                                         {
@@ -66,19 +108,6 @@ namespace SecureDesktop.Services
                                                 Pattern = pattern,
                                                 Location = location,
                                                 Confidence = 0.95
-                                            });
-                                        }
-                                    }
-                                    else
-                                    {
-                                        // Pattern zgubiony
-                                        if (_lastFoundLocations.ContainsKey(pattern.Id))
-                                        {
-                                            _lastFoundLocations.Remove(pattern.Id);
-                                            
-                                            PatternLost?.Invoke(this, new PatternLostEventArgs
-                                            {
-                                                Pattern = pattern
                                             });
                                         }
                                     }
@@ -130,7 +159,6 @@ namespace SecureDesktop.Services
                     double bestMatch = 0;
                     int bestX = 0, bestY = 0, bestW = 0, bestH = 0;
 
-                    // Skaluj pattern
                     double[] scales = { 0.8, 0.9, 1.0, 1.1, 1.2 };
                     
                     foreach (double scale in scales)
@@ -149,7 +177,7 @@ namespace SecureDesktop.Services
                                 g.DrawImage(originalPattern, 0, 0, newW, newH);
                             }
 
-                            int step = Math.Max(5, newW / 10);
+                            int step = Math.Max(8, newW / 8);
                             
                             for (int y = 0; y < screenshot.Height - newH; y += step)
                             {
@@ -185,7 +213,7 @@ namespace SecureDesktop.Services
             int matchCount = 0;
             int totalChecks = 0;
 
-            int step = Math.Max(3, Math.Min(pattern.Width, pattern.Height) / 12);
+            int step = Math.Max(5, Math.Min(pattern.Width, pattern.Height) / 10);
 
             for (int py = 0; py < pattern.Height; py += step)
             {
@@ -198,9 +226,9 @@ namespace SecureDesktop.Services
                     Color pp = pattern.GetPixel(px, py);
                     totalChecks++;
 
-                    if (Math.Abs(sp.R - pp.R) < 40 && 
-                        Math.Abs(sp.G - pp.G) < 40 && 
-                        Math.Abs(sp.B - pp.B) < 40)
+                    if (Math.Abs(sp.R - pp.R) < 50 && 
+                        Math.Abs(sp.G - pp.G) < 50 && 
+                        Math.Abs(sp.B - pp.B) < 50)
                     {
                         matchCount++;
                     }
