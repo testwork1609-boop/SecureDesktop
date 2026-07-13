@@ -35,76 +35,44 @@ namespace SecureDesktop.Services
 
             Task.Run(() =>
             {
-                // TEST: Natychmiast zgłoś znalezienie wszystkich patternów
-                Thread.Sleep(500);
-                
-                if (!_cts.Token.IsCancellationRequested && _currentPatterns != null)
-                {
-                    int screenWidth = System.Windows.Forms.Screen.PrimaryScreen.Bounds.Width;
-                    int screenHeight = System.Windows.Forms.Screen.PrimaryScreen.Bounds.Height;
-                    
-                    foreach (var pattern in _currentPatterns.Where(p => p.IsActive))
-                    {
-                        if (_cts.Token.IsCancellationRequested) break;
-                        
-                        var testLocation = new Rectangle(
-                            screenWidth / 2 - 150,
-                            screenHeight / 2 - 100,
-                            300,
-                            200
-                        );
-                        
-                        PatternFound?.Invoke(this, new PatternFoundEventArgs
-                        {
-                            Pattern = pattern,
-                            Location = testLocation,
-                            Confidence = 1.0
-                        });
-                    }
-                }
-
-                // Normalne skanowanie
                 while (!_cts.Token.IsCancellationRequested)
-{
-    try
-    {
-        using (var screenshot = CaptureScreen())
-        {
-            if (screenshot != null && _currentPatterns != null)
-            {
-                foreach (var pattern in _currentPatterns.Where(p => p.IsActive))
                 {
-                    if (_cts.Token.IsCancellationRequested) break;
-                    
-                    var location = FindPatternOnScreen(screenshot, pattern);
-                    
-                    if (location != Rectangle.Empty)
+                    try
                     {
-                        PatternFound?.Invoke(this, new PatternFoundEventArgs
+                        using (var screenshot = CaptureScreen())
                         {
-                            Pattern = pattern,
-                            Location = location,
-                            Confidence = 0.95
-                        });
+                            if (screenshot != null && _currentPatterns != null)
+                            {
+                                foreach (var pattern in _currentPatterns.Where(p => p.IsActive))
+                                {
+                                    if (_cts.Token.IsCancellationRequested) break;
+                                    
+                                    var location = FindPatternOnScreen(screenshot, pattern);
+                                    
+                                    if (location != Rectangle.Empty)
+                                    {
+                                        PatternFound?.Invoke(this, new PatternFoundEventArgs
+                                        {
+                                            Pattern = pattern,
+                                            Location = location,
+                                            Confidence = 0.95
+                                        });
+                                    }
+                                }
+                            }
+                        }
                     }
+                    catch { }
+                    
+                    Thread.Sleep(500);
                 }
-            }
-        }
-    }
-    catch { }
-    
-    Thread.Sleep(500);
-}
             }, _cts.Token);
         }
 
         public void Stop()
         {
-            if (!_isRunning) return;
-            
             _cts?.Cancel();
             _isRunning = false;
-            _currentPatterns = null;
         }
 
         private Bitmap CaptureScreen()
@@ -113,18 +81,13 @@ namespace SecureDesktop.Services
             {
                 var bounds = System.Windows.Forms.Screen.PrimaryScreen.Bounds;
                 var bitmap = new Bitmap(bounds.Width, bounds.Height, PixelFormat.Format24bppRgb);
-                
                 using (var g = Graphics.FromImage(bitmap))
                 {
                     g.CopyFromScreen(bounds.X, bounds.Y, 0, 0, bounds.Size);
                 }
-                
                 return bitmap;
             }
-            catch
-            {
-                return null;
-            }
+            catch { return null; }
         }
 
         private Rectangle FindPatternOnScreen(Bitmap screenshot, Pattern pattern)
@@ -145,7 +108,6 @@ namespace SecureDesktop.Services
                         for (int x = 0; x < screenshot.Width - patternBmp.Width; x += 20)
                         {
                             double similarity = CompareRegions(screenshot, patternBmp, x, y);
-                            
                             if (similarity >= _matchThreshold)
                             {
                                 return new Rectangle(x, y, patternBmp.Width, patternBmp.Height);
@@ -176,14 +138,8 @@ namespace SecureDesktop.Services
                     
                     totalChecks++;
                     
-                    int diffR = Math.Abs(sp.R - pp.R);
-                    int diffG = Math.Abs(sp.G - pp.G);
-                    int diffB = Math.Abs(sp.B - pp.B);
-                    
-                    if (diffR < 40 && diffG < 40 && diffB < 40)
-                    {
+                    if (Math.Abs(sp.R - pp.R) < 40 && Math.Abs(sp.G - pp.G) < 40 && Math.Abs(sp.B - pp.B) < 40)
                         matchCount++;
-                    }
                 }
             }
 

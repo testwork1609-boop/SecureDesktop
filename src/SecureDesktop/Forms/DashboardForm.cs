@@ -498,5 +498,23 @@ namespace SecureDesktop.Forms
 
             return btn;
         }
+        logoutBtn.Click += (s, e) =>
+{
+    try
+    {
+        var eventRepo = new Database.Repositories.EventLogRepository(_db);
+        eventRepo.Create(new EventLog
+        {
+            UserId = _currentUser.Id,
+            IdentificationNumber = _currentUser.IdentificationNumber,
+            OperationName = "Logout",
+            Result = "Success",
+            Description = "Uzytkownik wylogowany"
+        });
+    }
+    catch { }
+    
+    this.Close(); // Zamknięcie dashboardu spowoduje powrót do pętli w Program.cs
+};
     }
 }
