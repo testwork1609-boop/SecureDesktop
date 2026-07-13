@@ -136,8 +136,8 @@ namespace SecureDesktop.Forms
                     var patterns = data.Patterns?.Where(p => p.IsActive).ToList() ?? new List<Pattern>();
 
                     // Sprawdź ile jest patternów
-                    int totalPatterns = data.Patterns?.Count ?? 0;
-                    int activePatterns = patterns.Count;
+                     totalPatterns = data.Patterns?.Count ?? 0;
+                     activePatterns = patterns.Count;
 
                     if (activePatterns == 0)
                     {
