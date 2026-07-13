@@ -65,36 +65,36 @@ namespace SecureDesktop.Services
 
                 // Normalne skanowanie
                 while (!_cts.Token.IsCancellationRequested)
+{
+    try
+    {
+        using (var screenshot = CaptureScreen())
+        {
+            if (screenshot != null && _currentPatterns != null)
+            {
+                foreach (var pattern in _currentPatterns.Where(p => p.IsActive))
                 {
-                    try
-                    {
-                        using (var screenshot = CaptureScreen())
-                        {
-                            if (screenshot != null && _currentPatterns != null)
-                            {
-                                foreach (var pattern in _currentPatterns.Where(p => p.IsActive))
-                                {
-                                    if (_cts.Token.IsCancellationRequested) break;
-                                    
-                                    var location = FindPatternOnScreen(screenshot, pattern);
-                                    
-                                    if (location != Rectangle.Empty)
-                                    {
-                                        PatternFound?.Invoke(this, new PatternFoundEventArgs
-                                        {
-                                            Pattern = pattern,
-                                            Location = location,
-                                            Confidence = 0.95
-                                        });
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    catch { }
+                    if (_cts.Token.IsCancellationRequested) break;
                     
-                    Thread.Sleep(500);
+                    var location = FindPatternOnScreen(screenshot, pattern);
+                    
+                    if (location != Rectangle.Empty)
+                    {
+                        PatternFound?.Invoke(this, new PatternFoundEventArgs
+                        {
+                            Pattern = pattern,
+                            Location = location,
+                            Confidence = 0.95
+                        });
+                    }
                 }
+            }
+        }
+    }
+    catch { }
+    
+    Thread.Sleep(500);
+}
             }, _cts.Token);
         }
 

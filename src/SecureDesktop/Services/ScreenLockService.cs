@@ -201,23 +201,24 @@ namespace SecureDesktop.Services
         }
 
         private void CleanupPatternService()
+{
+    if (_patternService != null)
+    {
+        try
         {
-            if (_patternService != null)
-            {
-                try
-                {
-                    _patternService.PatternFound -= OnPatternFound;
-                    _patternService.PatternLost -= OnPatternLost;
-                    _patternService.Stop();
-                    _patternService.Dispose();
-                }
-                catch { }
-                finally
-                {
-                    _patternService = null;
-                }
-            }
+            _patternService.PatternFound -= OnPatternFound;
+            _patternService.PatternLost -= OnPatternLost;
+            _patternService.Stop();
+            _patternService.Dispose();
         }
+        catch { }
+        finally
+        {
+            _patternService = null;
+        }
+    }
+    // NIE CZYŚĆ PATTERNÓW Z BAZY!
+}}
 
         protected virtual void OnLockActivated()
         {
