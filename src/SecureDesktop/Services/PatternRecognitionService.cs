@@ -17,13 +17,15 @@ namespace SecureDesktop.Services
         private CancellationTokenSource _cts;
         private bool _isRunning;
         private List<Pattern> _currentPatterns;
+        private Dictionary<int, Rectangle> _lastFoundLocations;
 
         public event EventHandler<PatternFoundEventArgs> PatternFound;
         public event EventHandler<PatternLostEventArgs> PatternLost;
 
-        public PatternRecognitionService(double matchThreshold = 0.60)
+        public PatternRecognitionService(double matchThreshold = 0.55)
         {
             _matchThreshold = matchThreshold;
+            _lastFoundLocations = new Dictionary<int, Rectangle>();
         }
 
         public void Start(List<Pattern> patterns)
@@ -31,6 +33,7 @@ namespace SecureDesktop.Services
             if (_isRunning) return;
             
             _currentPatterns = patterns;
+            _lastFoundLocations.Clear();
             _cts = new CancellationTokenSource();
             _isRunning = true;
 
@@ -52,12 +55,32 @@ namespace SecureDesktop.Services
                                     
                                     if (location != Rectangle.Empty)
                                     {
-                                        PatternFound?.Invoke(this, new PatternFoundEventArgs
+                                        // Sprawdź czy lokalizacja się zmieniła
+                                        if (!_lastFoundLocations.ContainsKey(pattern.Id) ||
+                                            _lastFoundLocations[pattern.Id] != location)
                                         {
-                                            Pattern = pattern,
-                                            Location = location,
-                                            Confidence = 0.95
-                                        });
+                                            _lastFoundLocations[pattern.Id] = location;
+                                            
+                                            PatternFound?.Invoke(this, new PatternFoundEventArgs
+                                            {
+                                                Pattern = pattern,
+                                                Location = location,
+                                                Confidence = 0.95
+                                            });
+                                        }
+                                    }
+                                    else
+                                    {
+                                        // Pattern zgubiony
+                                        if (_lastFoundLocations.ContainsKey(pattern.Id))
+                                        {
+                                            _lastFoundLocations.Remove(pattern.Id);
+                                            
+                                            PatternLost?.Invoke(this, new PatternLostEventArgs
+                                            {
+                                                Pattern = pattern
+                                            });
+                                        }
                                     }
                                 }
                             }
@@ -76,6 +99,7 @@ namespace SecureDesktop.Services
             _cts?.Cancel();
             _isRunning = false;
             _currentPatterns = null;
+            _lastFoundLocations.Clear();
         }
 
         private Bitmap CaptureScreen()
@@ -103,7 +127,10 @@ namespace SecureDesktop.Services
                 using (var ms = new MemoryStream(pattern.ImageData))
                 using (var originalPattern = new Bitmap(ms))
                 {
-                    // SKALUJ pattern do różnych rozmiarów i szukaj
+                    double bestMatch = 0;
+                    int bestX = 0, bestY = 0, bestW = 0, bestH = 0;
+
+                    // Skaluj pattern
                     double[] scales = { 0.8, 0.9, 1.0, 1.1, 1.2 };
                     
                     foreach (double scale in scales)
@@ -111,7 +138,7 @@ namespace SecureDesktop.Services
                         int newW = (int)(originalPattern.Width * scale);
                         int newH = (int)(originalPattern.Height * scale);
                         
-                        if (newW < 10 || newH < 10) continue;
+                        if (newW < 5 || newH < 5) continue;
                         if (newW > screenshot.Width || newH > screenshot.Height) continue;
 
                         using (var scaledPattern = new Bitmap(newW, newH))
@@ -122,49 +149,33 @@ namespace SecureDesktop.Services
                                 g.DrawImage(originalPattern, 0, 0, newW, newH);
                             }
 
-                            var result = ScanForPattern(screenshot, scaledPattern);
-                            if (result != Rectangle.Empty)
-                                return result;
+                            int step = Math.Max(5, newW / 10);
+                            
+                            for (int y = 0; y < screenshot.Height - newH; y += step)
+                            {
+                                for (int x = 0; x < screenshot.Width - newW; x += step)
+                                {
+                                    double similarity = ComparePixels(screenshot, scaledPattern, x, y);
+                                    if (similarity > bestMatch)
+                                    {
+                                        bestMatch = similarity;
+                                        bestX = x;
+                                        bestY = y;
+                                        bestW = newW;
+                                        bestH = newH;
+                                    }
+                                }
+                            }
                         }
+                    }
+
+                    if (bestMatch >= _matchThreshold)
+                    {
+                        return new Rectangle(bestX, bestY, bestW, bestH);
                     }
                 }
             }
             catch { }
-
-            return Rectangle.Empty;
-        }
-
-        private Rectangle ScanForPattern(Bitmap screenshot, Bitmap pattern)
-        {
-            double bestMatch = 0;
-            int bestX = 0, bestY = 0;
-
-            int step = Math.Max(5, Math.Min(pattern.Width, pattern.Height) / 10);
-
-            for (int y = 0; y < screenshot.Height - pattern.Height; y += step)
-            {
-                for (int x = 0; x < screenshot.Width - pattern.Width; x += step)
-                {
-                    double similarity = ComparePixels(screenshot, pattern, x, y);
-                    if (similarity > bestMatch)
-                    {
-                        bestMatch = similarity;
-                        bestX = x;
-                        bestY = y;
-
-                        // Szybkie wyjście jeśli znaleziono bardzo dobre dopasowanie
-                        if (bestMatch > 0.85)
-                        {
-                            return new Rectangle(bestX, bestY, pattern.Width, pattern.Height);
-                        }
-                    }
-                }
-            }
-
-            if (bestMatch >= _matchThreshold)
-            {
-                return new Rectangle(bestX, bestY, pattern.Width, pattern.Height);
-            }
 
             return Rectangle.Empty;
         }
@@ -174,7 +185,7 @@ namespace SecureDesktop.Services
             int matchCount = 0;
             int totalChecks = 0;
 
-            int step = Math.Max(3, Math.Min(pattern.Width, pattern.Height) / 15);
+            int step = Math.Max(3, Math.Min(pattern.Width, pattern.Height) / 12);
 
             for (int py = 0; py < pattern.Height; py += step)
             {
@@ -187,9 +198,9 @@ namespace SecureDesktop.Services
                     Color pp = pattern.GetPixel(px, py);
                     totalChecks++;
 
-                    if (Math.Abs(sp.R - pp.R) < 35 && 
-                        Math.Abs(sp.G - pp.G) < 35 && 
-                        Math.Abs(sp.B - pp.B) < 35)
+                    if (Math.Abs(sp.R - pp.R) < 40 && 
+                        Math.Abs(sp.G - pp.G) < 40 && 
+                        Math.Abs(sp.B - pp.B) < 40)
                     {
                         matchCount++;
                     }

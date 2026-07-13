@@ -32,7 +32,6 @@ namespace SecureDesktop.Forms
             this.AllowTransparency = true;
             this.DoubleBuffered = true;
 
-            // Panel na dole
             var bottomPanel = new Panel
             {
                 Location = new Point(0, this.Height - 80),
@@ -88,13 +87,10 @@ namespace SecureDesktop.Forms
 
         public void AddUnlockRegion(Rectangle region)
         {
-            System.Diagnostics.Debug.WriteLine($"AddUnlockRegion called: {region}");
-            
-            if (!_unlockRegions.Contains(region))
-            {
-                _unlockRegions.Add(region);
-                this.Invalidate();
-            }
+            // USUŃ stare obszary, dodaj tylko ten NOWY
+            _unlockRegions.Clear();
+            _unlockRegions.Add(region);
+            this.Invalidate();
         }
 
         public void RemoveUnlockRegions()
@@ -109,31 +105,14 @@ namespace SecureDesktop.Forms
 
             foreach (var region in _unlockRegions)
             {
-                // Wypełnij przezroczystym kolorem
                 using (var brush = new SolidBrush(Color.FromArgb(1, 255, 255, 255)))
                 {
                     e.Graphics.FillRectangle(brush, region);
                 }
 
-                // Narysuj zieloną ramkę
-                using (var pen = new Pen(Color.FromArgb(255, 45, 165, 90), 4))
+                using (var pen = new Pen(Color.FromArgb(255, 45, 165, 90), 3))
                 {
                     e.Graphics.DrawRectangle(pen, region);
-                }
-
-                // Napis "ODBLOKOWANE"
-                using (var font = new Font("Segoe UI", 12, FontStyle.Bold))
-                {
-                    var text = "ODBLOKOWANE";
-                    var textSize = e.Graphics.MeasureString(text, font);
-                    var textX = region.X + (region.Width - (int)textSize.Width) / 2;
-                    var textY = region.Y - 25;
-                    if (textY < 0) textY = region.Y + 5;
-                    
-                    // Tło dla tekstu
-                    var textRect = new Rectangle((int)textX - 5, (int)textY - 2, (int)textSize.Width + 10, (int)textSize.Height + 4);
-                    e.Graphics.FillRectangle(Brushes.Black, textRect);
-                    e.Graphics.DrawString(text, font, Brushes.LimeGreen, textX, textY);
                 }
             }
         }
@@ -142,7 +121,6 @@ namespace SecureDesktop.Forms
         {
             const int WM_NCHITTEST = 0x0084;
             const int HTTRANSPARENT = -1;
-            const int HTCLIENT = 1;
 
             if (m.Msg == WM_NCHITTEST)
             {
@@ -157,9 +135,6 @@ namespace SecureDesktop.Forms
                         return;
                     }
                 }
-
-                m.Result = (IntPtr)HTCLIENT;
-                return;
             }
 
             base.WndProc(ref m);
@@ -213,24 +188,13 @@ namespace SecureDesktop.Forms
 
             passBox.KeyDown += (s, args) =>
             {
-                if (args.KeyCode == Keys.Enter)
-                {
-                    args.SuppressKeyPress = true;
-                    unlockAction();
-                }
+                if (args.KeyCode == Keys.Enter) { args.SuppressKeyPress = true; unlockAction(); }
             };
 
             dialog.KeyDown += (s, args) =>
             {
-                if (args.KeyCode == Keys.Enter)
-                {
-                    args.SuppressKeyPress = true;
-                    unlockAction();
-                }
-                else if (args.KeyCode == Keys.Escape)
-                {
-                    dialog.Close();
-                }
+                if (args.KeyCode == Keys.Enter) { args.SuppressKeyPress = true; unlockAction(); }
+                else if (args.KeyCode == Keys.Escape) dialog.Close();
             };
 
             dialog.Controls.AddRange(new Control[] { icon, title, passBox, errorLabel, unlockBtn, cancelBtn });
