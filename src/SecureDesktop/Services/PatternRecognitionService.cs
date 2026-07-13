@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
@@ -20,7 +21,7 @@ namespace SecureDesktop.Services
         public event EventHandler<PatternFoundEventArgs> PatternFound;
         public event EventHandler<PatternLostEventArgs> PatternLost;
 
-        public PatternRecognitionService(double matchThreshold = 0.70)
+        public PatternRecognitionService(double matchThreshold = 0.60)
         {
             _matchThreshold = matchThreshold;
         }
@@ -64,7 +65,7 @@ namespace SecureDesktop.Services
                     }
                     catch { }
                     
-                    Thread.Sleep(300);
+                    Thread.Sleep(500);
                 }
             }, _cts.Token);
         }
@@ -100,36 +101,70 @@ namespace SecureDesktop.Services
                     return Rectangle.Empty;
 
                 using (var ms = new MemoryStream(pattern.ImageData))
-                using (var patternBmp = new Bitmap(ms))
+                using (var originalPattern = new Bitmap(ms))
                 {
-                    if (patternBmp.Width > screenshot.Width || patternBmp.Height > screenshot.Height)
-                        return Rectangle.Empty;
-
-                    double bestMatch = 0;
-                    int bestX = 0, bestY = 0;
-
-                    // Skanuj co 10 pikseli dla wydajności
-                    for (int y = 0; y < screenshot.Height - patternBmp.Height; y += 10)
+                    // SKALUJ pattern do różnych rozmiarów i szukaj
+                    double[] scales = { 0.8, 0.9, 1.0, 1.1, 1.2 };
+                    
+                    foreach (double scale in scales)
                     {
-                        for (int x = 0; x < screenshot.Width - patternBmp.Width; x += 10)
+                        int newW = (int)(originalPattern.Width * scale);
+                        int newH = (int)(originalPattern.Height * scale);
+                        
+                        if (newW < 10 || newH < 10) continue;
+                        if (newW > screenshot.Width || newH > screenshot.Height) continue;
+
+                        using (var scaledPattern = new Bitmap(newW, newH))
                         {
-                            double similarity = ComparePixels(screenshot, patternBmp, x, y);
-                            if (similarity > bestMatch)
+                            using (var g = Graphics.FromImage(scaledPattern))
                             {
-                                bestMatch = similarity;
-                                bestX = x;
-                                bestY = y;
+                                g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                                g.DrawImage(originalPattern, 0, 0, newW, newH);
                             }
-                        }
-                    }
 
-                    if (bestMatch >= _matchThreshold)
-                    {
-                        return new Rectangle(bestX, bestY, patternBmp.Width, patternBmp.Height);
+                            var result = ScanForPattern(screenshot, scaledPattern);
+                            if (result != Rectangle.Empty)
+                                return result;
+                        }
                     }
                 }
             }
             catch { }
+
+            return Rectangle.Empty;
+        }
+
+        private Rectangle ScanForPattern(Bitmap screenshot, Bitmap pattern)
+        {
+            double bestMatch = 0;
+            int bestX = 0, bestY = 0;
+
+            int step = Math.Max(5, Math.Min(pattern.Width, pattern.Height) / 10);
+
+            for (int y = 0; y < screenshot.Height - pattern.Height; y += step)
+            {
+                for (int x = 0; x < screenshot.Width - pattern.Width; x += step)
+                {
+                    double similarity = ComparePixels(screenshot, pattern, x, y);
+                    if (similarity > bestMatch)
+                    {
+                        bestMatch = similarity;
+                        bestX = x;
+                        bestY = y;
+
+                        // Szybkie wyjście jeśli znaleziono bardzo dobre dopasowanie
+                        if (bestMatch > 0.85)
+                        {
+                            return new Rectangle(bestX, bestY, pattern.Width, pattern.Height);
+                        }
+                    }
+                }
+            }
+
+            if (bestMatch >= _matchThreshold)
+            {
+                return new Rectangle(bestX, bestY, pattern.Width, pattern.Height);
+            }
 
             return Rectangle.Empty;
         }
@@ -139,10 +174,11 @@ namespace SecureDesktop.Services
             int matchCount = 0;
             int totalChecks = 0;
 
-            // Porównuj co 5 pikseli
-            for (int py = 0; py < pattern.Height; py += 5)
+            int step = Math.Max(3, Math.Min(pattern.Width, pattern.Height) / 15);
+
+            for (int py = 0; py < pattern.Height; py += step)
             {
-                for (int px = 0; px < pattern.Width; px += 5)
+                for (int px = 0; px < pattern.Width; px += step)
                 {
                     if (startX + px >= source.Width || startY + py >= source.Height)
                         return 0;
@@ -151,10 +187,9 @@ namespace SecureDesktop.Services
                     Color pp = pattern.GetPixel(px, py);
                     totalChecks++;
 
-                    // Tolerancja 30 dla każdego kanału
-                    if (Math.Abs(sp.R - pp.R) < 30 && 
-                        Math.Abs(sp.G - pp.G) < 30 && 
-                        Math.Abs(sp.B - pp.B) < 30)
+                    if (Math.Abs(sp.R - pp.R) < 35 && 
+                        Math.Abs(sp.G - pp.G) < 35 && 
+                        Math.Abs(sp.B - pp.B) < 35)
                     {
                         matchCount++;
                     }
