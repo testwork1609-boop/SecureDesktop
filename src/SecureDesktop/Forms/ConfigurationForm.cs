@@ -5,6 +5,7 @@ using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
 using System.Windows.Forms;
+using Newtonsoft.Json;
 using SecureDesktop.Database;
 using SecureDesktop.Models;
 
@@ -12,7 +13,6 @@ namespace SecureDesktop.Forms
 {
     public class ConfigurationForm : Form
     {
-        // Kolorystyka
         private readonly Color primaryColor = Color.FromArgb(45, 165, 90);
         private readonly Color bgColor = Color.White;
         private readonly Color textColor = Color.FromArgb(30, 30, 30);
@@ -20,7 +20,6 @@ namespace SecureDesktop.Forms
         private readonly Color inputBg = Color.FromArgb(245, 245, 245);
         private readonly Color borderColor = Color.FromArgb(220, 220, 220);
 
-        // Kontrolki
         private TextBox _adminPasswordBox;
         private TextBox _backupPathBox;
         private TextBox _checkpointPathBox;
@@ -32,7 +31,6 @@ namespace SecureDesktop.Forms
         private CheckBox _autoStartCheck;
         private CheckBox _trayCheck;
         private PictureBox _patternPreviewBox;
-        
         private List<Pattern> _patterns;
         private DatabaseInitializer _db;
 
@@ -54,8 +52,7 @@ namespace SecureDesktop.Forms
             }
             catch (Exception ex)
             {
-                MessageBox.Show("Błąd inicjalizacji bazy: " + ex.Message, "Błąd",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show("Blad inicjalizacji bazy: " + ex.Message, "Blad", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -70,7 +67,6 @@ namespace SecureDesktop.Forms
             this.MaximizeBox = false;
             this.Font = new Font("Segoe UI", 9);
 
-            // === NAGŁÓWEK ===
             var headerPanel = new Panel
             {
                 Location = new Point(0, 0),
@@ -80,7 +76,7 @@ namespace SecureDesktop.Forms
 
             var headerTitle = new Label
             {
-                Text = "⚙️  Konfiguracja SecureDesktop",
+                Text = "Konfiguracja SecureDesktop",
                 Font = new Font("Segoe UI", 16, FontStyle.Bold),
                 Location = new Point(20, 12),
                 AutoSize = true,
@@ -89,7 +85,6 @@ namespace SecureDesktop.Forms
 
             headerPanel.Controls.Add(headerTitle);
 
-            // === ZAKŁADKI ===
             var tabControl = new TabControl
             {
                 Location = new Point(10, 65),
@@ -97,7 +92,7 @@ namespace SecureDesktop.Forms
                 Appearance = TabAppearance.FlatButtons
             };
 
-            var tabGeneral = new TabPage("  Ogólne  ") { BackColor = bgColor };
+            var tabGeneral = new TabPage("  Ogolne  ") { BackColor = bgColor };
             BuildGeneralTab(tabGeneral);
 
             var tabPatterns = new TabPage("  Patterny  ") { BackColor = bgColor };
@@ -114,10 +109,9 @@ namespace SecureDesktop.Forms
             tabControl.TabPages.Add(tabCheckpoint);
             tabControl.TabPages.Add(tabBackup);
 
-            // === PRZYCISKI NA DOLE ===
             var saveBtn = new Button
             {
-                Text = "💾  Zapisz wszystkie ustawienia",
+                Text = "Zapisz wszystkie ustawienia",
                 Location = new Point(250, 565),
                 Size = new Size(220, 38),
                 BackColor = primaryColor,
@@ -147,24 +141,23 @@ namespace SecureDesktop.Forms
             this.Controls.AddRange(new Control[] { headerPanel, tabControl, saveBtn, cancelBtn });
         }
 
-        // ==================== ZAKŁADKA OGÓLNE ====================
         private void BuildGeneralTab(TabPage tab)
         {
             int y = 15;
 
             var passLabel = new Label
             {
-                Text = "Hasło administratora:",
+                Text = "Haslo administratora:",
                 Location = new Point(20, y),
                 AutoSize = true,
                 Font = new Font("Segoe UI", 10)
             };
-            
+
             _adminPasswordBox = new TextBox
             {
                 Location = new Point(220, y - 3),
                 Size = new Size(200, 25),
-                PasswordChar = '●',
+                PasswordChar = '*',
                 BackColor = inputBg,
                 BorderStyle = BorderStyle.FixedSingle,
                 Text = "admin"
@@ -192,13 +185,11 @@ namespace SecureDesktop.Forms
             tab.Controls.AddRange(new Control[] { passLabel, _adminPasswordBox, _autoStartCheck, _trayCheck });
         }
 
-        // ==================== ZAKŁADKA PATTERNY ====================
         private void BuildPatternsTab(TabPage tab)
         {
-            // Lewa strona - lista
             var listLabel = new Label
             {
-                Text = "📋  Lista wzorców:",
+                Text = "Lista wzorcow:",
                 Location = new Point(15, 15),
                 Font = new Font("Segoe UI", 11, FontStyle.Bold),
                 AutoSize = true,
@@ -215,10 +206,9 @@ namespace SecureDesktop.Forms
                 BorderStyle = BorderStyle.FixedSingle
             };
 
-            // Przyciski pod listą
             var addBtn = new Button
             {
-                Text = "➕  Zaznacz Pattern z ekranu",
+                Text = "Zaznacz Pattern z ekranu",
                 Location = new Point(15, 340),
                 Size = new Size(170, 35),
                 BackColor = primaryColor,
@@ -232,7 +222,7 @@ namespace SecureDesktop.Forms
 
             var deleteBtn = new Button
             {
-                Text = "🗑️  Usuń zaznaczony",
+                Text = "Usun zaznaczony",
                 Location = new Point(195, 340),
                 Size = new Size(170, 35),
                 BackColor = Color.White,
@@ -245,10 +235,9 @@ namespace SecureDesktop.Forms
             deleteBtn.FlatAppearance.BorderSize = 1;
             deleteBtn.Click += DeleteSelectedPattern;
 
-            // Prawa strona - podgląd
             var previewLabel = new Label
             {
-                Text = "🔍  Podgląd:",
+                Text = "Podglad:",
                 Location = new Point(390, 15),
                 Font = new Font("Segoe UI", 11, FontStyle.Bold),
                 AutoSize = true,
@@ -264,7 +253,6 @@ namespace SecureDesktop.Forms
                 SizeMode = PictureBoxSizeMode.Zoom
             };
 
-            // Kliknięcie na liście pokazuje podgląd
             _patternListBox.SelectedIndexChanged += (s, e) =>
             {
                 if (_patternListBox.SelectedIndex >= 0 && _patternListBox.SelectedIndex < _patterns.Count)
@@ -279,45 +267,34 @@ namespace SecureDesktop.Forms
                                 _patternPreviewBox.Image = Image.FromStream(ms);
                             }
                         }
-                        catch
-                        {
-                            _patternPreviewBox.Image = null;
-                        }
+                        catch { _patternPreviewBox.Image = null; }
                     }
-                    else
-                    {
-                        _patternPreviewBox.Image = null;
-                    }
-
-                    // Aktualizuj ustawienia
+                    else { _patternPreviewBox.Image = null; }
                     _marginBox.Value = pattern.MarginTop;
                 }
             };
 
-            // Ustawienia po prawej
             var settingsLabel = new Label
             {
-                Text = "⚙️  Ustawienia wykrywania:",
+                Text = "Ustawienia wykrywania:",
                 Location = new Point(390, 260),
                 Font = new Font("Segoe UI", 11, FontStyle.Bold),
                 AutoSize = true,
                 ForeColor = primaryColor
             };
 
-            var thresholdLabel = new Label { Text = "Próg zgodności (%):", Location = new Point(390, 295), AutoSize = true };
+            var thresholdLabel = new Label { Text = "Prog zgodnosci (%):", Location = new Point(390, 295), AutoSize = true };
             _thresholdBox = new NumericUpDown
             {
-                Location = new Point(530, 292),
-                Size = new Size(70, 25),
+                Location = new Point(530, 292), Size = new Size(70, 25),
                 Minimum = 50, Maximum = 100, Value = 95,
                 BackColor = inputBg, BorderStyle = BorderStyle.FixedSingle
             };
 
-            var intervalLabel = new Label { Text = "Interwał (ms):", Location = new Point(390, 325), AutoSize = true };
+            var intervalLabel = new Label { Text = "Interwal (ms):", Location = new Point(390, 325), AutoSize = true };
             _intervalBox = new NumericUpDown
             {
-                Location = new Point(530, 322),
-                Size = new Size(70, 25),
+                Location = new Point(530, 322), Size = new Size(70, 25),
                 Minimum = 100, Maximum = 5000, Value = 500, Increment = 100,
                 BackColor = inputBg, BorderStyle = BorderStyle.FixedSingle
             };
@@ -325,8 +302,7 @@ namespace SecureDesktop.Forms
             var marginLabel = new Label { Text = "Margines (px):", Location = new Point(390, 355), AutoSize = true };
             _marginBox = new NumericUpDown
             {
-                Location = new Point(530, 352),
-                Size = new Size(70, 25),
+                Location = new Point(530, 352), Size = new Size(70, 25),
                 Minimum = 0, Maximum = 100, Value = 10,
                 BackColor = inputBg, BorderStyle = BorderStyle.FixedSingle
             };
@@ -334,12 +310,9 @@ namespace SecureDesktop.Forms
             var applySettingsBtn = new Button
             {
                 Text = "Zastosuj do zaznaczonego",
-                Location = new Point(390, 390),
-                Size = new Size(210, 30),
-                BackColor = primaryColor,
-                ForeColor = Color.White,
-                FlatStyle = FlatStyle.Flat,
-                Cursor = Cursors.Hand
+                Location = new Point(390, 390), Size = new Size(210, 30),
+                BackColor = primaryColor, ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand
             };
             applySettingsBtn.FlatAppearance.BorderSize = 0;
             applySettingsBtn.Click += (s, e) =>
@@ -353,12 +326,10 @@ namespace SecureDesktop.Forms
                     p.MarginRight = (int)_marginBox.Value;
                     p.UpdatedAt = DateTime.Now;
                     RefreshPatternList();
-                    MessageBox.Show("✅ Ustawienia zastosowane!", "OK");
+                    SavePatternsToDatabase();
+                    MessageBox.Show("Zastosowano!", "OK");
                 }
-                else
-                {
-                    MessageBox.Show("Zaznacz wzorzec na liście.", "Info");
-                }
+                else { MessageBox.Show("Zaznacz wzorzec na liscie.", "Info"); }
             };
 
             tab.Controls.AddRange(new Control[] { listLabel, _patternListBox, addBtn, deleteBtn,
@@ -367,12 +338,11 @@ namespace SecureDesktop.Forms
                                                   marginLabel, _marginBox, applySettingsBtn });
         }
 
-        // ==================== ZAKŁADKA CHECKPOINT ====================
         private void BuildCheckpointTab(TabPage tab)
         {
             int y = 20;
 
-            var pathLabel = new Label { Text = "Ścieżka do pliku EXE:", Location = new Point(20, y), AutoSize = true, Font = new Font("Segoe UI", 10) };
+            var pathLabel = new Label { Text = "Sciezka do pliku EXE:", Location = new Point(20, y), AutoSize = true, Font = new Font("Segoe UI", 10) };
             y += 25;
 
             _checkpointPathBox = new TextBox
@@ -382,7 +352,7 @@ namespace SecureDesktop.Forms
             };
             var pathBtn = new Button
             {
-                Text = "Przeglądaj", Location = new Point(480, y), Size = new Size(90, 25),
+                Text = "Przegladaj", Location = new Point(480, y), Size = new Size(90, 25),
                 BackColor = primaryColor, ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand
             };
             pathBtn.FlatAppearance.BorderSize = 0;
@@ -396,7 +366,7 @@ namespace SecureDesktop.Forms
 
             var testBtn = new Button
             {
-                Text = "▶️  Testuj uruchomienie",
+                Text = "Testuj uruchomienie",
                 Location = new Point(150, y), Size = new Size(200, 40),
                 BackColor = primaryColor, ForeColor = Color.White, FlatStyle = FlatStyle.Flat,
                 Font = new Font("Segoe UI", 10, FontStyle.Bold), Cursor = Cursors.Hand
@@ -405,13 +375,12 @@ namespace SecureDesktop.Forms
             testBtn.Click += (s, e) =>
             {
                 try { System.Diagnostics.Process.Start(_checkpointPathBox.Text, _checkpointArgsBox.Text); }
-                catch (Exception ex) { MessageBox.Show("Błąd: " + ex.Message); }
+                catch (Exception ex) { MessageBox.Show("Blad: " + ex.Message); }
             };
 
             tab.Controls.AddRange(new Control[] { pathLabel, _checkpointPathBox, pathBtn, argsLabel, _checkpointArgsBox, testBtn });
         }
 
-        // ==================== ZAKŁADKA BACKUP ====================
         private void BuildBackupTab(TabPage tab)
         {
             int y = 20;
@@ -426,7 +395,7 @@ namespace SecureDesktop.Forms
             };
             var browseBtn = new Button
             {
-                Text = "Przeglądaj", Location = new Point(480, y), Size = new Size(90, 25),
+                Text = "Przegladaj", Location = new Point(480, y), Size = new Size(90, 25),
                 BackColor = primaryColor, ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand
             };
             browseBtn.FlatAppearance.BorderSize = 0;
@@ -435,7 +404,7 @@ namespace SecureDesktop.Forms
 
             var backupNowBtn = new Button
             {
-                Text = "💾  Wykonaj backup teraz",
+                Text = "Wykonaj backup teraz",
                 Location = new Point(150, y), Size = new Size(250, 40),
                 BackColor = primaryColor, ForeColor = Color.White, FlatStyle = FlatStyle.Flat,
                 Font = new Font("Segoe UI", 10, FontStyle.Bold), Cursor = Cursors.Hand
@@ -447,7 +416,7 @@ namespace SecureDesktop.Forms
                 if (File.Exists(source))
                 {
                     new Services.BackupService().CreateBackup(source, _backupPathBox.Text);
-                    MessageBox.Show("✅ Backup wykonany!", "OK");
+                    MessageBox.Show("Backup wykonany!", "OK");
                 }
                 else MessageBox.Show("Brak bazy danych.");
             };
@@ -455,35 +424,51 @@ namespace SecureDesktop.Forms
             tab.Controls.AddRange(new Control[] { backupLabel, _backupPathBox, browseBtn, backupNowBtn });
         }
 
-        // ==================== ZARZĄDZANIE PATTERNAMI ====================
         private void LoadPatternsFromDatabase()
         {
             try
             {
-                if (_db != null)
+                var dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
+
+                if (File.Exists(dbPath))
                 {
-                    _patterns = _db.GetData().Patterns ?? new List<Pattern>();
+                    var json = File.ReadAllText(dbPath);
+                    var data = JsonConvert.DeserializeObject<DatabaseData>(json);
+
+                    if (data != null && data.Patterns != null && data.Patterns.Count > 0)
+                    {
+                        _patterns = data.Patterns;
+                    }
+                    else
+                    {
+                        _patterns = new List<Pattern>
+                        {
+                            new Pattern
+                            {
+                                Id = 1,
+                                Name = "Przykladowy wzorzec",
+                                Description = "Kliknij 'Zaznacz Pattern z ekranu' aby dodac wlasny",
+                                IsActive = true,
+                                CreatedAt = DateTime.Now,
+                                MarginTop = 10, MarginBottom = 10, MarginLeft = 10, MarginRight = 10
+                            }
+                        };
+                        if (_db != null)
+                        {
+                            _db.GetData().Patterns = _patterns;
+                            _db.Save();
+                        }
+                    }
+                }
+                else
+                {
+                    _patterns = new List<Pattern>();
                 }
             }
-            catch
+            catch (Exception ex)
             {
                 _patterns = new List<Pattern>();
-            }
-
-            if (_patterns.Count == 0)
-            {
-                _patterns.Add(new Pattern
-                {
-                    Id = 1,
-                    Name = "Przykładowy wzorzec",
-                    Description = "Kliknij 'Zaznacz Pattern z ekranu' aby dodać własny",
-                    IsActive = true,
-                    CreatedAt = DateTime.Now,
-                    MarginTop = 10,
-                    MarginBottom = 10,
-                    MarginLeft = 10,
-                    MarginRight = 10
-                });
+                System.Diagnostics.Debug.WriteLine("Load patterns error: " + ex.Message);
             }
 
             RefreshPatternList();
@@ -497,12 +482,23 @@ namespace SecureDesktop.Forms
                 {
                     _db.GetData().Patterns = _patterns;
                     _db.Save();
+
+                    System.Threading.Thread.Sleep(100);
+
+                    var dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
+                    if (File.Exists(dbPath))
+                    {
+                        var json = File.ReadAllText(dbPath);
+                        if (!json.Contains("\"Patterns\""))
+                        {
+                            MessageBox.Show("UWAGA: Patterny nie zostaly zapisane do pliku!", "Blad zapisu");
+                        }
+                    }
                 }
             }
             catch (Exception ex)
             {
-                MessageBox.Show("Błąd zapisu patternów: " + ex.Message, "Błąd",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show("Blad zapisu patternow: " + ex.Message, "Blad");
             }
         }
 
@@ -514,17 +510,15 @@ namespace SecureDesktop.Forms
                 string status = p.IsActive ? "✓" : "✗";
                 string name = (p.Name ?? "Bez nazwy").PadRight(25);
                 string desc = p.Description ?? "";
-                _patternListBox.Items.Add($"{status} {name} | {desc}");
+                _patternListBox.Items.Add(status + " " + name + " | " + desc);
             }
         }
 
         private void AddPatternFromScreen(object sender, EventArgs e)
         {
-            // Ukryj to okno
             this.Hide();
             System.Threading.Thread.Sleep(300);
 
-            // Przechwyć cały ekran
             var screenBounds = Screen.PrimaryScreen.Bounds;
             using (var screenshot = new Bitmap(screenBounds.Width, screenBounds.Height))
             {
@@ -533,7 +527,6 @@ namespace SecureDesktop.Forms
                     g.CopyFromScreen(screenBounds.X, screenBounds.Y, 0, 0, screenBounds.Size);
                 }
 
-                // Pokaż okno do zaznaczania
                 using (var selectionForm = new ScreenSelectionForm(screenshot))
                 {
                     if (selectionForm.ShowDialog() == DialogResult.OK)
@@ -541,7 +534,6 @@ namespace SecureDesktop.Forms
                         var selectedImage = selectionForm.SelectedImage;
                         if (selectedImage != null)
                         {
-                            // Zapytaj o nazwę
                             var nameDialog = new Form
                             {
                                 Text = "Nazwa wzorca",
@@ -554,7 +546,7 @@ namespace SecureDesktop.Forms
 
                             var nameLabel = new Label
                             {
-                                Text = "Podaj nazwę wzorca:",
+                                Text = "Podaj nazwe wzorca:",
                                 Location = new Point(20, 20),
                                 AutoSize = true,
                                 Font = new Font("Segoe UI", 10)
@@ -581,7 +573,6 @@ namespace SecureDesktop.Forms
                             {
                                 if (!string.IsNullOrWhiteSpace(nameBox.Text))
                                 {
-                                    // Konwertuj obraz do byte[]
                                     byte[] imageData;
                                     using (var ms = new MemoryStream())
                                     {
@@ -593,7 +584,7 @@ namespace SecureDesktop.Forms
                                     {
                                         Id = _patterns.Count > 0 ? _patterns.Max(p => p.Id) + 1 : 1,
                                         Name = nameBox.Text,
-                                        Description = $"Wzorzec dodany {DateTime.Now:yyyy-MM-dd HH:mm}",
+                                        Description = "Wzorzec dodany " + DateTime.Now.ToString("yyyy-MM-dd HH:mm"),
                                         ImageData = imageData,
                                         MarginTop = (int)_marginBox.Value,
                                         MarginBottom = (int)_marginBox.Value,
@@ -610,7 +601,7 @@ namespace SecureDesktop.Forms
                                 }
                                 else
                                 {
-                                    MessageBox.Show("Podaj nazwę wzorca.", "Info");
+                                    MessageBox.Show("Podaj nazwe wzorca.", "Info");
                                 }
                             };
 
@@ -621,7 +612,6 @@ namespace SecureDesktop.Forms
                 }
             }
 
-            // Pokaż ponownie okno konfiguracji
             this.Show();
         }
 
@@ -629,7 +619,7 @@ namespace SecureDesktop.Forms
         {
             if (_patternListBox.SelectedIndex >= 0)
             {
-                var result = MessageBox.Show("Czy na pewno usunąć zaznaczony wzorzec?", "Potwierdzenie",
+                var result = MessageBox.Show("Czy na pewno usunac zaznaczony wzorzec?", "Potwierdzenie",
                     MessageBoxButtons.YesNo, MessageBoxIcon.Question);
                 if (result == DialogResult.Yes)
                 {
@@ -641,21 +631,18 @@ namespace SecureDesktop.Forms
             }
             else
             {
-                MessageBox.Show("Zaznacz wzorzec do usunięcia.", "Info");
+                MessageBox.Show("Zaznacz wzorzec do usuniecia.", "Info");
             }
         }
 
         private void SaveAllSettings(object sender, EventArgs e)
         {
-            // Zapisz patterny
-            SavePatternsToDatabase();
-
-            // Zapisz ustawienia do bazy
             try
             {
                 if (_db != null)
                 {
                     var data = _db.GetData();
+                    data.Patterns = _patterns;
                     data.Settings["AdminPassword"] = _adminPasswordBox.Text;
                     data.Settings["BackupPath"] = _backupPathBox.Text;
                     data.Settings["CheckpointPath"] = _checkpointPathBox.Text;
@@ -667,23 +654,18 @@ namespace SecureDesktop.Forms
                     _db.Save();
                 }
 
-                MessageBox.Show("✅ Wszystkie ustawienia zostały zapisane!\n\n" +
-                    $"• Liczba patternów: {_patterns.Count}\n" +
-                    $"• Próg zgodności: {_thresholdBox.Value}%\n" +
-                    $"• Interwał: {_intervalBox.Value}ms",
+                MessageBox.Show("Wszystkie ustawienia zapisane!\n\nLiczba patternow: " + _patterns.Count,
                     "Sukces", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
             {
-                MessageBox.Show("Błąd zapisu: " + ex.Message, "Błąd",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show("Blad zapisu: " + ex.Message, "Blad", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
 
             this.Close();
         }
     }
 
-    // ==================== FORMULARZ DO ZAZNACZANIA NA EKRANIE ====================
     public class ScreenSelectionForm : Form
     {
         private Point _startPoint;
@@ -698,7 +680,7 @@ namespace SecureDesktop.Forms
         public ScreenSelectionForm(Bitmap screenshot)
         {
             _screenshot = screenshot;
-            
+
             this.FormBorderStyle = FormBorderStyle.None;
             this.WindowState = FormWindowState.Maximized;
             this.TopMost = true;
@@ -707,10 +689,10 @@ namespace SecureDesktop.Forms
             this.BackgroundImage = screenshot;
             this.BackgroundImageLayout = ImageLayout.Stretch;
             this.Opacity = 0.8;
-            
+
             var infoLabel = new Label
             {
-                Text = "Zaznacz myszką obszar. ENTER = zatwierdź, ESC = anuluj",
+                Text = "Zaznacz obszar. ENTER = zatwierdz, ESC = anuluj",
                 Font = new Font("Segoe UI", 14, FontStyle.Bold),
                 ForeColor = Color.White,
                 BackColor = Color.FromArgb(180, 0, 0, 0),
@@ -720,27 +702,9 @@ namespace SecureDesktop.Forms
             };
             this.Controls.Add(infoLabel);
 
-            this.MouseDown += (s, e) =>
-            {
-                _startPoint = e.Location;
-                _isSelecting = true;
-            };
-
-            this.MouseMove += (s, e) =>
-            {
-                if (_isSelecting)
-                {
-                    _endPoint = e.Location;
-                    this.Invalidate();
-                }
-            };
-
-            this.MouseUp += (s, e) =>
-            {
-                _isSelecting = false;
-                _endPoint = e.Location;
-                this.Invalidate();
-            };
+            this.MouseDown += (s, e) => { _startPoint = e.Location; _isSelecting = true; };
+            this.MouseMove += (s, e) => { if (_isSelecting) { _endPoint = e.Location; this.Invalidate(); } };
+            this.MouseUp += (s, e) => { _isSelecting = false; _endPoint = e.Location; this.Invalidate(); };
 
             this.KeyDown += (s, e) =>
             {
@@ -768,10 +732,9 @@ namespace SecureDesktop.Forms
                 int y = Math.Min(_startPoint.Y, _endPoint.Y);
                 int w = Math.Abs(_endPoint.X - _startPoint.X);
                 int h = Math.Abs(_endPoint.Y - _startPoint.Y);
-                
+
                 _selectedRect = new Rectangle(x, y, w, h);
 
-                // Przyciemnienie poza zaznaczeniem
                 using (var brush = new SolidBrush(Color.FromArgb(120, 0, 0, 0)))
                 {
                     e.Graphics.FillRectangle(brush, 0, 0, this.Width, y);
@@ -780,14 +743,12 @@ namespace SecureDesktop.Forms
                     e.Graphics.FillRectangle(brush, x + w, y, this.Width - x - w, h);
                 }
 
-                // Zielona ramka
                 using (var pen = new Pen(Color.FromArgb(45, 165, 90), 3))
                 {
                     e.Graphics.DrawRectangle(pen, _selectedRect);
                 }
 
-                // Rozmiar
-                var sizeText = $"{w} x {h} px";
+                var sizeText = w + " x " + h + " px";
                 using (var font = new Font("Segoe UI", 12, FontStyle.Bold))
                 {
                     var textSize = e.Graphics.MeasureString(sizeText, font);

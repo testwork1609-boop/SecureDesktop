@@ -71,8 +71,10 @@ namespace SecureDesktop.Services
 
         public void Stop()
         {
+            if (!_isRunning) return;
             _cts?.Cancel();
             _isRunning = false;
+            _currentPatterns = null;
         }
 
         private Bitmap CaptureScreen()
@@ -103,21 +105,31 @@ namespace SecureDesktop.Services
                     if (patternBmp.Width > screenshot.Width || patternBmp.Height > screenshot.Height)
                         return Rectangle.Empty;
 
-                    for (int y = 0; y < screenshot.Height - patternBmp.Height; y += 20)
+                    double bestMatch = 0;
+                    int bestX = 0, bestY = 0;
+
+                    for (int y = 0; y < screenshot.Height - patternBmp.Height; y += 5)
                     {
-                        for (int x = 0; x < screenshot.Width - patternBmp.Width; x += 20)
+                        for (int x = 0; x < screenshot.Width - patternBmp.Width; x += 5)
                         {
                             double similarity = CompareRegions(screenshot, patternBmp, x, y);
-                            if (similarity >= _matchThreshold)
+                            if (similarity > bestMatch)
                             {
-                                return new Rectangle(x, y, patternBmp.Width, patternBmp.Height);
+                                bestMatch = similarity;
+                                bestX = x;
+                                bestY = y;
                             }
                         }
+                    }
+
+                    if (bestMatch >= _matchThreshold)
+                    {
+                        return new Rectangle(bestX, bestY, patternBmp.Width, patternBmp.Height);
                     }
                 }
             }
             catch { }
-            
+
             return Rectangle.Empty;
         }
 
@@ -125,20 +137,19 @@ namespace SecureDesktop.Services
         {
             int matchCount = 0;
             int totalChecks = 0;
-            
-            for (int py = 0; py < pattern.Height; py += 10)
+
+            for (int py = 0; py < pattern.Height; py += 5)
             {
-                for (int px = 0; px < pattern.Width; px += 10)
+                for (int px = 0; px < pattern.Width; px += 5)
                 {
                     if (startX + px >= source.Width || startY + py >= source.Height)
                         return 0;
 
                     Color sp = source.GetPixel(startX + px, startY + py);
                     Color pp = pattern.GetPixel(px, py);
-                    
                     totalChecks++;
-                    
-                    if (Math.Abs(sp.R - pp.R) < 40 && Math.Abs(sp.G - pp.G) < 40 && Math.Abs(sp.B - pp.B) < 40)
+
+                    if (Math.Abs(sp.R - pp.R) < 25 && Math.Abs(sp.G - pp.G) < 25 && Math.Abs(sp.B - pp.B) < 25)
                         matchCount++;
                 }
             }
