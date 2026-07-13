@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.IO;
 using System.Linq;
 using System.Windows.Forms;
+using Newtonsoft.Json;
 using SecureDesktop.Database;
 using SecureDesktop.Models;
 using SecureDesktop.Services;
@@ -40,7 +42,7 @@ namespace SecureDesktop.Forms
             this.FormBorderStyle = FormBorderStyle.FixedSingle;
             this.MaximizeBox = false;
 
-            // Nagłówek
+            // ========== NAGŁÓWEK ==========
             var headerPanel = new Panel
             {
                 Location = new Point(0, 0),
@@ -69,7 +71,7 @@ namespace SecureDesktop.Forms
             headerPanel.Controls.Add(logoLabel);
             headerPanel.Controls.Add(userLabel);
 
-            // Panel boczny
+            // ========== PANEL BOCZNY ==========
             var sidebarPanel = new Panel
             {
                 Location = new Point(0, 60),
@@ -86,7 +88,7 @@ namespace SecureDesktop.Forms
 
             int yPos = 25;
 
-            // === PRZYCISK: Blokuj cały ekran ===
+            // === PRZYCISK 1: Blokuj cały ekran ===
             var lockAllBtn = CreateSidebarButton("🔒  Blokuj cały ekran", yPos, primaryColor);
             lockAllBtn.Click += (s, e) =>
             {
@@ -102,23 +104,49 @@ namespace SecureDesktop.Forms
             };
             yPos += 55;
 
-            // === PRZYCISK: Blokuj z Pattern ===
+            // === PRZYCISK 2: Blokuj z Pattern ===
             var lockPatternBtn = CreateSidebarButton("🎯  Blokuj z Pattern", yPos, primaryColor);
             lockPatternBtn.Click += (s, e) =>
             {
                 try
                 {
-                    // POBIERZ PATTERNY BEZPOŚREDNIO Z BAZY
-                    var patterns = _db.GetData().Patterns?.Where(p => p.IsActive).ToList() ?? new List<Pattern>();
+                    // Ścieżka do pliku bazy danych
+                    var dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
 
-                    if (patterns.Count == 0)
+                    // Sprawdź czy plik istnieje
+                    if (!File.Exists(dbPath))
                     {
-                        var result = MessageBox.Show(
-                            "Brak aktywnych wzorców (Pattern).\n\n" +
-                            "Czy chcesz przejść do konfiguracji i dodać wzorce?",
-                            "Pattern Lock - Brak wzorców",
-                            MessageBoxButtons.YesNo,
-                            MessageBoxIcon.Question);
+                        MessageBox.Show("Plik bazy danych nie istnieje!\n\n" + dbPath,
+                            "Błąd", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return;
+                    }
+
+                    // Wczytaj dane z JSON
+                    var json = File.ReadAllText(dbPath);
+                    var data = JsonConvert.DeserializeObject<DatabaseData>(json);
+
+                    if (data == null)
+                    {
+                        MessageBox.Show("Nie można odczytać bazy danych.",
+                            "Błąd", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return;
+                    }
+
+                    // Pobierz aktywne patterny
+                    var patterns = data.Patterns?.Where(p => p.IsActive).ToList() ?? new List<Pattern>();
+
+                    // Sprawdź ile jest patternów
+                    int totalPatterns = data.Patterns?.Count ?? 0;
+                    int activePatterns = patterns.Count;
+
+                    if (activePatterns == 0)
+                    {
+                        string info = $"W bazie jest {totalPatterns} wzorców (w tym {activePatterns} aktywnych).\n\n" +
+                                       "Brak aktywnych wzorców do użycia.\n\n" +
+                                       "Czy chcesz przejść do konfiguracji?";
+
+                        var result = MessageBox.Show(info, "Pattern Lock - Brak wzorców",
+                            MessageBoxButtons.YesNo, MessageBoxIcon.Question);
 
                         if (result == DialogResult.Yes)
                         {
@@ -128,45 +156,70 @@ namespace SecureDesktop.Forms
                     }
                     else
                     {
-                        // Uruchom blokadę z patternami
-                        var patternService = new PatternRecognitionService(0.90);
-                        _lockService.LockWithPatterns(patterns, patternService);
+                        // Wyświetl nazwy znalezionych wzorców
+                        var patternNames = string.Join("\n• ", patterns.Select(p => p.Name));
+                        
+                        var result = MessageBox.Show(
+                            $"✅ Znaleziono {activePatterns} aktywnych wzorców:\n\n• {patternNames}\n\n" +
+                            "Czy na pewno uruchomić blokadę Pattern?",
+                            "Pattern Lock",
+                            MessageBoxButtons.YesNo,
+                            MessageBoxIcon.Information);
 
-                        // Logowanie
-                        var eventRepo = new Database.Repositories.EventLogRepository(_db);
-                        eventRepo.Create(new EventLog
+                        if (result == DialogResult.Yes)
                         {
-                            UserId = _currentUser.Id,
-                            IdentificationNumber = _currentUser.IdentificationNumber,
-                            OperationName = "PatternLock",
-                            Result = "Success",
-                            Description = $"Uruchomiono blokadę z {patterns.Count} wzorcami"
-                        });
+                            // Uruchom blokadę z patternami
+                            var patternService = new PatternRecognitionService(0.90);
+                            _lockService.LockWithPatterns(patterns, patternService);
+
+                            // Logowanie zdarzenia
+                            var eventRepo = new Database.Repositories.EventLogRepository(_db);
+                            eventRepo.Create(new EventLog
+                            {
+                                UserId = _currentUser.Id,
+                                IdentificationNumber = _currentUser.IdentificationNumber,
+                                OperationName = "PatternLock",
+                                Result = "Success",
+                                Description = $"Uruchomiono blokadę z {activePatterns} wzorcami"
+                            });
+                        }
                     }
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show("Błąd Pattern Lock: " + ex.Message, "Błąd",
-                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show("Błąd Pattern Lock: " + ex.Message,
+                        "Błąd", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             };
             yPos += 55;
 
-            // === PRZYCISK: CheckPoint ===
+            // === PRZYCISK 3: CheckPoint ===
             var checkpointBtn = CreateSidebarButton("⚡  CheckPoint", yPos, primaryColor);
             checkpointBtn.Click += (s, e) =>
             {
                 try
                 {
-                    var path = _db.GetData().Settings.ContainsKey("CheckpointPath")
-                        ? _db.GetData().Settings["CheckpointPath"]
-                        : "notepad.exe";
-                    var args = _db.GetData().Settings.ContainsKey("CheckpointArgs")
-                        ? _db.GetData().Settings["CheckpointArgs"]
-                        : "";
+                    string path = "notepad.exe";
+                    string args = "";
+
+                    // Spróbuj odczytać z konfiguracji
+                    var dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
+                    if (File.Exists(dbPath))
+                    {
+                        var json = File.ReadAllText(dbPath);
+                        var data = JsonConvert.DeserializeObject<DatabaseData>(json);
+                        if (data != null && data.Settings != null)
+                        {
+                            if (data.Settings.ContainsKey("CheckpointPath"))
+                                path = data.Settings["CheckpointPath"];
+                            if (data.Settings.ContainsKey("CheckpointArgs"))
+                                args = data.Settings["CheckpointArgs"];
+                        }
+                    }
 
                     System.Diagnostics.Process.Start(path, args);
 
+                    // Logowanie
                     var eventRepo = new Database.Repositories.EventLogRepository(_db);
                     eventRepo.Create(new EventLog
                     {
@@ -176,6 +229,9 @@ namespace SecureDesktop.Forms
                         Result = "Success",
                         Description = $"Uruchomiono: {path} {args}"
                     });
+
+                    MessageBox.Show($"✅ Uruchomiono: {path}", "CheckPoint",
+                        MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
                 catch (Exception ex)
                 {
@@ -185,16 +241,19 @@ namespace SecureDesktop.Forms
             };
             yPos += 55;
 
-            // === PRZYCISK: Konfiguracja ===
+            // === PRZYCISK 4: Konfiguracja ===
             var configBtn = CreateSidebarButton("⚙️  Konfiguracja", yPos, primaryColor);
             configBtn.Click += (s, e) =>
             {
                 var configForm = new ConfigurationForm();
                 configForm.ShowDialog(this);
+
+                // Po zamknięciu konfiguracji, odśwież dane
+                RefreshStats();
             };
             yPos += 55;
 
-            // === PRZYCISK: Historia ===
+            // === PRZYCISK 5: Historia zdarzeń ===
             var historyBtn = CreateSidebarButton("📊  Historia zdarzeń", yPos, primaryColor);
             historyBtn.Click += (s, e) =>
             {
@@ -203,35 +262,47 @@ namespace SecureDesktop.Forms
             };
             yPos += 55;
 
-            // === PRZYCISK: Backup ===
+            // === PRZYCISK 6: Backup ===
             var backupBtn = CreateSidebarButton("💾  Wykonaj backup", yPos, primaryColor);
             backupBtn.Click += (s, e) =>
             {
                 try
                 {
-                    var sourcePath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
-                    if (System.IO.File.Exists(sourcePath))
+                    var sourcePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
+                    if (File.Exists(sourcePath))
                     {
                         var backupService = new BackupService();
-                        var backupPath = _db.GetData().Settings.ContainsKey("BackupPath")
-                            ? _db.GetData().Settings["BackupPath"]
-                            : "Backup";
-                        var result = backupService.CreateBackup(sourcePath, backupPath);
-                        MessageBox.Show("✅ Backup utworzony!\n" + result, "Sukces");
+                        var backupFolder = "Backup";
+                        
+                        // Odczytaj folder backupu z konfiguracji
+                        var dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
+                        if (File.Exists(dbPath))
+                        {
+                            var json = File.ReadAllText(dbPath);
+                            var data = JsonConvert.DeserializeObject<DatabaseData>(json);
+                            if (data?.Settings?.ContainsKey("BackupPath") == true)
+                                backupFolder = data.Settings["BackupPath"];
+                        }
+                        
+                        var result = backupService.CreateBackup(sourcePath, backupFolder);
+                        MessageBox.Show("✅ Backup utworzony!\n\n" + result, "Sukces",
+                            MessageBoxButtons.OK, MessageBoxIcon.Information);
                     }
                     else
                     {
-                        MessageBox.Show("Brak pliku bazy danych.", "Info");
+                        MessageBox.Show("Brak pliku bazy danych do backupu.", "Info",
+                            MessageBoxButtons.OK, MessageBoxIcon.Information);
                     }
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show("Błąd backupu: " + ex.Message, "Błąd");
+                    MessageBox.Show("Błąd backupu: " + ex.Message, "Błąd",
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             };
             yPos += 55;
 
-            // === PRZYCISK: Wyloguj ===
+            // === PRZYCISK 7: Wyloguj ===
             var logoutBtn = CreateSidebarButton("🚪  Wyloguj", yPos, Color.FromArgb(220, 80, 80));
             logoutBtn.Click += (s, e) =>
             {
@@ -251,10 +322,13 @@ namespace SecureDesktop.Forms
                 this.Close();
             };
 
-            sidebarPanel.Controls.AddRange(new Control[] { lockAllBtn, lockPatternBtn, checkpointBtn, 
-                                                           configBtn, historyBtn, backupBtn, logoutBtn });
+            sidebarPanel.Controls.AddRange(new Control[] 
+            { 
+                lockAllBtn, lockPatternBtn, checkpointBtn, 
+                configBtn, historyBtn, backupBtn, logoutBtn 
+            });
 
-            // Panel główny
+            // ========== PANEL GŁÓWNY ==========
             var mainPanel = new Panel
             {
                 Location = new Point(300, 80),
@@ -266,7 +340,7 @@ namespace SecureDesktop.Forms
             var welcomeCard = new Panel
             {
                 Location = new Point(20, 20),
-                Size = new Size(490, 150),
+                Size = new Size(490, 120),
                 BackColor = Color.White
             };
 
@@ -288,61 +362,103 @@ namespace SecureDesktop.Forms
                 ForeColor = subtitleColor
             };
 
-            // Pokaż liczbę patternów
-            var patternCount = _db.GetData().Patterns?.Count(p => p.IsActive) ?? 0;
-            var welcomeText = new Label
+            var welcomeInfo = new Label
             {
-                Text = $"Aktywne patterny: {patternCount} | Wybierz funkcję z menu.",
+                Text = "Wybierz funkcję z menu po lewej stronie.",
                 Font = new Font("Segoe UI", 10),
-                Location = new Point(20, 85),
+                Location = new Point(20, 80),
                 AutoSize = true,
                 ForeColor = subtitleColor
             };
 
-            welcomeCard.Controls.AddRange(new Control[] { welcomeTitle, welcomeSubtitle, welcomeText });
+            welcomeCard.Controls.Add(welcomeTitle);
+            welcomeCard.Controls.Add(welcomeSubtitle);
+            welcomeCard.Controls.Add(welcomeInfo);
 
             // Karta statystyk
             var statsCard = new Panel
             {
-                Location = new Point(20, 190),
-                Size = new Size(490, 150),
+                Location = new Point(20, 160),
+                Size = new Size(490, 180),
                 BackColor = Color.White
             };
 
             var statsTitle = new Label
             {
-                Text = "📈  Statystyki",
+                Text = "📈  Statystyki systemu",
                 Font = new Font("Segoe UI", 14, FontStyle.Bold),
                 Location = new Point(20, 15),
-                AutoSize = true
+                AutoSize = true,
+                ForeColor = textColor
             };
 
-            var totalPatterns = _db.GetData().Patterns?.Count ?? 0;
-            var activePatterns = _db.GetData().Patterns?.Count(p => p.IsActive) ?? 0;
-            var totalEvents = _db.GetData().EventLogs?.Count ?? 0;
+            // Pobierz statystyki
+            int totalPatterns = 0;
+            int activePatterns = 0;
+            int totalEvents = 0;
+
+            try
+            {
+                var dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
+                if (File.Exists(dbPath))
+                {
+                    var json = File.ReadAllText(dbPath);
+                    var data = JsonConvert.DeserializeObject<DatabaseData>(json);
+                    if (data != null)
+                    {
+                        totalPatterns = data.Patterns?.Count ?? 0;
+                        activePatterns = data.Patterns?.Count(p => p.IsActive) ?? 0;
+                        totalEvents = data.EventLogs?.Count ?? 0;
+                    }
+                }
+            }
+            catch { }
 
             var statsText = new Label
             {
-                Text = $"• Wszystkie patterny: {totalPatterns}\n" +
-                       $"• Aktywne patterny: {activePatterns}\n" +
-                       $"• Zdarzenia: {totalEvents}",
+                Text = $"• Wszystkie wzorce (Pattern): {totalPatterns}\n" +
+                       $"• Aktywne wzorce: {activePatterns}\n" +
+                       $"• Nieaktywne wzorce: {totalPatterns - activePatterns}\n" +
+                       $"• Zdarzenia w historii: {totalEvents}\n" +
+                       $"• Baza danych: {(File.Exists(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json")) ? "✅ Połączona" : "❌ Brak")}",
                 Font = new Font("Segoe UI", 10),
                 Location = new Point(20, 50),
                 AutoSize = true,
                 ForeColor = subtitleColor
             };
 
-            statsCard.Controls.AddRange(new Control[] { statsTitle, statsText });
+            statsCard.Controls.Add(statsTitle);
+            statsCard.Controls.Add(statsText);
+
+            // Przycisk odświeżania
+            var refreshBtn = new Button
+            {
+                Text = "🔄  Odśwież statystyki",
+                Location = new Point(20, 145),
+                Size = new Size(160, 30),
+                BackColor = primaryColor,
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat,
+                Font = new Font("Segoe UI", 9),
+                Cursor = Cursors.Hand
+            };
+            refreshBtn.FlatAppearance.BorderSize = 0;
+            refreshBtn.Click += (s, e) => RefreshStats();
+            statsCard.Controls.Add(refreshBtn);
 
             mainPanel.Controls.Add(welcomeCard);
             mainPanel.Controls.Add(statsCard);
 
+            // Dodaj wszystko do formularza
             this.Controls.Add(headerPanel);
             this.Controls.Add(sidebarPanel);
             this.Controls.Add(shadowLine);
             this.Controls.Add(mainPanel);
         }
 
+        /// <summary>
+        /// Tworzy przycisk menu bocznego z efektem hover
+        /// </summary>
         private Button CreateSidebarButton(string text, int yPos, Color color)
         {
             var btn = new Button
@@ -360,6 +476,8 @@ namespace SecureDesktop.Forms
             };
 
             btn.FlatAppearance.BorderSize = 0;
+
+            // Efekt hover
             btn.MouseEnter += (s, e) =>
             {
                 btn.BackColor = Color.FromArgb(240, 255, 245);
@@ -372,6 +490,40 @@ namespace SecureDesktop.Forms
             };
 
             return btn;
+        }
+
+        /// <summary>
+        /// Odświeża statystyki na dashboardzie
+        /// </summary>
+        private void RefreshStats()
+        {
+            try
+            {
+                var dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
+                if (File.Exists(dbPath))
+                {
+                    var json = File.ReadAllText(dbPath);
+                    var data = JsonConvert.DeserializeObject<DatabaseData>(json);
+                    
+                    if (data != null)
+                    {
+                        int totalPatterns = data.Patterns?.Count ?? 0;
+                        int activePatterns = data.Patterns?.Count(p => p.IsActive) ?? 0;
+                        int totalEvents = data.EventLogs?.Count ?? 0;
+
+                        MessageBox.Show(
+                            $"📊 Statystyki odświeżone!\n\n" +
+                            $"• Wszystkie patterny: {totalPatterns}\n" +
+                            $"• Aktywne: {activePatterns}\n" +
+                            $"• Zdarzenia: {totalEvents}",
+                            "Odświeżanie", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Błąd odświeżania: " + ex.Message, "Błąd");
+            }
         }
     }
 }
