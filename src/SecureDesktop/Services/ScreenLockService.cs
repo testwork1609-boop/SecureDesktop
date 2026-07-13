@@ -87,11 +87,9 @@ namespace SecureDesktop.Services
                     overlay.Show();
                 }
 
-                // Podłącz eventy
                 _patternService.PatternFound += OnPatternFound;
                 _patternService.PatternLost += OnPatternLost;
 
-                // Uruchom skanowanie
                 _patternService.Start(patterns);
 
                 _isLocked = true;
@@ -108,7 +106,6 @@ namespace SecureDesktop.Services
         {
             if (e.Pattern == null || e.Location == Rectangle.Empty) return;
 
-            // Oblicz region z marginesami
             var region = new Rectangle(
                 e.Location.X - e.Pattern.MarginLeft,
                 e.Location.Y - e.Pattern.MarginTop,
@@ -119,9 +116,6 @@ namespace SecureDesktop.Services
             if (region.X < 0) region.X = 0;
             if (region.Y < 0) region.Y = 0;
 
-            System.Diagnostics.Debug.WriteLine($"Adding unlock region: {region} for pattern '{e.Pattern.Name}'");
-
-            // Dodaj region do wszystkich nakładek
             foreach (var overlay in _overlays)
             {
                 if (overlay is ScreenLockForm lockForm && !lockForm.IsDisposed)
@@ -140,8 +134,6 @@ namespace SecureDesktop.Services
 
         private void OnPatternLost(object sender, PatternLostEventArgs e)
         {
-            System.Diagnostics.Debug.WriteLine($"Pattern lost: {e.Pattern?.Name}");
-
             foreach (var overlay in _overlays)
             {
                 if (overlay is ScreenLockForm lockForm && !lockForm.IsDisposed)
@@ -201,24 +193,23 @@ namespace SecureDesktop.Services
         }
 
         private void CleanupPatternService()
-{
-    if (_patternService != null)
-    {
-        try
         {
-            _patternService.PatternFound -= OnPatternFound;
-            _patternService.PatternLost -= OnPatternLost;
-            _patternService.Stop();
-            _patternService.Dispose();
+            if (_patternService != null)
+            {
+                try
+                {
+                    _patternService.PatternFound -= OnPatternFound;
+                    _patternService.PatternLost -= OnPatternLost;
+                    _patternService.Stop();
+                    _patternService.Dispose();
+                }
+                catch { }
+                finally
+                {
+                    _patternService = null;
+                }
+            }
         }
-        catch { }
-        finally
-        {
-            _patternService = null;
-        }
-    }
-    // NIE CZYŚĆ PATTERNÓW Z BAZY!
-}}
 
         protected virtual void OnLockActivated()
         {
