@@ -17,13 +17,47 @@ namespace SecureDesktop.Forms
         private readonly DatabaseInitializer _db;
         private readonly ScreenLockService _lockService;
 
+        // Zmienne na statystyki (dostępne w całej klasie)
+        private int _totalPatterns = 0;
+        private int _activePatterns = 0;
+        private int _totalEvents = 0;
+
         public DashboardForm(User user, DatabaseInitializer db)
         {
             _currentUser = user;
             _db = db;
             _lockService = new ScreenLockService();
             
+            LoadStats();
             InitializeComponent();
+        }
+
+        /// <summary>
+        /// Ładuje statystyki z bazy danych
+        /// </summary>
+        private void LoadStats()
+        {
+            try
+            {
+                var dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
+                if (File.Exists(dbPath))
+                {
+                    var json = File.ReadAllText(dbPath);
+                    var data = JsonConvert.DeserializeObject<DatabaseData>(json);
+                    if (data != null)
+                    {
+                        _totalPatterns = data.Patterns?.Count ?? 0;
+                        _activePatterns = data.Patterns?.Count(p => p.IsActive) ?? 0;
+                        _totalEvents = data.EventLogs?.Count ?? 0;
+                    }
+                }
+            }
+            catch
+            {
+                _totalPatterns = 0;
+                _activePatterns = 0;
+                _totalEvents = 0;
+            }
         }
 
         private void InitializeComponent()
@@ -110,10 +144,8 @@ namespace SecureDesktop.Forms
             {
                 try
                 {
-                    // Ścieżka do pliku bazy danych
                     var dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
 
-                    // Sprawdź czy plik istnieje
                     if (!File.Exists(dbPath))
                     {
                         MessageBox.Show("Plik bazy danych nie istnieje!\n\n" + dbPath,
@@ -121,7 +153,6 @@ namespace SecureDesktop.Forms
                         return;
                     }
 
-                    // Wczytaj dane z JSON
                     var json = File.ReadAllText(dbPath);
                     var data = JsonConvert.DeserializeObject<DatabaseData>(json);
 
@@ -132,16 +163,13 @@ namespace SecureDesktop.Forms
                         return;
                     }
 
-                    // Pobierz aktywne patterny
                     var patterns = data.Patterns?.Where(p => p.IsActive).ToList() ?? new List<Pattern>();
+                    int totalPat = data.Patterns?.Count ?? 0;
+                    int activePat = patterns.Count;
 
-                    // Sprawdź ile jest patternów
-                     totalPatterns = data.Patterns?.Count ?? 0;
-                     activePatterns = patterns.Count;
-
-                    if (activePatterns == 0)
+                    if (activePat == 0)
                     {
-                        string info = $"W bazie jest {totalPatterns} wzorców (w tym {activePatterns} aktywnych).\n\n" +
+                        string info = $"W bazie jest {totalPat} wzorców (w tym {activePat} aktywnych).\n\n" +
                                        "Brak aktywnych wzorców do użycia.\n\n" +
                                        "Czy chcesz przejść do konfiguracji?";
 
@@ -152,15 +180,15 @@ namespace SecureDesktop.Forms
                         {
                             var configForm = new ConfigurationForm();
                             configForm.ShowDialog(this);
+                            LoadStats(); // Odśwież statystyki
                         }
                     }
                     else
                     {
-                        // Wyświetl nazwy znalezionych wzorców
                         var patternNames = string.Join("\n• ", patterns.Select(p => p.Name));
                         
                         var result = MessageBox.Show(
-                            $"✅ Znaleziono {activePatterns} aktywnych wzorców:\n\n• {patternNames}\n\n" +
+                            $"✅ Znaleziono {activePat} aktywnych wzorców:\n\n• {patternNames}\n\n" +
                             "Czy na pewno uruchomić blokadę Pattern?",
                             "Pattern Lock",
                             MessageBoxButtons.YesNo,
@@ -168,11 +196,9 @@ namespace SecureDesktop.Forms
 
                         if (result == DialogResult.Yes)
                         {
-                            // Uruchom blokadę z patternami
                             var patternService = new PatternRecognitionService(0.90);
                             _lockService.LockWithPatterns(patterns, patternService);
 
-                            // Logowanie zdarzenia
                             var eventRepo = new Database.Repositories.EventLogRepository(_db);
                             eventRepo.Create(new EventLog
                             {
@@ -180,7 +206,7 @@ namespace SecureDesktop.Forms
                                 IdentificationNumber = _currentUser.IdentificationNumber,
                                 OperationName = "PatternLock",
                                 Result = "Success",
-                                Description = $"Uruchomiono blokadę z {activePatterns} wzorcami"
+                                Description = $"Uruchomiono blokadę z {activePat} wzorcami"
                             });
                         }
                     }
@@ -202,7 +228,6 @@ namespace SecureDesktop.Forms
                     string path = "notepad.exe";
                     string args = "";
 
-                    // Spróbuj odczytać z konfiguracji
                     var dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
                     if (File.Exists(dbPath))
                     {
@@ -219,7 +244,6 @@ namespace SecureDesktop.Forms
 
                     System.Diagnostics.Process.Start(path, args);
 
-                    // Logowanie
                     var eventRepo = new Database.Repositories.EventLogRepository(_db);
                     eventRepo.Create(new EventLog
                     {
@@ -247,9 +271,7 @@ namespace SecureDesktop.Forms
             {
                 var configForm = new ConfigurationForm();
                 configForm.ShowDialog(this);
-
-                // Po zamknięciu konfiguracji, odśwież dane
-                RefreshStats();
+                LoadStats(); // Odśwież statystyki po zamknięciu konfiguracji
             };
             yPos += 55;
 
@@ -274,7 +296,6 @@ namespace SecureDesktop.Forms
                         var backupService = new BackupService();
                         var backupFolder = "Backup";
                         
-                        // Odczytaj folder backupu z konfiguracji
                         var dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
                         if (File.Exists(dbPath))
                         {
@@ -392,34 +413,12 @@ namespace SecureDesktop.Forms
                 ForeColor = textColor
             };
 
-            // Pobierz statystyki
-            int totalPatterns = 0;
-            int activePatterns = 0;
-            int totalEvents = 0;
-
-            try
-            {
-                var dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
-                if (File.Exists(dbPath))
-                {
-                    var json = File.ReadAllText(dbPath);
-                    var data = JsonConvert.DeserializeObject<DatabaseData>(json);
-                    if (data != null)
-                    {
-                        totalPatterns = data.Patterns?.Count ?? 0;
-                        activePatterns = data.Patterns?.Count(p => p.IsActive) ?? 0;
-                        totalEvents = data.EventLogs?.Count ?? 0;
-                    }
-                }
-            }
-            catch { }
-
             var statsText = new Label
             {
-                Text = $"• Wszystkie wzorce (Pattern): {totalPatterns}\n" +
-                       $"• Aktywne wzorce: {activePatterns}\n" +
-                       $"• Nieaktywne wzorce: {totalPatterns - activePatterns}\n" +
-                       $"• Zdarzenia w historii: {totalEvents}\n" +
+                Text = $"• Wszystkie wzorce (Pattern): {_totalPatterns}\n" +
+                       $"• Aktywne wzorce: {_activePatterns}\n" +
+                       $"• Nieaktywne wzorce: {_totalPatterns - _activePatterns}\n" +
+                       $"• Zdarzenia w historii: {_totalEvents}\n" +
                        $"• Baza danych: {(File.Exists(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json")) ? "✅ Połączona" : "❌ Brak")}",
                 Font = new Font("Segoe UI", 10),
                 Location = new Point(20, 50),
@@ -427,10 +426,6 @@ namespace SecureDesktop.Forms
                 ForeColor = subtitleColor
             };
 
-            statsCard.Controls.Add(statsTitle);
-            statsCard.Controls.Add(statsText);
-
-            // Przycisk odświeżania
             var refreshBtn = new Button
             {
                 Text = "🔄  Odśwież statystyki",
@@ -443,7 +438,20 @@ namespace SecureDesktop.Forms
                 Cursor = Cursors.Hand
             };
             refreshBtn.FlatAppearance.BorderSize = 0;
-            refreshBtn.Click += (s, e) => RefreshStats();
+            refreshBtn.Click += (s, e) =>
+            {
+                LoadStats();
+                statsText.Text = $"• Wszystkie wzorce (Pattern): {_totalPatterns}\n" +
+                                 $"• Aktywne wzorce: {_activePatterns}\n" +
+                                 $"• Nieaktywne wzorce: {_totalPatterns - _activePatterns}\n" +
+                                 $"• Zdarzenia w historii: {_totalEvents}\n" +
+                                 $"• Baza danych: {(File.Exists(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json")) ? "✅ Połączona" : "❌ Brak")}";
+                MessageBox.Show($"📊 Statystyki odświeżone!\n\n• Patterny: {_totalPatterns} (aktywne: {_activePatterns})\n• Zdarzenia: {_totalEvents}",
+                    "Odświeżanie", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            };
+
+            statsCard.Controls.Add(statsTitle);
+            statsCard.Controls.Add(statsText);
             statsCard.Controls.Add(refreshBtn);
 
             mainPanel.Controls.Add(welcomeCard);
@@ -477,7 +485,6 @@ namespace SecureDesktop.Forms
 
             btn.FlatAppearance.BorderSize = 0;
 
-            // Efekt hover
             btn.MouseEnter += (s, e) =>
             {
                 btn.BackColor = Color.FromArgb(240, 255, 245);
@@ -490,40 +497,6 @@ namespace SecureDesktop.Forms
             };
 
             return btn;
-        }
-
-        /// <summary>
-        /// Odświeża statystyki na dashboardzie
-        /// </summary>
-        private void RefreshStats()
-        {
-            try
-            {
-                var dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
-                if (File.Exists(dbPath))
-                {
-                    var json = File.ReadAllText(dbPath);
-                    var data = JsonConvert.DeserializeObject<DatabaseData>(json);
-                    
-                    if (data != null)
-                    {
-                        int totalPatterns = data.Patterns?.Count ?? 0;
-                        int activePatterns = data.Patterns?.Count(p => p.IsActive) ?? 0;
-                        int totalEvents = data.EventLogs?.Count ?? 0;
-
-                        MessageBox.Show(
-                            $"📊 Statystyki odświeżone!\n\n" +
-                            $"• Wszystkie patterny: {totalPatterns}\n" +
-                            $"• Aktywne: {activePatterns}\n" +
-                            $"• Zdarzenia: {totalEvents}",
-                            "Odświeżanie", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show("Błąd odświeżania: " + ex.Message, "Błąd");
-            }
         }
     }
 }
