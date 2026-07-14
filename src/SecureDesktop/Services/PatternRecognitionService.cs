@@ -24,7 +24,7 @@ namespace SecureDesktop.Services
         public event EventHandler<PatternFoundEventArgs> PatternFound;
         public event EventHandler<PatternLostEventArgs> PatternLost;
 
-        public PatternRecognitionService(double matchThreshold = 0.40, double acceptThreshold = 0.70)
+        public PatternRecognitionService(double matchThreshold = 0.75, double acceptThreshold = 0.93)
         {
             _matchThreshold = matchThreshold;
             _acceptThreshold = acceptThreshold;
@@ -65,6 +65,7 @@ namespace SecureDesktop.Services
 
                             if (patternsSnapshot != null)
                             {
+                                // Przetwarzaj KAŻDY pattern
                                 foreach (var pattern in patternsSnapshot)
                                 {
                                     if (token.IsCancellationRequested) break;
@@ -78,7 +79,10 @@ namespace SecureDesktop.Services
                         }
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine("PatternRecognition error: " + ex);
+                }
 
                 try { await Task.Delay(200, token); }
                 catch (TaskCanceledException) { break; }
@@ -89,7 +93,7 @@ namespace SecureDesktop.Services
         {
             Rectangle result = FindPattern(screen, pattern, false);
 
-            if (result == Rectangle.Empty)
+            if (result == Rectangle.Empty && _lastLocations.ContainsKey(pattern.Source.Id))
             {
                 result = FindPattern(screen, pattern, true);
             }
@@ -97,8 +101,8 @@ namespace SecureDesktop.Services
             if (result != Rectangle.Empty)
             {
                 Rectangle prev;
-                bool changed = !_lastLocations.TryGetValue(pattern.TrackingKey, out prev) || prev != result;
-                _lastLocations[pattern.TrackingKey] = result;
+                bool changed = !_lastLocations.TryGetValue(pattern.Source.Id, out prev) || prev != result;
+                _lastLocations[pattern.Source.Id] = result;
 
                 if (changed)
                 {
@@ -106,22 +110,14 @@ namespace SecureDesktop.Services
                     {
                         Pattern = pattern.Source,
                         Location = result,
-                        Confidence = pattern.LastScore,
-                        TrackingKey = pattern.TrackingKey
+                        Confidence = pattern.LastScore
                     });
                 }
             }
-            else
+            else if (_lastLocations.ContainsKey(pattern.Source.Id))
             {
-                if (_lastLocations.ContainsKey(pattern.TrackingKey))
-                {
-                    _lastLocations.Remove(pattern.TrackingKey);
-                    PatternLost?.Invoke(this, new PatternLostEventArgs
-                    {
-                        Pattern = pattern.Source,
-                        TrackingKey = pattern.TrackingKey
-                    });
-                }
+                _lastLocations.Remove(pattern.Source.Id);
+                PatternLost?.Invoke(this, new PatternLostEventArgs { Pattern = pattern.Source });
             }
         }
 
@@ -175,9 +171,9 @@ namespace SecureDesktop.Services
             if (!forceFullScreen)
             {
                 Rectangle last;
-                if (_lastLocations.TryGetValue(pattern.TrackingKey, out last))
+                if (_lastLocations.TryGetValue(pattern.Source.Id, out last))
                 {
-                    searchArea = ExpandRectangle(last, 300, screen.Size);
+                    searchArea = ExpandRectangle(last, 250, screen.Size);
                 }
             }
 
@@ -205,14 +201,55 @@ namespace SecureDesktop.Services
             int maxY = searchArea.Height - pattern.Height;
             if (maxX <= 0 || maxY <= 0) return Rectangle.Empty;
 
-            double bestScore = 0;
-            int bestX = 0, bestY = 0;
+            int coarseStep = Math.Max(4, Math.Min(pattern.Width, pattern.Height) / 6);
+            int rows = (maxY / coarseStep) + 1;
 
-            int step = Math.Max(4, Math.Min(pattern.Width, pattern.Height) / 8);
+            var bestPerRow = new RowResult[rows];
 
-            for (int y = 0; y < maxY; y += step)
+            Parallel.For(0, rows, ri =>
             {
-                for (int x = 0; x < maxX; x += step)
+                int y = ri * coarseStep;
+                if (y > maxY) return;
+
+                double localBest = 0;
+                int localX = 0;
+
+                for (int x = 0; x <= maxX; x += coarseStep)
+                {
+                    double score = CompareFast(ptr, stride, x, y, pattern.CoarsePoints);
+                    if (score > localBest)
+                    {
+                        localBest = score;
+                        localX = x;
+                    }
+                }
+                bestPerRow[ri] = new RowResult { Score = localBest, X = localX, Y = y };
+            });
+
+            RowResult candidate = new RowResult { Score = -1 };
+            for (int i = 0; i < bestPerRow.Length; i++)
+            {
+                if (bestPerRow[i].Score > candidate.Score)
+                    candidate = bestPerRow[i];
+            }
+
+            if (candidate.Score < _matchThreshold * 0.6)
+                return Rectangle.Empty;
+
+            double bestScore = 0;
+            int bestX = candidate.X;
+            int bestY = candidate.Y;
+
+            int refineRadius = coarseStep;
+            int rx0 = Math.Max(0, candidate.X - refineRadius);
+            int rx1 = Math.Min(maxX, candidate.X + refineRadius);
+            int ry0 = Math.Max(0, candidate.Y - refineRadius);
+            int ry1 = Math.Min(maxY, candidate.Y + refineRadius);
+
+            for (int y = ry0; y <= ry1; y++)
+            {
+                bool done = false;
+                for (int x = rx0; x <= rx1; x++)
                 {
                     double score = CompareFast(ptr, stride, x, y, pattern.Points);
                     if (score > bestScore)
@@ -222,12 +259,15 @@ namespace SecureDesktop.Services
                         bestY = y;
 
                         if (bestScore >= _acceptThreshold)
-                            goto Found;
+                        {
+                            done = true;
+                            break;
+                        }
                     }
                 }
+                if (done) break;
             }
 
-            Found:
             if (bestScore >= _matchThreshold)
             {
                 pattern.LastScore = bestScore;
@@ -256,7 +296,7 @@ namespace SecureDesktop.Services
                 int dr = r - p.R;
                 int dg = g - p.G;
                 int db = b - p.B;
-                if ((dr * dr + dg * dg + db * db) < 2500)
+                if ((dr * dr + dg * dg + db * db) < 1200)
                     good++;
             }
 
@@ -278,22 +318,26 @@ namespace SecureDesktop.Services
             Stop();
             if (_cts != null) _cts.Dispose();
         }
+
+        private struct RowResult
+        {
+            public double Score;
+            public int X;
+            public int Y;
+        }
     }
 
     internal class CachedPattern : IDisposable
     {
-        private static int _nextKey = 0;
-
         public Pattern Source;
         public int Width;
         public int Height;
         public PatternPoint[] Points;
+        public PatternPoint[] CoarsePoints;
         public double LastScore;
-        public int TrackingKey;
 
         public CachedPattern(Pattern pattern)
         {
-            TrackingKey = Interlocked.Increment(ref _nextKey);
             Source = pattern;
 
             using (MemoryStream ms = new MemoryStream(pattern.ImageData))
@@ -302,23 +346,74 @@ namespace SecureDesktop.Services
                 Width = bmp.Width;
                 Height = bmp.Height;
 
-                int stepX = Math.Max(1, Width / 6);
-                int stepY = Math.Max(1, Height / 6);
+                int targetPoints = Clamp((Width * Height) / 40, 64, 600);
+                int gridSize = (int)Math.Sqrt(targetPoints);
+                int stepX = Math.Max(1, Width / gridSize);
+                int stepY = Math.Max(1, Height / gridSize);
 
-                var points = new List<PatternPoint>();
+                Points = SamplePoints(bmp, stepX, stepY, 0);
+
+                int coarseStepX = stepX * 3;
+                int coarseStepY = stepY * 3;
+                CoarsePoints = SamplePoints(bmp, coarseStepX, coarseStepY, 12);
+            }
+        }
+
+        private PatternPoint[] SamplePoints(Bitmap bmp, int stepX, int stepY, int minPoints)
+        {
+            var points = new List<PatternPoint>();
+
+            using (LockedBitmapReader locked = new LockedBitmapReader(bmp))
+            {
                 for (int y = 0; y < Height; y += stepY)
                 {
                     for (int x = 0; x < Width; x += stepX)
                     {
-                        Color c = bmp.GetPixel(x, y);
+                        Color c = locked.GetPixel(x, y);
                         points.Add(new PatternPoint { X = x, Y = y, R = c.R, G = c.G, B = c.B });
                     }
                 }
-                Points = points.ToArray();
             }
+
+            if (points.Count < minPoints && stepX > 1)
+                return SamplePoints(bmp, Math.Max(1, stepX / 2), Math.Max(1, stepY / 2), 0);
+
+            return points.ToArray();
+        }
+
+        private static int Clamp(int value, int min, int max)
+        {
+            if (value < min) return min;
+            if (value > max) return max;
+            return value;
         }
 
         public void Dispose() { }
+    }
+
+    internal sealed class LockedBitmapReader : IDisposable
+    {
+        private readonly Bitmap _bmp;
+        private readonly BitmapData _data;
+
+        public LockedBitmapReader(Bitmap bmp)
+        {
+            _bmp = bmp;
+            _data = bmp.LockBits(new Rectangle(0, 0, bmp.Width, bmp.Height),
+                ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
+        }
+
+        public unsafe Color GetPixel(int x, int y)
+        {
+            byte* ptr = (byte*)_data.Scan0;
+            byte* p = ptr + (y * _data.Stride) + (x * 3);
+            return Color.FromArgb(p[2], p[1], p[0]);
+        }
+
+        public void Dispose()
+        {
+            _bmp.UnlockBits(_data);
+        }
     }
 
     internal struct PatternPoint
@@ -335,12 +430,10 @@ namespace SecureDesktop.Services
         public Pattern Pattern { get; set; }
         public Rectangle Location { get; set; }
         public double Confidence { get; set; }
-        public int TrackingKey { get; set; }
     }
 
     public class PatternLostEventArgs : EventArgs
     {
         public Pattern Pattern { get; set; }
-        public int TrackingKey { get; set; }
     }
 }
