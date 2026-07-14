@@ -116,17 +116,22 @@ namespace SecureDesktop.Services
             if (region.X < 0) region.X = 0;
             if (region.Y < 0) region.Y = 0;
 
+            // WAŻNE: przekazujemy Id wzorca, żeby overlay trzymał regiony
+            // osobno dla każdego wzorca (Dictionary<int, Rectangle>), a nie
+            // jeden wspólny region nadpisywany przy każdym wywołaniu.
+            int patternId = e.Pattern.Id;
+
             foreach (var overlay in _overlays)
             {
                 if (overlay is ScreenLockForm lockForm && !lockForm.IsDisposed)
                 {
                     if (lockForm.InvokeRequired)
                     {
-                        lockForm.BeginInvoke(new Action(() => lockForm.AddUnlockRegion(region)));
+                        lockForm.BeginInvoke(new Action(() => lockForm.AddUnlockRegion(patternId, region)));
                     }
                     else
                     {
-                        lockForm.AddUnlockRegion(region);
+                        lockForm.AddUnlockRegion(patternId, region);
                     }
                 }
             }
@@ -134,17 +139,26 @@ namespace SecureDesktop.Services
 
         private void OnPatternLost(object sender, PatternLostEventArgs e)
         {
+            if (e.Pattern == null) return;
+
+            // WAŻNE: usuwamy TYLKO region tego konkretnego wzorca, który zniknął.
+            // Poprzednio RemoveUnlockRegions() czyściło WSZYSTKIE odblokowane
+            // obszary, więc zniknięcie jednego wzorca (nawet chwilowe, przez
+            // migotanie detekcji) blokowało z powrotem obszar innych, wciąż
+            // widocznych wzorców.
+            int patternId = e.Pattern.Id;
+
             foreach (var overlay in _overlays)
             {
                 if (overlay is ScreenLockForm lockForm && !lockForm.IsDisposed)
                 {
                     if (lockForm.InvokeRequired)
                     {
-                        lockForm.BeginInvoke(new Action(() => lockForm.RemoveUnlockRegions()));
+                        lockForm.BeginInvoke(new Action(() => lockForm.RemoveUnlockRegion(patternId)));
                     }
                     else
                     {
-                        lockForm.RemoveUnlockRegions();
+                        lockForm.RemoveUnlockRegion(patternId);
                     }
                 }
             }
