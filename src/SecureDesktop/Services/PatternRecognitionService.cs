@@ -24,7 +24,7 @@ namespace SecureDesktop.Services
         public event EventHandler<PatternFoundEventArgs> PatternFound;
         public event EventHandler<PatternLostEventArgs> PatternLost;
 
-        public PatternRecognitionService(double matchThreshold = 0.75, double acceptThreshold = 0.93)
+        public PatternRecognitionService(double matchThreshold = 0.40, double acceptThreshold = 0.70)
         {
             _matchThreshold = matchThreshold;
             _acceptThreshold = acceptThreshold;
@@ -36,20 +36,10 @@ namespace SecureDesktop.Services
             {
                 if (_isRunning) return;
 
-                // Pobierz WSZYSTKIE aktywne patterny
                 _patterns = patterns
                     .Where(x => x.IsActive)
                     .Select(x => new CachedPattern(x))
                     .ToList();
-
-                System.Diagnostics.Debug.WriteLine(
-                    $"PatternRecognitionService.Start: {_patterns.Count} pattern(s) loaded");
-
-                foreach (var p in _patterns)
-                {
-                    System.Diagnostics.Debug.WriteLine(
-                        $"  - Pattern: '{p.Source.Name}' (Key={p.TrackingKey}, Size={p.Width}x{p.Height}, Points={p.Points.Length})");
-                }
 
                 _cts = new CancellationTokenSource();
                 _isRunning = true;
@@ -61,11 +51,8 @@ namespace SecureDesktop.Services
 
         private async Task WorkerLoop(CancellationToken token)
         {
-            int loopCount = 0;
-
             while (!token.IsCancellationRequested)
             {
-                loopCount++;
                 try
                 {
                     Bitmap screen = CaptureScreen();
@@ -76,14 +63,8 @@ namespace SecureDesktop.Services
                             List<CachedPattern> patternsSnapshot;
                             lock (_sync) { patternsSnapshot = _patterns; }
 
-                            if (patternsSnapshot != null && patternsSnapshot.Count > 0)
+                            if (patternsSnapshot != null)
                             {
-                                if (loopCount % 5 == 0)
-                                {
-                                    System.Diagnostics.Debug.WriteLine(
-                                        $"WorkerLoop #{loopCount}: Processing {patternsSnapshot.Count} pattern(s)");
-                                }
-
                                 foreach (var pattern in patternsSnapshot)
                                 {
                                     if (token.IsCancellationRequested) break;
@@ -97,10 +78,7 @@ namespace SecureDesktop.Services
                         }
                     }
                 }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine("PatternRecognition error: " + ex);
-                }
+                catch { }
 
                 try { await Task.Delay(200, token); }
                 catch (TaskCanceledException) { break; }
@@ -116,10 +94,6 @@ namespace SecureDesktop.Services
                 result = FindPattern(screen, pattern, true);
             }
 
-            System.Diagnostics.Debug.WriteLine(
-                $"ProcessPattern: '{pattern.Source.Name}' (Key={pattern.TrackingKey}) -> " +
-                $"Found={result != Rectangle.Empty}, Location={result}");
-
             if (result != Rectangle.Empty)
             {
                 Rectangle prev;
@@ -128,9 +102,6 @@ namespace SecureDesktop.Services
 
                 if (changed)
                 {
-                    System.Diagnostics.Debug.WriteLine(
-                        $"  -> PatternFound EVENT: '{pattern.Source.Name}' Key={pattern.TrackingKey} at {result}");
-
                     PatternFound?.Invoke(this, new PatternFoundEventArgs
                     {
                         Pattern = pattern.Source,
@@ -144,9 +115,6 @@ namespace SecureDesktop.Services
             {
                 if (_lastLocations.ContainsKey(pattern.TrackingKey))
                 {
-                    System.Diagnostics.Debug.WriteLine(
-                        $"  -> PatternLost EVENT: '{pattern.Source.Name}' Key={pattern.TrackingKey}");
-
                     _lastLocations.Remove(pattern.TrackingKey);
                     PatternLost?.Invoke(this, new PatternLostEventArgs
                     {
@@ -209,7 +177,7 @@ namespace SecureDesktop.Services
                 Rectangle last;
                 if (_lastLocations.TryGetValue(pattern.TrackingKey, out last))
                 {
-                    searchArea = ExpandRectangle(last, 250, screen.Size);
+                    searchArea = ExpandRectangle(last, 300, screen.Size);
                 }
             }
 
@@ -237,55 +205,14 @@ namespace SecureDesktop.Services
             int maxY = searchArea.Height - pattern.Height;
             if (maxX <= 0 || maxY <= 0) return Rectangle.Empty;
 
-            int coarseStep = Math.Max(4, Math.Min(pattern.Width, pattern.Height) / 6);
-            int rows = (maxY / coarseStep) + 1;
-
-            var bestPerRow = new RowResult[rows];
-
-            Parallel.For(0, rows, ri =>
-            {
-                int y = ri * coarseStep;
-                if (y > maxY) return;
-
-                double localBest = 0;
-                int localX = 0;
-
-                for (int x = 0; x <= maxX; x += coarseStep)
-                {
-                    double score = CompareFast(ptr, stride, x, y, pattern.CoarsePoints);
-                    if (score > localBest)
-                    {
-                        localBest = score;
-                        localX = x;
-                    }
-                }
-                bestPerRow[ri] = new RowResult { Score = localBest, X = localX, Y = y };
-            });
-
-            RowResult candidate = new RowResult { Score = -1 };
-            for (int i = 0; i < bestPerRow.Length; i++)
-            {
-                if (bestPerRow[i].Score > candidate.Score)
-                    candidate = bestPerRow[i];
-            }
-
-            if (candidate.Score < _matchThreshold * 0.6)
-                return Rectangle.Empty;
-
             double bestScore = 0;
-            int bestX = candidate.X;
-            int bestY = candidate.Y;
+            int bestX = 0, bestY = 0;
 
-            int refineRadius = coarseStep;
-            int rx0 = Math.Max(0, candidate.X - refineRadius);
-            int rx1 = Math.Min(maxX, candidate.X + refineRadius);
-            int ry0 = Math.Max(0, candidate.Y - refineRadius);
-            int ry1 = Math.Min(maxY, candidate.Y + refineRadius);
+            int step = Math.Max(4, Math.Min(pattern.Width, pattern.Height) / 8);
 
-            for (int y = ry0; y <= ry1; y++)
+            for (int y = 0; y < maxY; y += step)
             {
-                bool done = false;
-                for (int x = rx0; x <= rx1; x++)
+                for (int x = 0; x < maxX; x += step)
                 {
                     double score = CompareFast(ptr, stride, x, y, pattern.Points);
                     if (score > bestScore)
@@ -295,15 +222,12 @@ namespace SecureDesktop.Services
                         bestY = y;
 
                         if (bestScore >= _acceptThreshold)
-                        {
-                            done = true;
-                            break;
-                        }
+                            goto Found;
                     }
                 }
-                if (done) break;
             }
 
+            Found:
             if (bestScore >= _matchThreshold)
             {
                 pattern.LastScore = bestScore;
@@ -332,7 +256,7 @@ namespace SecureDesktop.Services
                 int dr = r - p.R;
                 int dg = g - p.G;
                 int db = b - p.B;
-                if ((dr * dr + dg * dg + db * db) < 1200)
+                if ((dr * dr + dg * dg + db * db) < 2500)
                     good++;
             }
 
@@ -354,13 +278,6 @@ namespace SecureDesktop.Services
             Stop();
             if (_cts != null) _cts.Dispose();
         }
-
-        private struct RowResult
-        {
-            public double Score;
-            public int X;
-            public int Y;
-        }
     }
 
     internal class CachedPattern : IDisposable
@@ -371,7 +288,6 @@ namespace SecureDesktop.Services
         public int Width;
         public int Height;
         public PatternPoint[] Points;
-        public PatternPoint[] CoarsePoints;
         public double LastScore;
         public int TrackingKey;
 
@@ -386,74 +302,23 @@ namespace SecureDesktop.Services
                 Width = bmp.Width;
                 Height = bmp.Height;
 
-                int targetPoints = Clamp((Width * Height) / 40, 64, 600);
-                int gridSize = (int)Math.Sqrt(targetPoints);
-                int stepX = Math.Max(1, Width / gridSize);
-                int stepY = Math.Max(1, Height / gridSize);
+                int stepX = Math.Max(1, Width / 6);
+                int stepY = Math.Max(1, Height / 6);
 
-                Points = SamplePoints(bmp, stepX, stepY, 0);
-
-                int coarseStepX = stepX * 3;
-                int coarseStepY = stepY * 3;
-                CoarsePoints = SamplePoints(bmp, coarseStepX, coarseStepY, 12);
-            }
-        }
-
-        private PatternPoint[] SamplePoints(Bitmap bmp, int stepX, int stepY, int minPoints)
-        {
-            var points = new List<PatternPoint>();
-
-            using (LockedBitmapReader locked = new LockedBitmapReader(bmp))
-            {
+                var points = new List<PatternPoint>();
                 for (int y = 0; y < Height; y += stepY)
                 {
                     for (int x = 0; x < Width; x += stepX)
                     {
-                        Color c = locked.GetPixel(x, y);
+                        Color c = bmp.GetPixel(x, y);
                         points.Add(new PatternPoint { X = x, Y = y, R = c.R, G = c.G, B = c.B });
                     }
                 }
+                Points = points.ToArray();
             }
-
-            if (points.Count < minPoints && stepX > 1)
-                return SamplePoints(bmp, Math.Max(1, stepX / 2), Math.Max(1, stepY / 2), 0);
-
-            return points.ToArray();
-        }
-
-        private static int Clamp(int value, int min, int max)
-        {
-            if (value < min) return min;
-            if (value > max) return max;
-            return value;
         }
 
         public void Dispose() { }
-    }
-
-    internal sealed class LockedBitmapReader : IDisposable
-    {
-        private readonly Bitmap _bmp;
-        private readonly BitmapData _data;
-
-        public LockedBitmapReader(Bitmap bmp)
-        {
-            _bmp = bmp;
-            _data = bmp.LockBits(new Rectangle(0, 0, bmp.Width, bmp.Height),
-                ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
-        }
-
-        public unsafe Color GetPixel(int x, int y)
-        {
-            byte* ptr = (byte*)_data.Scan0;
-            byte* p = ptr + (y * _data.Stride) + (x * 3);
-            return Color.FromArgb(p[2], p[1], p[0]);
-        }
-
-        public void Dispose()
-        {
-            _bmp.UnlockBits(_data);
-        }
     }
 
     internal struct PatternPoint
