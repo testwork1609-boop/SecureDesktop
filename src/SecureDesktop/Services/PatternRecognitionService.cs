@@ -21,7 +21,7 @@ namespace SecureDesktop.Services
         public event EventHandler<PatternFoundEventArgs> PatternFound;
         public event EventHandler<PatternLostEventArgs> PatternLost;
 
-        public PatternRecognitionService(double matchThreshold = 0.90)
+        public PatternRecognitionService(double matchThreshold = 0.65)
         {
             _matchThreshold = matchThreshold;
             _lastLocations = new Dictionary<int, Rectangle>();
@@ -92,7 +92,7 @@ namespace SecureDesktop.Services
 
                     try
                     {
-                        await Task.Delay(100, _cts.Token);
+                        await Task.Delay(150, _cts.Token);
                     }
                     catch { }
                 }
@@ -140,7 +140,7 @@ namespace SecureDesktop.Services
 
             if (_lastLocations.TryGetValue(pattern.Source.Id, out Rectangle last))
             {
-                searchArea = ExpandRectangle(last, 100, screen.Size);
+                searchArea = ExpandRectangle(last, 150, screen.Size);
             }
             else
             {
@@ -159,20 +159,36 @@ namespace SecureDesktop.Services
                     byte* ptr = (byte*)screenData.Scan0;
                     int stride = screenData.Stride;
 
-                    for (int y = 0; y < searchArea.Height - pattern.Height; y += 3)
+                    double bestScore = 0;
+                    int bestX = 0, bestY = 0;
+
+                    int step = 5;
+
+                    for (int y = 0; y < searchArea.Height - pattern.Height; y += step)
                     {
-                        for (int x = 0; x < searchArea.Width - pattern.Width; x += 3)
+                        for (int x = 0; x < searchArea.Width - pattern.Width; x += step)
                         {
                             double score = CompareFast(ptr, stride, x, y, pattern);
 
-                            if (score >= _matchThreshold)
+                            if (score > bestScore)
                             {
-                                int realX = searchArea.X + x;
-                                int realY = searchArea.Y + y;
+                                bestScore = score;
+                                bestX = x;
+                                bestY = y;
 
-                                return new Rectangle(realX, realY, pattern.Width, pattern.Height);
+                                if (bestScore >= 0.95)
+                                    goto Found;
                             }
                         }
+                    }
+
+                    Found:
+                    if (bestScore >= _matchThreshold)
+                    {
+                        int realX = searchArea.X + bestX;
+                        int realY = searchArea.Y + bestY;
+
+                        return new Rectangle(realX, realY, pattern.Width, pattern.Height);
                     }
                 }
             }
@@ -190,15 +206,21 @@ namespace SecureDesktop.Services
 
             foreach (PatternPoint p in pattern.Points)
             {
-                byte* pixel = screen + ((y + p.Y) * stride) + ((x + p.X) * 3);
+                int px = x + p.X;
+                int py = y + p.Y;
 
-                byte b = pixel[0];
-                byte g = pixel[1];
-                byte r = pixel[2];
-
-                if (ColorDistance(r, g, b, p.R, p.G, p.B))
+                if (px >= 0 && py >= 0)
                 {
-                    good++;
+                    byte* pixel = screen + (py * stride) + (px * 3);
+
+                    byte b = pixel[0];
+                    byte g = pixel[1];
+                    byte r = pixel[2];
+
+                    if (ColorDistance(r, g, b, p.R, p.G, p.B))
+                    {
+                        good++;
+                    }
                 }
             }
 
@@ -211,7 +233,7 @@ namespace SecureDesktop.Services
             int dg = g1 - g2;
             int db = b1 - b2;
 
-            return (dr * dr + dg * dg + db * db) < 1200;
+            return (dr * dr + dg * dg + db * db) < 500;
         }
 
         private Rectangle ExpandRectangle(Rectangle r, int size, Size screen)
@@ -252,8 +274,8 @@ namespace SecureDesktop.Services
 
                 var points = new List<PatternPoint>();
 
-                int stepX = Math.Max(1, Width / 8);
-                int stepY = Math.Max(1, Height / 8);
+                int stepX = Math.Max(1, Width / 10);
+                int stepY = Math.Max(1, Height / 10);
 
                 for (int y = 0; y < Height; y += stepY)
                 {
