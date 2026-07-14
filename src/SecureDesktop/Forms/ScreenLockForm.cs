@@ -8,12 +8,12 @@ namespace SecureDesktop.Forms
     public class ScreenLockForm : Form
     {
         private readonly Screen _screen;
-        private readonly Dictionary<int, Rectangle> _unlockRegions;
+        private readonly Dictionary<string, Rectangle> _unlockRegions;
 
         public ScreenLockForm(Screen screen)
         {
             _screen = screen;
-            _unlockRegions = new Dictionary<int, Rectangle>();
+            _unlockRegions = new Dictionary<string, Rectangle>();
             InitializeComponent();
         }
 
@@ -85,16 +85,16 @@ namespace SecureDesktop.Forms
             this.KeyDown += (s, e) => { if (e.KeyCode == Keys.Escape) ShowUnlockDialog(); };
         }
 
-        public void AddUnlockRegion(int patternId, Rectangle region)
+        public void AddUnlockRegion(string patternKey, Rectangle region)
         {
-            _unlockRegions[patternId] = region;
+            _unlockRegions[patternKey] = region;
             UpdateFormRegion();
             this.Invalidate();
         }
 
-        public void RemoveUnlockRegion(int patternId)
+        public void RemoveUnlockRegion(string patternKey)
         {
-            if (_unlockRegions.Remove(patternId))
+            if (_unlockRegions.Remove(patternKey))
             {
                 UpdateFormRegion();
                 this.Invalidate();
@@ -143,8 +143,10 @@ namespace SecureDesktop.Forms
         {
             base.OnPaint(e);
 
-            foreach (var region in _unlockRegions.Values)
+            foreach (var kvp in _unlockRegions)
             {
+                var region = kvp.Value;
+                
                 using (var brush = new SolidBrush(Color.FromArgb(1, 255, 255, 255)))
                 {
                     e.Graphics.FillRectangle(brush, region);
@@ -153,6 +155,12 @@ namespace SecureDesktop.Forms
                 using (var pen = new Pen(Color.FromArgb(255, 45, 165, 90), 3))
                 {
                     e.Graphics.DrawRectangle(pen, region);
+                }
+                
+                // Nazwa patternu
+                using (var font = new Font("Segoe UI", 8))
+                {
+                    e.Graphics.DrawString(kvp.Key, font, Brushes.Green, region.X, region.Y - 15);
                 }
             }
         }
