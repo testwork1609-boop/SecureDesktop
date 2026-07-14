@@ -18,16 +18,17 @@ namespace SecureDesktop.Services
         private bool _isRunning;
         private List<Pattern> _currentPatterns;
         private Dictionary<int, Rectangle> _lastFoundLocations;
-        private bool _testMode;
+        private bool _testModeDone;
 
         public event EventHandler<PatternFoundEventArgs> PatternFound;
         public event EventHandler<PatternLostEventArgs> PatternLost;
+        public event EventHandler<string> DebugInfo;
 
-        public PatternRecognitionService(double matchThreshold = 0.50)
+        public PatternRecognitionService(double matchThreshold = 0.40)
         {
             _matchThreshold = matchThreshold;
             _lastFoundLocations = new Dictionary<int, Rectangle>();
-            _testMode = true;
+            _testModeDone = false;
         }
 
         public void Start(List<Pattern> patterns)
@@ -41,49 +42,47 @@ namespace SecureDesktop.Services
 
             Task.Run(() =>
             {
-                // Test: najpierw pokaż dziurę na środku
-                if (_testMode && _currentPatterns != null && _currentPatterns.Count > 0)
+                // Test: pokaż dziurę na środku na 3 sekundy
+                if (!_testModeDone && _currentPatterns != null && _currentPatterns.Count > 0)
                 {
-                    Thread.Sleep(1500);
+                    Thread.Sleep(1000);
                     
                     if (!_cts.Token.IsCancellationRequested)
                     {
                         int screenW = System.Windows.Forms.Screen.PrimaryScreen.Bounds.Width;
                         int screenH = System.Windows.Forms.Screen.PrimaryScreen.Bounds.Height;
                         
-                        var testLocation = new Rectangle(
-                            screenW / 2 - 150,
-                            screenH / 2 - 100,
-                            300, 200
-                        );
+                        var testLocation = new Rectangle(screenW/2-150, screenH/2-100, 300, 200);
+
+                        DebugInfo?.Invoke(this, $"TEST: Pokazuje dziure testowa na srodku");
 
                         foreach (var pattern in _currentPatterns.Where(p => p.IsActive))
                         {
                             _lastFoundLocations[pattern.Id] = testLocation;
                             PatternFound?.Invoke(this, new PatternFoundEventArgs
                             {
-                                Pattern = pattern,
-                                Location = testLocation,
-                                Confidence = 1.0
+                                Pattern = pattern, Location = testLocation, Confidence = 1.0
                             });
                         }
 
                         Thread.Sleep(3000);
                         
-                        // Usuń testową dziurę
                         foreach (var pattern in _currentPatterns.Where(p => p.IsActive))
                         {
                             _lastFoundLocations.Remove(pattern.Id);
                             PatternLost?.Invoke(this, new PatternLostEventArgs { Pattern = pattern });
                         }
 
-                        _testMode = false;
+                        _testModeDone = true;
+                        DebugInfo?.Invoke(this, "Test zakonczony. Rozpoczynam normalne skanowanie...");
                     }
                 }
 
                 // Normalne skanowanie
+                int scanCount = 0;
                 while (!_cts.Token.IsCancellationRequested)
                 {
+                    scanCount++;
                     try
                     {
                         using (var screenshot = CaptureScreen())
@@ -96,18 +95,24 @@ namespace SecureDesktop.Services
                                     
                                     var location = FindPatternOnScreen(screenshot, pattern);
                                     
+                                    if (scanCount % 10 == 0)
+                                    {
+                                        DebugInfo?.Invoke(this, $"Skanowanie #{scanCount}: pattern '{pattern.Name}' {(location != Rectangle.Empty ? "ZNALEZIONY" : "nie znaleziony")}");
+                                    }
+                                    
                                     if (location != Rectangle.Empty)
                                     {
                                         if (!_lastFoundLocations.ContainsKey(pattern.Id) ||
-                                            _lastFoundLocations[pattern.Id] != location)
+                                            Math.Abs(_lastFoundLocations[pattern.Id].X - location.X) > 50 ||
+                                            Math.Abs(_lastFoundLocations[pattern.Id].Y - location.Y) > 50)
                                         {
                                             _lastFoundLocations[pattern.Id] = location;
                                             
+                                            DebugInfo?.Invoke(this, $"✅ ZNALEZIONO: {pattern.Name} w {location}");
+                                            
                                             PatternFound?.Invoke(this, new PatternFoundEventArgs
                                             {
-                                                Pattern = pattern,
-                                                Location = location,
-                                                Confidence = 0.95
+                                                Pattern = pattern, Location = location, Confidence = 0.95
                                             });
                                         }
                                     }
@@ -115,7 +120,10 @@ namespace SecureDesktop.Services
                             }
                         }
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        DebugInfo?.Invoke(this, $"Blad: {ex.Message}");
+                    }
                     
                     Thread.Sleep(500);
                 }
@@ -159,7 +167,8 @@ namespace SecureDesktop.Services
                     double bestMatch = 0;
                     int bestX = 0, bestY = 0, bestW = 0, bestH = 0;
 
-                    double[] scales = { 0.8, 0.9, 1.0, 1.1, 1.2 };
+                    // Więcej skal dla lepszego dopasowania
+                    double[] scales = { 0.7, 0.8, 0.9, 0.95, 1.0, 1.05, 1.1, 1.2, 1.3 };
                     
                     foreach (double scale in scales)
                     {
@@ -177,7 +186,7 @@ namespace SecureDesktop.Services
                                 g.DrawImage(originalPattern, 0, 0, newW, newH);
                             }
 
-                            int step = Math.Max(8, newW / 8);
+                            int step = Math.Max(5, Math.Min(newW, newH) / 6);
                             
                             for (int y = 0; y < screenshot.Height - newH; y += step)
                             {
@@ -191,12 +200,15 @@ namespace SecureDesktop.Services
                                         bestY = y;
                                         bestW = newW;
                                         bestH = newH;
+                                        
+                                        if (bestMatch > 0.85) goto Found;
                                     }
                                 }
                             }
                         }
                     }
-
+                    
+                    Found:
                     if (bestMatch >= _matchThreshold)
                     {
                         return new Rectangle(bestX, bestY, bestW, bestH);
@@ -213,7 +225,7 @@ namespace SecureDesktop.Services
             int matchCount = 0;
             int totalChecks = 0;
 
-            int step = Math.Max(5, Math.Min(pattern.Width, pattern.Height) / 10);
+            int step = Math.Max(3, Math.Min(pattern.Width, pattern.Height) / 8);
 
             for (int py = 0; py < pattern.Height; py += step)
             {
@@ -226,9 +238,9 @@ namespace SecureDesktop.Services
                     Color pp = pattern.GetPixel(px, py);
                     totalChecks++;
 
-                    if (Math.Abs(sp.R - pp.R) < 50 && 
-                        Math.Abs(sp.G - pp.G) < 50 && 
-                        Math.Abs(sp.B - pp.B) < 50)
+                    if (Math.Abs(sp.R - pp.R) < 55 && 
+                        Math.Abs(sp.G - pp.G) < 55 && 
+                        Math.Abs(sp.B - pp.B) < 55)
                     {
                         matchCount++;
                     }
