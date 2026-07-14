@@ -36,6 +36,7 @@ namespace SecureDesktop.Services
             {
                 if (_isRunning) return;
 
+                // USUŃ Take(2) - przetwarzaj WSZYSTKIE patterny
                 _patterns = patterns
                     .Where(x => x.IsActive)
                     .Select(x => new CachedPattern(x))
@@ -65,6 +66,7 @@ namespace SecureDesktop.Services
 
                             if (patternsSnapshot != null)
                             {
+                                // Przetwarzaj WSZYSTKIE patterny, nie przerywaj
                                 foreach (var pattern in patternsSnapshot)
                                 {
                                     if (token.IsCancellationRequested) break;
@@ -92,7 +94,8 @@ namespace SecureDesktop.Services
         {
             Rectangle result = FindPattern(screen, pattern, false);
 
-            if (result == Rectangle.Empty && _lastLocations.ContainsKey(pattern.Source.Id))
+            // Jeśli nie znaleziono w obszarze lokalnym, szukaj na całym ekranie
+            if (result == Rectangle.Empty)
             {
                 result = FindPattern(screen, pattern, true);
             }
@@ -100,8 +103,8 @@ namespace SecureDesktop.Services
             if (result != Rectangle.Empty)
             {
                 Rectangle prev;
-                bool changed = !_lastLocations.TryGetValue(pattern.Source.Id, out prev) || prev != result;
-                _lastLocations[pattern.Source.Id] = result;
+                bool changed = !_lastLocations.TryGetValue(pattern.TrackingKey, out prev) || prev != result;
+                _lastLocations[pattern.TrackingKey] = result;
 
                 if (changed)
                 {
@@ -114,14 +117,17 @@ namespace SecureDesktop.Services
                     });
                 }
             }
-            else if (_lastLocations.ContainsKey(pattern.Source.Id))
+            else
             {
-                _lastLocations.Remove(pattern.Source.Id);
-                PatternLost?.Invoke(this, new PatternLostEventArgs
+                if (_lastLocations.ContainsKey(pattern.TrackingKey))
                 {
-                    Pattern = pattern.Source,
-                    TrackingKey = pattern.TrackingKey
-                });
+                    _lastLocations.Remove(pattern.TrackingKey);
+                    PatternLost?.Invoke(this, new PatternLostEventArgs
+                    {
+                        Pattern = pattern.Source,
+                        TrackingKey = pattern.TrackingKey
+                    });
+                }
             }
         }
 
@@ -175,7 +181,8 @@ namespace SecureDesktop.Services
             if (!forceFullScreen)
             {
                 Rectangle last;
-                if (_lastLocations.TryGetValue(pattern.Source.Id, out last))
+                // Użyj TrackingKey zamiast Source.Id
+                if (_lastLocations.TryGetValue(pattern.TrackingKey, out last))
                 {
                     searchArea = ExpandRectangle(last, 250, screen.Size);
                 }
