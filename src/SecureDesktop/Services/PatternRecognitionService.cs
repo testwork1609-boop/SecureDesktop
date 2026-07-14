@@ -36,10 +36,19 @@ namespace SecureDesktop.Services
             {
                 if (_isRunning) return;
 
+                System.Diagnostics.Debug.WriteLine("=== PatternRecognitionService.Start ===");
+                System.Diagnostics.Debug.WriteLine($"Received {patterns.Count} patterns:");
+                foreach (var p in patterns)
+                {
+                    System.Diagnostics.Debug.WriteLine($"  - Name='{p.Name}', IsActive={p.IsActive}, Id={p.Id}, HasImage={p.ImageData != null && p.ImageData.Length > 0}");
+                }
+
                 _patterns = patterns
                     .Where(x => x.IsActive)
                     .Select(x => new CachedPattern(x))
                     .ToList();
+
+                System.Diagnostics.Debug.WriteLine($"After filter: {_patterns.Count} patterns loaded");
 
                 _cts = new CancellationTokenSource();
                 _isRunning = true;
@@ -51,8 +60,11 @@ namespace SecureDesktop.Services
 
         private async Task WorkerLoop(CancellationToken token)
         {
+            int loopCount = 0;
+
             while (!token.IsCancellationRequested)
             {
+                loopCount++;
                 try
                 {
                     Bitmap screen = CaptureScreen();
@@ -65,6 +77,11 @@ namespace SecureDesktop.Services
 
                             if (patternsSnapshot != null)
                             {
+                                if (loopCount % 10 == 0)
+                                {
+                                    System.Diagnostics.Debug.WriteLine($"WorkerLoop #{loopCount}: Processing {patternsSnapshot.Count} patterns");
+                                }
+
                                 foreach (var pattern in patternsSnapshot)
                                 {
                                     if (token.IsCancellationRequested) break;
@@ -107,6 +124,7 @@ namespace SecureDesktop.Services
 
                 if (changed)
                 {
+                    System.Diagnostics.Debug.WriteLine($"✅ PatternFound: '{key}' at {result}");
                     PatternFound?.Invoke(this, new PatternFoundEventArgs
                     {
                         Pattern = pattern.Source,
@@ -117,6 +135,7 @@ namespace SecureDesktop.Services
             }
             else if (_lastLocations.ContainsKey(key))
             {
+                System.Diagnostics.Debug.WriteLine($"❌ PatternLost: '{key}'");
                 _lastLocations.Remove(key);
                 PatternLost?.Invoke(this, new PatternLostEventArgs { Pattern = pattern.Source });
             }
@@ -124,6 +143,7 @@ namespace SecureDesktop.Services
 
         public void Stop()
         {
+            System.Diagnostics.Debug.WriteLine("PatternRecognitionService.Stop()");
             List<CachedPattern> toDispose = null;
 
             lock (_sync)
@@ -438,4 +458,3 @@ namespace SecureDesktop.Services
     {
         public Pattern Pattern { get; set; }
     }
-}
