@@ -162,7 +162,7 @@ namespace SecureDesktop.Services
                     double bestScore = 0;
                     int bestX = 0, bestY = 0;
 
-                    int step = 5;
+                    int step = 3;
 
                     for (int y = 0; y < searchArea.Height - pattern.Height; y += step)
                     {
@@ -233,7 +233,7 @@ namespace SecureDesktop.Services
             int dg = g1 - g2;
             int db = b1 - b2;
 
-            return (dr * dr + dg * dg + db * db) < 500;
+            return (dr * dr + dg * dg + db * db) < 300;
         }
 
         private Rectangle ExpandRectangle(Rectangle r, int size, Size screen)
@@ -274,8 +274,8 @@ namespace SecureDesktop.Services
 
                 var points = new List<PatternPoint>();
 
-                int stepX = Math.Max(1, Width / 10);
-                int stepY = Math.Max(1, Height / 10);
+                int stepX = Math.Max(1, Width / 15);
+                int stepY = Math.Max(1, Height / 15);
 
                 for (int y = 0; y < Height; y += stepY)
                 {
