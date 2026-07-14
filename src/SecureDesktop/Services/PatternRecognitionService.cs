@@ -36,11 +36,20 @@ namespace SecureDesktop.Services
             {
                 if (_isRunning) return;
 
-                // USUŃ Take(2) - przetwarzaj WSZYSTKIE patterny
+                // Pobierz WSZYSTKIE aktywne patterny
                 _patterns = patterns
                     .Where(x => x.IsActive)
                     .Select(x => new CachedPattern(x))
                     .ToList();
+
+                System.Diagnostics.Debug.WriteLine(
+                    $"PatternRecognitionService.Start: {_patterns.Count} pattern(s) loaded");
+
+                foreach (var p in _patterns)
+                {
+                    System.Diagnostics.Debug.WriteLine(
+                        $"  - Pattern: '{p.Source.Name}' (Key={p.TrackingKey}, Size={p.Width}x{p.Height}, Points={p.Points.Length})");
+                }
 
                 _cts = new CancellationTokenSource();
                 _isRunning = true;
@@ -52,8 +61,11 @@ namespace SecureDesktop.Services
 
         private async Task WorkerLoop(CancellationToken token)
         {
+            int loopCount = 0;
+
             while (!token.IsCancellationRequested)
             {
+                loopCount++;
                 try
                 {
                     Bitmap screen = CaptureScreen();
@@ -64,9 +76,14 @@ namespace SecureDesktop.Services
                             List<CachedPattern> patternsSnapshot;
                             lock (_sync) { patternsSnapshot = _patterns; }
 
-                            if (patternsSnapshot != null)
+                            if (patternsSnapshot != null && patternsSnapshot.Count > 0)
                             {
-                                // Przetwarzaj WSZYSTKIE patterny, nie przerywaj
+                                if (loopCount % 5 == 0)
+                                {
+                                    System.Diagnostics.Debug.WriteLine(
+                                        $"WorkerLoop #{loopCount}: Processing {patternsSnapshot.Count} pattern(s)");
+                                }
+
                                 foreach (var pattern in patternsSnapshot)
                                 {
                                     if (token.IsCancellationRequested) break;
@@ -94,11 +111,14 @@ namespace SecureDesktop.Services
         {
             Rectangle result = FindPattern(screen, pattern, false);
 
-            // Jeśli nie znaleziono w obszarze lokalnym, szukaj na całym ekranie
             if (result == Rectangle.Empty)
             {
                 result = FindPattern(screen, pattern, true);
             }
+
+            System.Diagnostics.Debug.WriteLine(
+                $"ProcessPattern: '{pattern.Source.Name}' (Key={pattern.TrackingKey}) -> " +
+                $"Found={result != Rectangle.Empty}, Location={result}");
 
             if (result != Rectangle.Empty)
             {
@@ -108,6 +128,9 @@ namespace SecureDesktop.Services
 
                 if (changed)
                 {
+                    System.Diagnostics.Debug.WriteLine(
+                        $"  -> PatternFound EVENT: '{pattern.Source.Name}' Key={pattern.TrackingKey} at {result}");
+
                     PatternFound?.Invoke(this, new PatternFoundEventArgs
                     {
                         Pattern = pattern.Source,
@@ -121,6 +144,9 @@ namespace SecureDesktop.Services
             {
                 if (_lastLocations.ContainsKey(pattern.TrackingKey))
                 {
+                    System.Diagnostics.Debug.WriteLine(
+                        $"  -> PatternLost EVENT: '{pattern.Source.Name}' Key={pattern.TrackingKey}");
+
                     _lastLocations.Remove(pattern.TrackingKey);
                     PatternLost?.Invoke(this, new PatternLostEventArgs
                     {
@@ -181,7 +207,6 @@ namespace SecureDesktop.Services
             if (!forceFullScreen)
             {
                 Rectangle last;
-                // Użyj TrackingKey zamiast Source.Id
                 if (_lastLocations.TryGetValue(pattern.TrackingKey, out last))
                 {
                     searchArea = ExpandRectangle(last, 250, screen.Size);
