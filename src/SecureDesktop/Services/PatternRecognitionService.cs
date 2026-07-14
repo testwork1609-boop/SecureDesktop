@@ -458,3 +458,4 @@ namespace SecureDesktop.Services
     {
         public Pattern Pattern { get; set; }
     }
+}
