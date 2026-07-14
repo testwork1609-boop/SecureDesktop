@@ -102,11 +102,12 @@ namespace SecureDesktop.Services
 
         private void ProcessPattern(Bitmap screen, CachedPattern pattern, int index)
         {
-            // Klucz odporny na duplikaty Source.Id (np. gdy wzorce tworzone są
-            // bez jawnie nadanego, unikalnego Id) — inaczej dwa wzorce z tym
-            // samym Id nadpisują sobie nawzajem wpis w _lastLocations i tylko
-            // jeden z nich realnie "istnieje" dla reszty systemu (np. overlay).
-            int key = pattern.Source.Id != 0 ? pattern.Source.Id : (1000000 + index);
+            // Klucz ZAWSZE oparty o indeks na liście wzorców z tego Start().
+            // Lista jest budowana raz i niemutowana do Stop(), więc indeks
+            // jest w 100% stabilny i unikalny między klatkami — w przeciwieństwie
+            // do Pattern.Id, które może być zduplikowane lub niezainicjalizowane
+            // (np. gdy obiekty Pattern są tworzone bez jawnego nadania Id).
+            int key = index;
 
             Rectangle result = FindPattern(screen, pattern, false, key);
 
@@ -127,14 +128,15 @@ namespace SecureDesktop.Services
                     {
                         Pattern = pattern.Source,
                         Location = result,
-                        Confidence = pattern.LastScore
+                        Confidence = pattern.LastScore,
+                        TrackingKey = key
                     });
                 }
             }
             else if (_lastLocations.ContainsKey(key))
             {
                 _lastLocations.Remove(key);
-                PatternLost?.Invoke(this, new PatternLostEventArgs { Pattern = pattern.Source });
+                PatternLost?.Invoke(this, new PatternLostEventArgs { Pattern = pattern.Source, TrackingKey = key });
             }
         }
 
@@ -447,10 +449,17 @@ namespace SecureDesktop.Services
         public Pattern Pattern { get; set; }
         public Rectangle Location { get; set; }
         public double Confidence { get; set; }
+
+        // Stabilny, gwarantowanie unikalny klucz per-wzorzec (Id lub Id+indeks
+        // gdy Id jest zduplikowane/niezainicjalizowane). Konsumenci zdarzenia
+        // (np. ScreenLockService) powinni używać TEGO klucza zamiast
+        // Pattern.Id, żeby uniknąć kolizji regionów przy wielu wzorcach.
+        public int TrackingKey { get; set; }
     }
 
     public class PatternLostEventArgs : EventArgs
     {
         public Pattern Pattern { get; set; }
+        public int TrackingKey { get; set; }
     }
 }
