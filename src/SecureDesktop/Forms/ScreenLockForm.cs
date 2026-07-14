@@ -146,7 +146,8 @@ namespace SecureDesktop.Forms
             foreach (var kvp in _unlockRegions)
             {
                 var region = kvp.Value;
-                
+                var name = kvp.Key;
+
                 using (var brush = new SolidBrush(Color.FromArgb(1, 255, 255, 255)))
                 {
                     e.Graphics.FillRectangle(brush, region);
@@ -156,11 +157,10 @@ namespace SecureDesktop.Forms
                 {
                     e.Graphics.DrawRectangle(pen, region);
                 }
-                
-                // Nazwa patternu
-                using (var font = new Font("Segoe UI", 8))
+
+                using (var font = new Font("Segoe UI", 9, FontStyle.Bold))
                 {
-                    e.Graphics.DrawString(kvp.Key, font, Brushes.Green, region.X, region.Y - 15);
+                    e.Graphics.DrawString(name, font, Brushes.Green, region.X + 5, region.Y + 5);
                 }
             }
         }

@@ -9,13 +9,6 @@ namespace SecureDesktop.Services
 {
     public class ScreenLockService
     {
-        private void OnPatternFound(object sender, PatternFoundEventArgs e)
-{
-    System.Diagnostics.Debug.WriteLine(
-        $"OnPatternFound: Pattern='{e.Pattern?.Name}', Id={e.Pattern?.Id}, Location={e.Location}");
-    // ...
-}
-        
         private List<Form> _overlays;
         private bool _isLocked;
         private PatternRecognitionService _patternService;
@@ -125,7 +118,7 @@ namespace SecureDesktop.Services
             if (region.Width <= 0) region.Width = e.Location.Width;
             if (region.Height <= 0) region.Height = e.Location.Height;
 
-            int key = e.Pattern.GetHashCode();
+            string key = e.Pattern.Name ?? ("pattern_" + e.Pattern.Id);
 
             foreach (var overlay in _overlays)
             {
@@ -145,7 +138,7 @@ namespace SecureDesktop.Services
 
         private void OnPatternLost(object sender, PatternLostEventArgs e)
         {
-            int key = e.Pattern.GetHashCode();
+            string key = e.Pattern.Name ?? ("pattern_" + e.Pattern.Id);
 
             foreach (var overlay in _overlays)
             {

@@ -18,7 +18,7 @@ namespace SecureDesktop.Services
         private Task _worker;
         private bool _isRunning;
         private List<CachedPattern> _patterns;
-        private readonly Dictionary<int, Rectangle> _lastLocations = new Dictionary<int, Rectangle>();
+        private readonly Dictionary<string, Rectangle> _lastLocations = new Dictionary<string, Rectangle>();
         private readonly object _sync = new object();
 
         public event EventHandler<PatternFoundEventArgs> PatternFound;
@@ -65,7 +65,6 @@ namespace SecureDesktop.Services
 
                             if (patternsSnapshot != null)
                             {
-                                // Przetwarzaj KAŻDY pattern
                                 foreach (var pattern in patternsSnapshot)
                                 {
                                     if (token.IsCancellationRequested) break;
@@ -91,9 +90,11 @@ namespace SecureDesktop.Services
 
         private void ProcessPattern(Bitmap screen, CachedPattern pattern)
         {
+            string key = pattern.Source.Name ?? ("pattern_" + pattern.Source.Id);
+
             Rectangle result = FindPattern(screen, pattern, false);
 
-            if (result == Rectangle.Empty && _lastLocations.ContainsKey(pattern.Source.Id))
+            if (result == Rectangle.Empty && _lastLocations.ContainsKey(key))
             {
                 result = FindPattern(screen, pattern, true);
             }
@@ -101,8 +102,8 @@ namespace SecureDesktop.Services
             if (result != Rectangle.Empty)
             {
                 Rectangle prev;
-                bool changed = !_lastLocations.TryGetValue(pattern.Source.Id, out prev) || prev != result;
-                _lastLocations[pattern.Source.Id] = result;
+                bool changed = !_lastLocations.TryGetValue(key, out prev) || prev != result;
+                _lastLocations[key] = result;
 
                 if (changed)
                 {
@@ -114,9 +115,9 @@ namespace SecureDesktop.Services
                     });
                 }
             }
-            else if (_lastLocations.ContainsKey(pattern.Source.Id))
+            else if (_lastLocations.ContainsKey(key))
             {
-                _lastLocations.Remove(pattern.Source.Id);
+                _lastLocations.Remove(key);
                 PatternLost?.Invoke(this, new PatternLostEventArgs { Pattern = pattern.Source });
             }
         }
@@ -166,12 +167,13 @@ namespace SecureDesktop.Services
 
         private Rectangle FindPattern(Bitmap screen, CachedPattern pattern, bool forceFullScreen)
         {
+            string key = pattern.Source.Name ?? ("pattern_" + pattern.Source.Id);
             Rectangle searchArea = new Rectangle(0, 0, screen.Width, screen.Height);
 
             if (!forceFullScreen)
             {
                 Rectangle last;
-                if (_lastLocations.TryGetValue(pattern.Source.Id, out last))
+                if (_lastLocations.TryGetValue(key, out last))
                 {
                     searchArea = ExpandRectangle(last, 250, screen.Size);
                 }
