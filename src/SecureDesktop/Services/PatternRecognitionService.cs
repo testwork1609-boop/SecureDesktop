@@ -65,10 +65,22 @@ namespace SecureDesktop.Services
 
                             if (patternsSnapshot != null)
                             {
-                                foreach (var pattern in patternsSnapshot)
+                                for (int i = 0; i < patternsSnapshot.Count; i++)
                                 {
                                     if (token.IsCancellationRequested) break;
-                                    ProcessPattern(screen, pattern);
+
+                                    // Każdy wzorzec przetwarzany w osobnym try/catch —
+                                    // błąd przy jednym nie może zablokować pozostałych
+                                    // w tej samej klatce.
+                                    try
+                                    {
+                                        ProcessPattern(screen, patternsSnapshot[i], i);
+                                    }
+                                    catch (Exception exPattern)
+                                    {
+                                        System.Diagnostics.Debug.WriteLine(
+                                            "PatternRecognition: blad wzorca idx=" + i + ": " + exPattern);
+                                    }
                                 }
                             }
                         }
@@ -88,20 +100,26 @@ namespace SecureDesktop.Services
             }
         }
 
-        private void ProcessPattern(Bitmap screen, CachedPattern pattern)
+        private void ProcessPattern(Bitmap screen, CachedPattern pattern, int index)
         {
-            Rectangle result = FindPattern(screen, pattern, false);
+            // Klucz odporny na duplikaty Source.Id (np. gdy wzorce tworzone są
+            // bez jawnie nadanego, unikalnego Id) — inaczej dwa wzorce z tym
+            // samym Id nadpisują sobie nawzajem wpis w _lastLocations i tylko
+            // jeden z nich realnie "istnieje" dla reszty systemu (np. overlay).
+            int key = pattern.Source.Id != 0 ? pattern.Source.Id : (1000000 + index);
 
-            if (result == Rectangle.Empty && _lastLocations.ContainsKey(pattern.Source.Id))
+            Rectangle result = FindPattern(screen, pattern, false, key);
+
+            if (result == Rectangle.Empty && _lastLocations.ContainsKey(key))
             {
-                result = FindPattern(screen, pattern, true);
+                result = FindPattern(screen, pattern, true, key);
             }
 
             if (result != Rectangle.Empty)
             {
                 Rectangle prev;
-                bool changed = !_lastLocations.TryGetValue(pattern.Source.Id, out prev) || prev != result;
-                _lastLocations[pattern.Source.Id] = result;
+                bool changed = !_lastLocations.TryGetValue(key, out prev) || prev != result;
+                _lastLocations[key] = result;
 
                 if (changed)
                 {
@@ -113,9 +131,9 @@ namespace SecureDesktop.Services
                     });
                 }
             }
-            else if (_lastLocations.ContainsKey(pattern.Source.Id))
+            else if (_lastLocations.ContainsKey(key))
             {
-                _lastLocations.Remove(pattern.Source.Id);
+                _lastLocations.Remove(key);
                 PatternLost?.Invoke(this, new PatternLostEventArgs { Pattern = pattern.Source });
             }
         }
@@ -163,14 +181,14 @@ namespace SecureDesktop.Services
             }
         }
 
-        private Rectangle FindPattern(Bitmap screen, CachedPattern pattern, bool forceFullScreen)
+        private Rectangle FindPattern(Bitmap screen, CachedPattern pattern, bool forceFullScreen, int key)
         {
             Rectangle searchArea = new Rectangle(0, 0, screen.Width, screen.Height);
 
             if (!forceFullScreen)
             {
                 Rectangle last;
-                if (_lastLocations.TryGetValue(pattern.Source.Id, out last))
+                if (_lastLocations.TryGetValue(key, out last))
                 {
                     searchArea = ExpandRectangle(last, 250, screen.Size);
                 }
