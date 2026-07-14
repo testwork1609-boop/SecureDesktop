@@ -115,17 +115,9 @@ namespace SecureDesktop.Services
 
             if (region.X < 0) region.X = 0;
             if (region.Y < 0) region.Y = 0;
-
-            // Zabezpieczenie: jeśli marginesy są błędnie skonfigurowane (np. ujemne
-            // i większe niż sam wzorzec), szerokość/wysokość mogłaby wyjść <= 0,
-            // co dawałoby "martwy" prostokąt, który nigdy nie zareaguje na klik.
             if (region.Width <= 0) region.Width = e.Location.Width;
             if (region.Height <= 0) region.Height = e.Location.Height;
 
-            // WAŻNE: używamy TrackingKey (stabilny, unikalny indeks z serwisu
-            // rozpoznawania), a NIE e.Pattern.Id — bo Id może być zduplikowane
-            // lub niezainicjalizowane, co ponownie prowadziłoby do nadpisywania
-            // regionu jednego wzorca przez drugi.
             int key = e.TrackingKey;
 
             foreach (var overlay in _overlays)
@@ -146,8 +138,6 @@ namespace SecureDesktop.Services
 
         private void OnPatternLost(object sender, PatternLostEventArgs e)
         {
-            // WAŻNE: usuwamy TYLKO region tego konkretnego wzorca, który zniknął,
-            // po tym samym stabilnym TrackingKey co przy dodawaniu.
             int key = e.TrackingKey;
 
             foreach (var overlay in _overlays)

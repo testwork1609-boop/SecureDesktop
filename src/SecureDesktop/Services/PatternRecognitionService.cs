@@ -65,22 +65,10 @@ namespace SecureDesktop.Services
 
                             if (patternsSnapshot != null)
                             {
-                                for (int i = 0; i < patternsSnapshot.Count; i++)
+                                foreach (var pattern in patternsSnapshot)
                                 {
                                     if (token.IsCancellationRequested) break;
-
-                                    // Każdy wzorzec przetwarzany w osobnym try/catch —
-                                    // błąd przy jednym nie może zablokować pozostałych
-                                    // w tej samej klatce.
-                                    try
-                                    {
-                                        ProcessPattern(screen, patternsSnapshot[i], i);
-                                    }
-                                    catch (Exception exPattern)
-                                    {
-                                        System.Diagnostics.Debug.WriteLine(
-                                            "PatternRecognition: blad wzorca idx=" + i + ": " + exPattern);
-                                    }
+                                    ProcessPattern(screen, pattern);
                                 }
                             }
                         }
@@ -100,27 +88,20 @@ namespace SecureDesktop.Services
             }
         }
 
-        private void ProcessPattern(Bitmap screen, CachedPattern pattern, int index)
+        private void ProcessPattern(Bitmap screen, CachedPattern pattern)
         {
-            // Klucz ZAWSZE oparty o indeks na liście wzorców z tego Start().
-            // Lista jest budowana raz i niemutowana do Stop(), więc indeks
-            // jest w 100% stabilny i unikalny między klatkami — w przeciwieństwie
-            // do Pattern.Id, które może być zduplikowane lub niezainicjalizowane
-            // (np. gdy obiekty Pattern są tworzone bez jawnego nadania Id).
-            int key = index;
+            Rectangle result = FindPattern(screen, pattern, false);
 
-            Rectangle result = FindPattern(screen, pattern, false, key);
-
-            if (result == Rectangle.Empty && _lastLocations.ContainsKey(key))
+            if (result == Rectangle.Empty && _lastLocations.ContainsKey(pattern.Source.Id))
             {
-                result = FindPattern(screen, pattern, true, key);
+                result = FindPattern(screen, pattern, true);
             }
 
             if (result != Rectangle.Empty)
             {
                 Rectangle prev;
-                bool changed = !_lastLocations.TryGetValue(key, out prev) || prev != result;
-                _lastLocations[key] = result;
+                bool changed = !_lastLocations.TryGetValue(pattern.Source.Id, out prev) || prev != result;
+                _lastLocations[pattern.Source.Id] = result;
 
                 if (changed)
                 {
@@ -129,14 +110,18 @@ namespace SecureDesktop.Services
                         Pattern = pattern.Source,
                         Location = result,
                         Confidence = pattern.LastScore,
-                        TrackingKey = key
+                        TrackingKey = pattern.TrackingKey
                     });
                 }
             }
-            else if (_lastLocations.ContainsKey(key))
+            else if (_lastLocations.ContainsKey(pattern.Source.Id))
             {
-                _lastLocations.Remove(key);
-                PatternLost?.Invoke(this, new PatternLostEventArgs { Pattern = pattern.Source, TrackingKey = key });
+                _lastLocations.Remove(pattern.Source.Id);
+                PatternLost?.Invoke(this, new PatternLostEventArgs
+                {
+                    Pattern = pattern.Source,
+                    TrackingKey = pattern.TrackingKey
+                });
             }
         }
 
@@ -153,7 +138,7 @@ namespace SecureDesktop.Services
                 _patterns = null;
             }
 
-            try { if (_worker != null) _worker.Wait(1000); } catch { /* oczekiwane przy anulowaniu */ }
+            try { if (_worker != null) _worker.Wait(1000); } catch { }
 
             if (toDispose != null)
             {
@@ -183,14 +168,14 @@ namespace SecureDesktop.Services
             }
         }
 
-        private Rectangle FindPattern(Bitmap screen, CachedPattern pattern, bool forceFullScreen, int key)
+        private Rectangle FindPattern(Bitmap screen, CachedPattern pattern, bool forceFullScreen)
         {
             Rectangle searchArea = new Rectangle(0, 0, screen.Width, screen.Height);
 
             if (!forceFullScreen)
             {
                 Rectangle last;
-                if (_lastLocations.TryGetValue(key, out last))
+                if (_lastLocations.TryGetValue(pattern.Source.Id, out last))
                 {
                     searchArea = ExpandRectangle(last, 250, screen.Size);
                 }
@@ -348,15 +333,19 @@ namespace SecureDesktop.Services
 
     internal class CachedPattern : IDisposable
     {
+        private static int _nextKey = 0;
+
         public Pattern Source;
         public int Width;
         public int Height;
         public PatternPoint[] Points;
         public PatternPoint[] CoarsePoints;
         public double LastScore;
+        public int TrackingKey;
 
         public CachedPattern(Pattern pattern)
         {
+            TrackingKey = Interlocked.Increment(ref _nextKey);
             Source = pattern;
 
             using (MemoryStream ms = new MemoryStream(pattern.ImageData))
@@ -449,11 +438,6 @@ namespace SecureDesktop.Services
         public Pattern Pattern { get; set; }
         public Rectangle Location { get; set; }
         public double Confidence { get; set; }
-
-        // Stabilny, gwarantowanie unikalny klucz per-wzorzec (Id lub Id+indeks
-        // gdy Id jest zduplikowane/niezainicjalizowane). Konsumenci zdarzenia
-        // (np. ScreenLockService) powinni używać TEGO klucza zamiast
-        // Pattern.Id, żeby uniknąć kolizji regionów przy wielu wzorcach.
         public int TrackingKey { get; set; }
     }
 

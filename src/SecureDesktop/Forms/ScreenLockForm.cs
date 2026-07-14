@@ -85,32 +85,57 @@ namespace SecureDesktop.Forms
             this.KeyDown += (s, e) => { if (e.KeyCode == Keys.Escape) ShowUnlockDialog(); };
         }
 
-        // Dodaje/aktualizuje odblokowany obszar dla KONKRETNEGO wzorca (po Id).
-        // Nie wpływa na regiony innych, równolegle wykrywanych wzorców.
         public void AddUnlockRegion(int patternId, Rectangle region)
         {
             _unlockRegions[patternId] = region;
+            UpdateFormRegion();
             this.Invalidate();
         }
 
-        // Usuwa region TYLKO tego wzorca, który zniknął z ekranu.
-        // Pozostałe, wciąż wykryte wzorce zachowują swoje odblokowane obszary.
         public void RemoveUnlockRegion(int patternId)
         {
             if (_unlockRegions.Remove(patternId))
             {
+                UpdateFormRegion();
                 this.Invalidate();
             }
         }
 
-        // Zachowane na wypadek użycia w LockAllScreens() (blokada bez wzorców) —
-        // czyści wszystkie regiony naraz, np. przy pełnym odblokowaniu.
         public void RemoveAllUnlockRegions()
         {
             if (_unlockRegions.Count > 0)
             {
                 _unlockRegions.Clear();
+                this.Region = null;
                 this.Invalidate();
+            }
+        }
+
+        private void UpdateFormRegion()
+        {
+            if (_unlockRegions.Count == 0)
+            {
+                this.Region = null;
+                return;
+            }
+
+            try
+            {
+                var fullRegion = new Region(new Rectangle(0, 0, this.Width, this.Height));
+                
+                foreach (var rect in _unlockRegions.Values)
+                {
+                    if (rect.Width > 0 && rect.Height > 0)
+                    {
+                        fullRegion.Exclude(rect);
+                    }
+                }
+                
+                this.Region = fullRegion;
+            }
+            catch
+            {
+                this.Region = null;
             }
         }
 
