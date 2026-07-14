@@ -8,12 +8,12 @@ namespace SecureDesktop.Forms
     public class ScreenLockForm : Form
     {
         private readonly Screen _screen;
-        private List<Rectangle> _unlockRegions;
+        private readonly Dictionary<int, Rectangle> _unlockRegions;
 
         public ScreenLockForm(Screen screen)
         {
             _screen = screen;
-            _unlockRegions = new List<Rectangle>();
+            _unlockRegions = new Dictionary<int, Rectangle>();
             InitializeComponent();
         }
 
@@ -85,25 +85,40 @@ namespace SecureDesktop.Forms
             this.KeyDown += (s, e) => { if (e.KeyCode == Keys.Escape) ShowUnlockDialog(); };
         }
 
-        public void AddUnlockRegion(Rectangle region)
+        // Dodaje/aktualizuje odblokowany obszar dla KONKRETNEGO wzorca (po Id).
+        // Nie wpływa na regiony innych, równolegle wykrywanych wzorców.
+        public void AddUnlockRegion(int patternId, Rectangle region)
         {
-            // USUŃ stare obszary, dodaj tylko ten NOWY
-            _unlockRegions.Clear();
-            _unlockRegions.Add(region);
+            _unlockRegions[patternId] = region;
             this.Invalidate();
         }
 
-        public void RemoveUnlockRegions()
+        // Usuwa region TYLKO tego wzorca, który zniknął z ekranu.
+        // Pozostałe, wciąż wykryte wzorce zachowują swoje odblokowane obszary.
+        public void RemoveUnlockRegion(int patternId)
         {
-            _unlockRegions.Clear();
-            this.Invalidate();
+            if (_unlockRegions.Remove(patternId))
+            {
+                this.Invalidate();
+            }
+        }
+
+        // Zachowane na wypadek użycia w LockAllScreens() (blokada bez wzorców) —
+        // czyści wszystkie regiony naraz, np. przy pełnym odblokowaniu.
+        public void RemoveAllUnlockRegions()
+        {
+            if (_unlockRegions.Count > 0)
+            {
+                _unlockRegions.Clear();
+                this.Invalidate();
+            }
         }
 
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);
 
-            foreach (var region in _unlockRegions)
+            foreach (var region in _unlockRegions.Values)
             {
                 using (var brush = new SolidBrush(Color.FromArgb(1, 255, 255, 255)))
                 {
@@ -127,7 +142,7 @@ namespace SecureDesktop.Forms
                 var screenPoint = new Point(m.LParam.ToInt32() & 0xffff, m.LParam.ToInt32() >> 16);
                 var clientPoint = this.PointToClient(screenPoint);
 
-                foreach (var region in _unlockRegions)
+                foreach (var region in _unlockRegions.Values)
                 {
                     if (region.Contains(clientPoint))
                     {
