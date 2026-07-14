@@ -21,7 +21,7 @@ namespace SecureDesktop.Services
         public event EventHandler<PatternFoundEventArgs> PatternFound;
         public event EventHandler<PatternLostEventArgs> PatternLost;
 
-        public PatternRecognitionService(double matchThreshold = 0.65)
+        public PatternRecognitionService(double matchThreshold = 0.45)
         {
             _matchThreshold = matchThreshold;
             _lastLocations = new Dictionary<int, Rectangle>();
@@ -140,7 +140,7 @@ namespace SecureDesktop.Services
 
             if (_lastLocations.TryGetValue(pattern.Source.Id, out Rectangle last))
             {
-                searchArea = ExpandRectangle(last, 150, screen.Size);
+                searchArea = ExpandRectangle(last, 200, screen.Size);
             }
             else
             {
@@ -162,7 +162,7 @@ namespace SecureDesktop.Services
                     double bestScore = 0;
                     int bestX = 0, bestY = 0;
 
-                    int step = 3;
+                    int step = 4;
 
                     for (int y = 0; y < searchArea.Height - pattern.Height; y += step)
                     {
@@ -176,7 +176,7 @@ namespace SecureDesktop.Services
                                 bestX = x;
                                 bestY = y;
 
-                                if (bestScore >= 0.95)
+                                if (bestScore >= 0.90)
                                     goto Found;
                             }
                         }
@@ -233,7 +233,7 @@ namespace SecureDesktop.Services
             int dg = g1 - g2;
             int db = b1 - b2;
 
-            return (dr * dr + dg * dg + db * db) < 300;
+            return (dr * dr + dg * dg + db * db) < 800;
         }
 
         private Rectangle ExpandRectangle(Rectangle r, int size, Size screen)
@@ -274,8 +274,8 @@ namespace SecureDesktop.Services
 
                 var points = new List<PatternPoint>();
 
-                int stepX = Math.Max(1, Width / 15);
-                int stepY = Math.Max(1, Height / 15);
+                int stepX = Math.Max(1, Width / 12);
+                int stepY = Math.Max(1, Height / 12);
 
                 for (int y = 0; y < Height; y += stepY)
                 {
