@@ -2,14 +2,15 @@
 <Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" />
   
-  <PropertyGroup>
+ <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
     <OutputType>WinExe</OutputType>
     <RootNamespace>SecureDesktop</RootNamespace>
     <AssemblyName>SecureDesktop</AssemblyName>
     <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
-  </PropertyGroup>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+</PropertyGroup>
   
   <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
     <PlatformTarget>x64</PlatformTarget>
@@ -27,6 +28,8 @@
     <Reference Include="System.Xml" />
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="System.Net.Http" />
+    <Reference Include="System.Threading" />
+    <Reference Include="System.Configuration" />
   </ItemGroup>
   
   <ItemGroup>
@@ -57,6 +60,7 @@
     <Compile Include="Utils\SecurityHelper.cs" />
     <Compile Include="Core\SecurityManager.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    
   </ItemGroup>
   
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
