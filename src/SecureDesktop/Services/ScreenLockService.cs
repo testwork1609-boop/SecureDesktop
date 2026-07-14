@@ -118,7 +118,7 @@ namespace SecureDesktop.Services
             if (region.Width <= 0) region.Width = e.Location.Width;
             if (region.Height <= 0) region.Height = e.Location.Height;
 
-            int key = e.TrackingKey;
+            int key = e.Pattern.Id;
 
             foreach (var overlay in _overlays)
             {
@@ -138,7 +138,7 @@ namespace SecureDesktop.Services
 
         private void OnPatternLost(object sender, PatternLostEventArgs e)
         {
-            int key = e.TrackingKey;
+            int key = e.Pattern.Id;
 
             foreach (var overlay in _overlays)
             {
