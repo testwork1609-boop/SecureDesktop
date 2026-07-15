@@ -419,7 +419,44 @@ this.KeyDown += (s, e) =>
             browseBtn.FlatAppearance.BorderSize = 0;
             browseBtn.Click += (s, e) => { using (var dlg = new FolderBrowserDialog()) { if (dlg.ShowDialog() == DialogResult.OK) _backupPathBox.Text = dlg.SelectedPath; } };
             y += 60;
+// Plik do monitorowania
+var monitorLabel = new Label 
+{ 
+    Text = "Monitorowany plik:", 
+    Location = new Point(20, y), 
+    AutoSize = true, 
+    Font = new Font("Segoe UI", 10) 
+};
+y += 25;
 
+var monitorPathBox = new TextBox
+{
+    Location = new Point(20, y),
+    Size = new Size(350, 25),
+    BackColor = inputBg,
+    BorderStyle = BorderStyle.FixedSingle,
+    Name = "monitorPathBox"
+};
+var monitorBrowseBtn = new Button
+{
+    Text = "Przegladaj",
+    Location = new Point(380, y),
+    Size = new Size(90, 25),
+    BackColor = primaryColor,
+    ForeColor = Color.White,
+    FlatStyle = FlatStyle.Flat,
+    Cursor = Cursors.Hand
+};
+monitorBrowseBtn.FlatAppearance.BorderSize = 0;
+monitorBrowseBtn.Click += (s, ev) =>
+{
+    using (var dlg = new OpenFileDialog())
+    {
+        if (dlg.ShowDialog() == DialogResult.OK)
+            monitorPathBox.Text = dlg.FileName;
+    }
+};
+y += 40;
             var backupNowBtn = new Button
             {
                 Text = "Wykonaj backup teraz",
@@ -653,35 +690,40 @@ this.KeyDown += (s, e) =>
             }
         }
 
-        private void SaveAllSettings(object sender, EventArgs e)
+       private void SaveAllSettings(object sender, EventArgs e)
+{
+    try
+    {
+        if (_db != null)
         {
-            try
-            {
-                if (_db != null)
-                {
-                    var data = _db.GetData();
-                    data.Patterns = _patterns;
-                    data.Settings["AdminPassword"] = _adminPasswordBox.Text;
-                    data.Settings["BackupPath"] = _backupPathBox.Text;
-                    data.Settings["CheckpointPath"] = _checkpointPathBox.Text;
-                    data.Settings["CheckpointArgs"] = _checkpointArgsBox.Text;
-                    data.Settings["PatternThreshold"] = _thresholdBox.Value.ToString();
-                    data.Settings["SearchInterval"] = _intervalBox.Value.ToString();
-                    data.Settings["AutoStart"] = _autoStartCheck.Checked.ToString();
-                    data.Settings["MinimizeToTray"] = _trayCheck.Checked.ToString();
-                    _db.Save();
-                }
-
-                MessageBox.Show("Wszystkie ustawienia zapisane!\n\nLiczba patternow: " + _patterns.Count,
-                    "Sukces", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show("Blad zapisu: " + ex.Message, "Blad", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-
-            this.Close();
+            var data = _db.GetData();
+            
+            // Zapisz patterny
+            data.Patterns = _patterns;
+            
+            // Zapisz ustawienia z WSZYSTKICH zakładek
+            data.Settings["AdminPassword"] = _adminPasswordBox.Text;
+            data.Settings["BackupPath"] = _backupPathBox.Text;
+            data.Settings["CheckpointPath"] = _checkpointPathBox.Text;
+            data.Settings["CheckpointArgs"] = _checkpointArgsBox.Text;
+            data.Settings["PatternThreshold"] = _thresholdBox.Value.ToString();
+            data.Settings["SearchInterval"] = _intervalBox.Value.ToString();
+            data.Settings["AutoStart"] = _autoStartCheck.Checked.ToString();
+            data.Settings["MinimizeToTray"] = _trayCheck.Checked.ToString();
+            
+            _db.Save();
         }
+
+        MessageBox.Show("Wszystkie ustawienia zapisane!\n\nLiczba patternow: " + _patterns.Count,
+            "Sukces", MessageBoxButtons.OK, MessageBoxIcon.Information);
+    }
+    catch (Exception ex)
+    {
+        MessageBox.Show("Blad zapisu: " + ex.Message, "Blad", MessageBoxButtons.OK, MessageBoxIcon.Error);
+    }
+
+    this.Close();
+}
     }
 
     public class ScreenSelectionForm : Form
