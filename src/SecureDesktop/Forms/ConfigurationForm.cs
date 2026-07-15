@@ -43,11 +43,11 @@ namespace SecureDesktop.Forms
 
         public ConfigurationForm()
         {
-            _patterns = new List<Pattern>();
-            this.Icon = Program.AppIcon;
-            InitializeDatabase();
-            InitializeComponent();
-            LoadPatternsFromDatabase();
+             _patterns = new List<Pattern>();
+    this.Icon = Program.AppIcon;
+    InitializeDatabase();
+    InitializeComponent();        // 1. Najpierw buduje UI (tworzy _patternListBox)
+    LoadPatternsFromDatabase();
         }
 
         private void InitializeDatabase()
@@ -616,16 +616,18 @@ namespace SecureDesktop.Forms
         }
 
         private void RefreshPatternList()
-        {
-            _patternListBox.Items.Clear();
-            foreach (var p in _patterns)
-            {
-                string status = p.IsActive ? "✓" : "✗";
-                string name = (p.Name ?? "Bez nazwy").PadRight(25);
-                string desc = p.Description ?? "";
-                _patternListBox.Items.Add(status + " " + name + " | " + desc);
-            }
-        }
+{
+    if (_patternListBox == null) return;  // DODAJ TO
+    
+    _patternListBox.Items.Clear();
+    foreach (var p in _patterns)
+    {
+        string status = p.IsActive ? "✓" : "✗";
+        string name = (p.Name ?? "Bez nazwy").PadRight(25);
+        string desc = p.Description ?? "";
+        _patternListBox.Items.Add(status + " " + name + " | " + desc);
+    }
+
 
         private void AddPatternFromScreen(object sender, EventArgs e)
         {
