@@ -23,13 +23,13 @@ jobs:
       shell: cmd
       run: nuget restore SecureDesktop.sln
 
-    - name: Build application (x86)
+    - name: Build application (32-bit compatible)
       shell: cmd
       run: |
         echo ========================================
-        echo  BUDOWANIE APLIKACJI x86 (32-bit)
+        echo  BUDOWANIE APLIKACJI (32/64-bit)
         echo ========================================
-        msbuild SecureDesktop.sln /t:Build /p:Configuration=Release /p:Platform="x86" /restore /v:minimal /nologo
+        msbuild SecureDesktop.sln /t:Build /p:Configuration=Release /p:Platform="Any CPU" /restore /v:minimal /nologo
 
     - name: Verify build output
       shell: cmd
@@ -38,10 +38,10 @@ jobs:
         dir src\SecureDesktop\bin\Release\*.exe
         dir src\SecureDesktop\bin\Release\*.dll
 
-    - name: Upload artifact (x86)
+    - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: SecureDesktop-x86-32bit
+        name: SecureDesktop-32bit-Compatible
         path: |
           src\SecureDesktop\bin\Release\SecureDesktop.exe
           src\SecureDesktop\bin\Release\Newtonsoft.Json.dll
@@ -51,19 +51,13 @@ jobs:
       if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
       uses: softprops/action-gh-release@v2
       with:
-        name: "SecureDesktop v1.0.${{ github.run_number }} - 32-bit"
+        name: "SecureDesktop v1.0.${{ github.run_number }}"
         tag_name: "v1.0.${{ github.run_number }}"
         body: |
-          ## 🔒 SecureDesktop - Wersja 32-bit (x86)
+          ## 🔒 SecureDesktop
           
           ✅ Działa na Windows 10/11 **32-bit i 64-bit**
           ✅ Wymaga .NET Framework 4.8
-          
-          **Instalacja:**
-          1. Pobierz pliki
-          2. Umieść w folderze
-          3. Utwórz podfoldery: Database, Backup, Logs
-          4. Uruchom SecureDesktop.exe
           
           **Logowanie:** admin / admin
         files: |
