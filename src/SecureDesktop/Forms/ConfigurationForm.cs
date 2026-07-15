@@ -880,5 +880,7 @@ namespace SecureDesktop.Forms
                 }
             }
         }
+  
+      }
     }
 }
