@@ -51,6 +51,7 @@ namespace SecureDesktop.Forms
 
         private void InitializeComponent()
         {
+            this.Icon = Program.AppIcon;
             Color primaryColor = Color.FromArgb(45, 165, 90);
             Color bgColor = Color.FromArgb(248, 249, 250);
             Color sidebarColor = Color.White;

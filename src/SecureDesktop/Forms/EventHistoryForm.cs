@@ -11,12 +11,23 @@ namespace SecureDesktop.Forms
         public EventHistoryForm()
         {
             Color primaryColor = Color.FromArgb(45, 165, 90);
-            
+
             this.Text = "Historia zdarzeń";
             this.Size = new Size(700, 500);
             this.StartPosition = FormStartPosition.CenterParent;
             this.BackColor = Color.White;
             this.ForeColor = Color.FromArgb(30, 30, 30);
+            this.Icon = Program.AppIcon;
+            this.KeyPreview = true;
+            this.FormBorderStyle = FormBorderStyle.FixedDialog;
+            this.MaximizeBox = false;
+
+            // ESC = zamknij
+            this.KeyDown += (s, e) =>
+            {
+                if (e.KeyCode == Keys.Escape)
+                    this.Close();
+            };
 
             var headerPanel = new Panel
             {
@@ -55,7 +66,8 @@ namespace SecureDesktop.Forms
                 BackColor = Color.White,
                 ForeColor = primaryColor,
                 FlatStyle = FlatStyle.Flat,
-                Font = new Font("Segoe UI", 10)
+                Font = new Font("Segoe UI", 10),
+                Cursor = Cursors.Hand
             };
             clearBtn.FlatAppearance.BorderColor = primaryColor;
             clearBtn.FlatAppearance.BorderSize = 1;
@@ -69,7 +81,8 @@ namespace SecureDesktop.Forms
                 BackColor = primaryColor,
                 ForeColor = Color.White,
                 FlatStyle = FlatStyle.Flat,
-                Font = new Font("Segoe UI", 10)
+                Font = new Font("Segoe UI", 10),
+                Cursor = Cursors.Hand
             };
             closeBtn.FlatAppearance.BorderSize = 0;
             closeBtn.Click += (s, e) => this.Close();

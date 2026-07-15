@@ -39,12 +39,25 @@ namespace SecureDesktop.Forms
             this.FormBorderStyle = FormBorderStyle.FixedDialog;
             this.BackColor = Color.White;
             this.MaximizeBox = false;
+            this.MinimizeBox = false;
+            this.Icon = Program.AppIcon;
+            this.KeyPreview = true;
 
             var headerPanel = new Panel
             {
                 Location = new Point(0, 0),
                 Size = new Size(420, 120),
                 BackColor = primaryColor
+            };
+
+            var iconLabel = new Label
+            {
+                Text = "🔒",
+                Font = new Font("Segoe UI", 36),
+                Location = new Point(175, 10),
+                Size = new Size(70, 50),
+                TextAlign = ContentAlignment.MiddleCenter,
+                ForeColor = Color.White
             };
 
             var titleLabel = new Label
@@ -57,16 +70,17 @@ namespace SecureDesktop.Forms
                 ForeColor = Color.White
             };
 
+            headerPanel.Controls.Add(iconLabel);
             headerPanel.Controls.Add(titleLabel);
 
             int y = 150;
-            var idLabel = new Label { Text = "Numer identyfikacyjny", Location = new Point(50, y), Size = new Size(320, 20) };
+            var idLabel = new Label { Text = "Numer identyfikacyjny", Location = new Point(50, y), Size = new Size(320, 20), Font = new Font("Segoe UI", 10) };
             y += 25;
-            _idBox = new TextBox { Location = new Point(50, y), Size = new Size(320, 35), Font = new Font("Segoe UI", 12) };
+            _idBox = new TextBox { Location = new Point(50, y), Size = new Size(320, 35), Font = new Font("Segoe UI", 12), BackColor = Color.FromArgb(245, 245, 245), BorderStyle = BorderStyle.FixedSingle };
             y += 50;
-            var passLabel = new Label { Text = "Haslo", Location = new Point(50, y), Size = new Size(320, 20) };
+            var passLabel = new Label { Text = "Haslo", Location = new Point(50, y), Size = new Size(320, 20), Font = new Font("Segoe UI", 10) };
             y += 25;
-            _passBox = new TextBox { Location = new Point(50, y), Size = new Size(320, 35), Font = new Font("Segoe UI", 12), PasswordChar = '*' };
+            _passBox = new TextBox { Location = new Point(50, y), Size = new Size(320, 35), Font = new Font("Segoe UI", 12), PasswordChar = '●', BackColor = Color.FromArgb(245, 245, 245), BorderStyle = BorderStyle.FixedSingle };
             y += 55;
 
             var loginBtn = new Button
@@ -81,7 +95,7 @@ namespace SecureDesktop.Forms
                 Cursor = Cursors.Hand
             };
             loginBtn.FlatAppearance.BorderSize = 0;
-            loginBtn.Click += LoginBtn_Click;
+            loginBtn.Click += LoginAction;
             y += 52;
 
             var closeBtn = new Button
@@ -104,31 +118,19 @@ namespace SecureDesktop.Forms
                 Size = new Size(320, 25),
                 ForeColor = Color.Red,
                 TextAlign = ContentAlignment.MiddleCenter,
+                Font = new Font("Segoe UI", 9),
                 Visible = false
             };
 
             // ENTER = logowanie
-            _passBox.KeyDown += (s, e) =>
-            {
-                if (e.KeyCode == Keys.Enter)
-                {
-                    e.SuppressKeyPress = true;
-                    LoginBtn_Click(s, e);
-                }
-            };
-            this.KeyDown += (s, e) =>
-            {
-                if (e.KeyCode == Keys.Enter)
-                {
-                    e.SuppressKeyPress = true;
-                    LoginBtn_Click(s, e);
-                }
-            };
+            this.KeyDown += (s, e) => { if (e.KeyCode == Keys.Enter) LoginAction(s, e); };
+            _idBox.KeyDown += (s, e) => { if (e.KeyCode == Keys.Enter) { _passBox.Focus(); e.SuppressKeyPress = true; } };
+            _passBox.KeyDown += (s, e) => { if (e.KeyCode == Keys.Enter) { LoginAction(s, e); e.SuppressKeyPress = true; } };
 
             Controls.AddRange(new Control[] { headerPanel, idLabel, _idBox, passLabel, _passBox, loginBtn, closeBtn, _errorLabel });
         }
 
-        private void LoginBtn_Click(object sender, EventArgs e)
+        private void LoginAction(object sender, EventArgs e)
         {
             try
             {

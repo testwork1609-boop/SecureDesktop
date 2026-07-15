@@ -58,6 +58,9 @@ namespace SecureDesktop.Forms
 
         private void InitializeComponent()
         {
+            this.Icon = Program.AppIcon;
+            this.KeyPreview = true;
+            this.KeyDown += (s, e) => { if (e.KeyCode == Keys.Escape) this.Close(); };
             this.Text = "Konfiguracja SecureDesktop";
             this.Size = new Size(820, 650);
             this.StartPosition = FormStartPosition.CenterParent;
@@ -109,19 +112,34 @@ namespace SecureDesktop.Forms
             tabControl.TabPages.Add(tabCheckpoint);
             tabControl.TabPages.Add(tabBackup);
 
-            var saveBtn = new Button
-            {
-                Text = "Zapisz wszystkie ustawienia",
-                Location = new Point(250, 565),
-                Size = new Size(220, 38),
-                BackColor = primaryColor,
-                ForeColor = Color.White,
-                FlatStyle = FlatStyle.Flat,
-                Font = new Font("Segoe UI", 10, FontStyle.Bold),
-                Cursor = Cursors.Hand
-            };
-            saveBtn.FlatAppearance.BorderSize = 0;
-            saveBtn.Click += SaveAllSettings;
+ var saveBtn = new Button
+{
+    Text = "💾  Zapisz wszystkie ustawienia",
+    Location = new Point(250, 565),
+    Size = new Size(220, 38),
+    BackColor = primaryColor,
+    ForeColor = Color.White,
+    FlatStyle = FlatStyle.Flat,
+    Font = new Font("Segoe UI", 10, FontStyle.Bold),
+    Cursor = Cursors.Hand
+};
+saveBtn.FlatAppearance.BorderSize = 0;
+saveBtn.Click += SaveAllSettings;
+
+// DODAJ TO - ENTER = Zapisz (Ctrl+Enter)
+this.KeyPreview = true;
+this.KeyDown += (s, e) =>
+{
+    if (e.KeyCode == Keys.Enter && e.Control)
+    {
+        e.SuppressKeyPress = true;
+        SaveAllSettings(s, e);
+    }
+    else if (e.KeyCode == Keys.Escape)
+    {
+        this.Close();
+    }
+};;
 
             var cancelBtn = new Button
             {
