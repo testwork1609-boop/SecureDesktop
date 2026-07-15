@@ -35,6 +35,12 @@ namespace SecureDesktop.Forms
         private List<Pattern> _patterns;
         private DatabaseInitializer _db;
 
+        // Flagi zapobiegające wielokrotnemu budowaniu zakładek
+        private bool _generalBuilt = false;
+        private bool _patternsBuilt = false;
+        private bool _checkpointBuilt = false;
+        private bool _backupBuilt = false;
+
         public ConfigurationForm()
         {
             _patterns = new List<Pattern>();
@@ -76,7 +82,7 @@ namespace SecureDesktop.Forms
                 if (e.KeyCode == Keys.Enter && e.Control)
                 {
                     e.SuppressKeyPress = true;
-                    SaveAllSettings(s, e);
+                    SaveAllSettings(null, e);
                 }
                 else if (e.KeyCode == Keys.Escape)
                 {
@@ -110,21 +116,44 @@ namespace SecureDesktop.Forms
             };
 
             var tabGeneral = new TabPage("  Ogolne  ") { BackColor = bgColor };
-            BuildGeneralTab(tabGeneral);
-
             var tabPatterns = new TabPage("  Patterny  ") { BackColor = bgColor };
-            BuildPatternsTab(tabPatterns);
-
             var tabCheckpoint = new TabPage("  CheckPoint  ") { BackColor = bgColor };
-            BuildCheckpointTab(tabCheckpoint);
-
             var tabBackup = new TabPage("  Backup  ") { BackColor = bgColor };
-            BuildBackupTab(tabBackup);
+
+            // Buduj zakładki przy pierwszym przełączeniu
+            tabControl.SelectedIndexChanged += (s, e) =>
+            {
+                var selectedTab = tabControl.SelectedTab;
+                if (selectedTab == tabGeneral && !_generalBuilt)
+                {
+                    BuildGeneralTab(tabGeneral);
+                    _generalBuilt = true;
+                }
+                else if (selectedTab == tabPatterns && !_patternsBuilt)
+                {
+                    BuildPatternsTab(tabPatterns);
+                    _patternsBuilt = true;
+                }
+                else if (selectedTab == tabCheckpoint && !_checkpointBuilt)
+                {
+                    BuildCheckpointTab(tabCheckpoint);
+                    _checkpointBuilt = true;
+                }
+                else if (selectedTab == tabBackup && !_backupBuilt)
+                {
+                    BuildBackupTab(tabBackup);
+                    _backupBuilt = true;
+                }
+            };
 
             tabControl.TabPages.Add(tabGeneral);
             tabControl.TabPages.Add(tabPatterns);
             tabControl.TabPages.Add(tabCheckpoint);
             tabControl.TabPages.Add(tabBackup);
+
+            // Od razu zbuduj pierwszą zakładkę
+            BuildGeneralTab(tabGeneral);
+            _generalBuilt = true;
 
             var saveBtn = new Button
             {
@@ -706,24 +735,19 @@ namespace SecureDesktop.Forms
                 {
                     var data = _db.GetData();
 
-                    // Patterny
                     data.Patterns = _patterns;
 
-                    // Ogólne
                     data.Settings["AdminPassword"] = _adminPasswordBox.Text;
                     data.Settings["AutoStart"] = _autoStartCheck?.Checked.ToString() ?? "false";
                     data.Settings["MinimizeToTray"] = _trayCheck?.Checked.ToString() ?? "true";
 
-                    // Backup
                     data.Settings["BackupPath"] = _backupPathBox.Text;
                     if (_monitorPathBox != null)
                         data.Settings["MonitoredFile"] = _monitorPathBox.Text;
 
-                    // CheckPoint
                     data.Settings["CheckpointPath"] = _checkpointPathBox.Text;
                     data.Settings["CheckpointArgs"] = _checkpointArgsBox.Text;
 
-                    // Patterny - ustawienia
                     data.Settings["PatternThreshold"] = _thresholdBox.Value.ToString();
                     data.Settings["SearchInterval"] = _intervalBox.Value.ToString();
 
