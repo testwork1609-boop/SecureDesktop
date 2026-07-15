@@ -762,7 +762,7 @@ namespace SecureDesktop.Forms
                 MessageBox.Show("Blad zapisu: " + ex.Message, "Blad", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
 
-            this.Close();
+          //  this.Close();
         }
     }
 
