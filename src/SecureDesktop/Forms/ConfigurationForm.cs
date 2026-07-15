@@ -63,126 +63,108 @@ namespace SecureDesktop.Forms
             }
         }
 
-        private void InitializeComponent()
+       private void InitializeComponent()
+{
+    this.Text = "Konfiguracja SecureDesktop";
+    this.Size = new Size(820, 650);
+    this.StartPosition = FormStartPosition.CenterParent;
+    this.BackColor = bgColor;
+    this.ForeColor = textColor;
+    this.FormBorderStyle = FormBorderStyle.FixedDialog;
+    this.MaximizeBox = false;
+    this.MinimizeBox = false;
+    this.Font = new Font("Segoe UI", 9);
+    this.KeyPreview = true;
+
+    this.KeyDown += (s, e) =>
+    {
+        if (e.KeyCode == Keys.Enter && e.Control)
         {
-            this.Text = "Konfiguracja SecureDesktop";
-            this.Size = new Size(820, 650);
-            this.StartPosition = FormStartPosition.CenterParent;
-            this.BackColor = bgColor;
-            this.ForeColor = textColor;
-            this.FormBorderStyle = FormBorderStyle.FixedDialog;
-            this.MaximizeBox = false;
-            this.MinimizeBox = false;
-            this.Font = new Font("Segoe UI", 9);
-            this.KeyPreview = true;
-
-            this.KeyDown += (s, e) =>
-            {
-                if (e.KeyCode == Keys.Enter && e.Control)
-                {
-                    e.SuppressKeyPress = true;
-                    SaveAllSettings(null, e);
-                }
-                else if (e.KeyCode == Keys.Escape)
-                {
-                    this.Close();
-                }
-            };
-
-            var headerPanel = new Panel
-            {
-                Location = new Point(0, 0),
-                Size = new Size(820, 55),
-                BackColor = primaryColor
-            };
-
-            var headerTitle = new Label
-            {
-                Text = "Konfiguracja SecureDesktop",
-                Font = new Font("Segoe UI", 16, FontStyle.Bold),
-                Location = new Point(20, 12),
-                AutoSize = true,
-                ForeColor = Color.White
-            };
-
-            headerPanel.Controls.Add(headerTitle);
-
-            var tabControl = new TabControl
-            {
-                Location = new Point(10, 65),
-                Size = new Size(785, 490),
-                Appearance = TabAppearance.FlatButtons
-            };
-
-            var tabGeneral = new TabPage("  Ogolne  ") { BackColor = bgColor };
-            var tabPatterns = new TabPage("  Patterny  ") { BackColor = bgColor };
-            var tabCheckpoint = new TabPage("  CheckPoint  ") { BackColor = bgColor };
-            var tabBackup = new TabPage("  Backup  ") { BackColor = bgColor };
-
-            tabControl.SelectedIndexChanged += (s, e) =>
-            {
-                var selectedTab = tabControl.SelectedTab;
-                if (selectedTab == tabGeneral && !_generalBuilt)
-                {
-                    BuildGeneralTab(tabGeneral);
-                    _generalBuilt = true;
-                }
-                else if (selectedTab == tabPatterns && !_patternsBuilt)
-                {
-                    BuildPatternsTab(tabPatterns);
-                    _patternsBuilt = true;
-                }
-                else if (selectedTab == tabCheckpoint && !_checkpointBuilt)
-                {
-                    BuildCheckpointTab(tabCheckpoint);
-                    _checkpointBuilt = true;
-                }
-                else if (selectedTab == tabBackup && !_backupBuilt)
-                {
-                    BuildBackupTab(tabBackup);
-                    _backupBuilt = true;
-                }
-            };
-
-            tabControl.TabPages.Add(tabGeneral);
-            tabControl.TabPages.Add(tabPatterns);
-            tabControl.TabPages.Add(tabCheckpoint);
-            tabControl.TabPages.Add(tabBackup);
-
-            BuildGeneralTab(tabGeneral);
-            _generalBuilt = true;
-
-            var saveBtn = new Button
-            {
-                Text = "Zapisz wszystkie ustawienia",
-                Location = new Point(250, 565),
-                Size = new Size(220, 38),
-                BackColor = primaryColor,
-                ForeColor = Color.White,
-                FlatStyle = FlatStyle.Flat,
-                Font = new Font("Segoe UI", 10, FontStyle.Bold),
-                Cursor = Cursors.Hand
-            };
-            saveBtn.FlatAppearance.BorderSize = 0;
-            saveBtn.Click += SaveAllSettings;
-
-            var cancelBtn = new Button
-            {
-                Text = "Anuluj",
-                Location = new Point(490, 565),
-                Size = new Size(100, 38),
-                BackColor = Color.White,
-                ForeColor = subtitleColor,
-                FlatStyle = FlatStyle.Flat,
-                Font = new Font("Segoe UI", 10),
-                Cursor = Cursors.Hand
-            };
-            cancelBtn.FlatAppearance.BorderColor = borderColor;
-            cancelBtn.FlatAppearance.BorderSize = 1;
-            cancelBtn.Click += (s, e) => this.Close();
-
-            this.Controls.AddRange(new Control[] { headerPanel, tabControl, saveBtn, cancelBtn });
+            e.SuppressKeyPress = true;
+            SaveAllSettings(null, e);
         }
+        else if (e.KeyCode == Keys.Escape)
+        {
+            this.Close();
+        }
+    };
+
+    var headerPanel = new Panel
+    {
+        Location = new Point(0, 0),
+        Size = new Size(820, 55),
+        BackColor = primaryColor
+    };
+
+    var headerTitle = new Label
+    {
+        Text = "Konfiguracja SecureDesktop",
+        Font = new Font("Segoe UI", 16, FontStyle.Bold),
+        Location = new Point(20, 12),
+        AutoSize = true,
+        ForeColor = Color.White
+    };
+
+    headerPanel.Controls.Add(headerTitle);
+
+    var tabControl = new TabControl
+    {
+        Location = new Point(10, 65),
+        Size = new Size(785, 490),
+        Appearance = TabAppearance.FlatButtons
+    };
+
+    var tabGeneral = new TabPage("  Ogolne  ") { BackColor = bgColor };
+    var tabPatterns = new TabPage("  Patterny  ") { BackColor = bgColor };
+    var tabCheckpoint = new TabPage("  CheckPoint  ") { BackColor = bgColor };
+    var tabBackup = new TabPage("  Backup  ") { BackColor = bgColor };
+
+    tabControl.TabPages.Add(tabGeneral);
+    tabControl.TabPages.Add(tabPatterns);
+    tabControl.TabPages.Add(tabCheckpoint);
+    tabControl.TabPages.Add(tabBackup);
+
+    // BUDUJ WSZYSTKIE ZAKŁADKI OD RAZU
+    BuildGeneralTab(tabGeneral);
+    BuildPatternsTab(tabPatterns);
+    BuildCheckpointTab(tabCheckpoint);
+    BuildBackupTab(tabBackup);
+    _generalBuilt = true;
+    _patternsBuilt = true;
+    _checkpointBuilt = true;
+    _backupBuilt = true;
+
+    var saveBtn = new Button
+    {
+        Text = "Zapisz wszystkie ustawienia",
+        Location = new Point(250, 565),
+        Size = new Size(220, 38),
+        BackColor = primaryColor,
+        ForeColor = Color.White,
+        FlatStyle = FlatStyle.Flat,
+        Font = new Font("Segoe UI", 10, FontStyle.Bold),
+        Cursor = Cursors.Hand
+    };
+    saveBtn.FlatAppearance.BorderSize = 0;
+    saveBtn.Click += SaveAllSettings;
+
+    var cancelBtn = new Button
+    {
+        Text = "Anuluj",
+        Location = new Point(490, 565),
+        Size = new Size(100, 38),
+        BackColor = Color.White,
+        ForeColor = subtitleColor,
+        FlatStyle = FlatStyle.Flat,
+        Font = new Font("Segoe UI", 10),
+        Cursor = Cursors.Hand
+    };
+    cancelBtn.FlatAppearance.BorderColor = borderColor;
+    cancelBtn.FlatAppearance.BorderSize = 1;
+    cancelBtn.Click += (s, e) => this.Close();
+
+    this.Controls.AddRange(new Control[] { headerPanel, tabControl, saveBtn, cancelBtn });
+}
 
         private void BuildGeneralTab(TabPage tab)
         {
