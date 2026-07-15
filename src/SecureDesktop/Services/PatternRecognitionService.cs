@@ -88,39 +88,44 @@ namespace SecureDesktop.Services
             }
         }
 
-        private void ProcessPattern(Bitmap screen, CachedPattern pattern)
+       private void ProcessPattern(Bitmap screen, CachedPattern pattern)
+{
+    string key = pattern.Source.Name ?? ("pattern_" + pattern.Source.Id);
+
+    Rectangle result = FindPattern(screen, pattern, false);
+
+    if (result == Rectangle.Empty && _lastLocations.ContainsKey(key))
+    {
+        result = FindPattern(screen, pattern, true);
+    }
+
+    // DEBUG
+    System.Diagnostics.Debug.WriteLine(
+        $"ProcessPattern: '{key}' -> Found={result != Rectangle.Empty}, " +
+        $"Score={pattern.LastScore:F2}, Location={result}");
+
+    if (result != Rectangle.Empty)
+    {
+        Rectangle prev;
+        bool changed = !_lastLocations.TryGetValue(key, out prev) || prev != result;
+        _lastLocations[key] = result;
+
+        if (changed)
         {
-            string key = pattern.Source.Name ?? ("pattern_" + pattern.Source.Id);
-
-            Rectangle result = FindPattern(screen, pattern, false);
-
-            if (result == Rectangle.Empty && _lastLocations.ContainsKey(key))
+            PatternFound?.Invoke(this, new PatternFoundEventArgs
             {
-                result = FindPattern(screen, pattern, true);
-            }
-
-            if (result != Rectangle.Empty)
-            {
-                Rectangle prev;
-                bool changed = !_lastLocations.TryGetValue(key, out prev) || prev != result;
-                _lastLocations[key] = result;
-
-                if (changed)
-                {
-                    PatternFound?.Invoke(this, new PatternFoundEventArgs
-                    {
-                        Pattern = pattern.Source,
-                        Location = result,
-                        Confidence = pattern.LastScore
-                    });
-                }
-            }
-            else if (_lastLocations.ContainsKey(key))
-            {
-                _lastLocations.Remove(key);
-                PatternLost?.Invoke(this, new PatternLostEventArgs { Pattern = pattern.Source });
-            }
+                Pattern = pattern.Source,
+                Location = result,
+                Confidence = pattern.LastScore
+            });
         }
+    }
+    else if (_lastLocations.ContainsKey(key))
+    {
+        _lastLocations.Remove(key);
+        PatternLost?.Invoke(this, new PatternLostEventArgs { Pattern = pattern.Source });
+    }
+}
 
         public void Stop()
         {
