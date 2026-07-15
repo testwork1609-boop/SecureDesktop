@@ -23,13 +23,13 @@ jobs:
       shell: cmd
       run: nuget restore SecureDesktop.sln
 
-    - name: Build application
+    - name: Build application (x86)
       shell: cmd
       run: |
         echo ========================================
-        echo  BUDOWANIE APLIKACJI
+        echo  BUDOWANIE APLIKACJI x86 (32-bit)
         echo ========================================
-        msbuild SecureDesktop.sln /t:Build /p:Configuration=Release /p:Platform="Any CPU" /v:minimal /nologo
+        msbuild SecureDesktop.sln /t:Build /p:Configuration=Release /p:Platform="x86" /restore /v:minimal /nologo
 
     - name: Verify build output
       shell: cmd
@@ -38,64 +38,36 @@ jobs:
         dir src\SecureDesktop\bin\Release\*.exe
         dir src\SecureDesktop\bin\Release\*.dll
 
-    - name: Download ILMerge
-      shell: powershell
-      run: |
-        Write-Host "Pobieranie ILMerge..."
-        Invoke-WebRequest -Uri "https://www.nuget.org/api/v2/package/ILMerge/3.0.29" -OutFile "ILMerge.zip"
-        Write-Host "Rozpakowywanie..."
-        Expand-Archive -Path "ILMerge.zip" -DestinationPath "ILMerge" -Force
-        Write-Host "ILMerge gotowy!"
-
-    - name: Merge into SINGLE EXE
-      shell: cmd
-      run: |
-        echo ========================================
-        echo  LACZENIE W JEDEN PLIK EXE
-        echo ========================================
-        
-        mkdir publish 2>nul
-        
-        ILMerge\tools\net452\ILMerge.exe ^
-          /out:publish\SecureDesktop.exe ^
-          /target:winexe ^
-          /targetplatform:v4 ^
-          src\SecureDesktop\bin\Release\SecureDesktop.exe ^
-          src\SecureDesktop\bin\Release\Newtonsoft.Json.dll
-        
-        if %ERRORLEVEL% EQU 0 (
-          echo ========================================
-          echo  JEDEN PLIK EXE UTWORZONY!
-          echo ========================================
-        ) else (
-          echo BLAD ILMerge - kopiowanie plikow...
-          copy src\SecureDesktop\bin\Release\SecureDesktop.exe publish\
-          copy src\SecureDesktop\bin\Release\Newtonsoft.Json.dll publish\
-        )
-
-    - name: Verify final EXE
-      shell: cmd
-      run: |
-        echo Końcowy plik EXE:
-        dir publish\SecureDesktop.exe
-        echo.
-        echo Rozmiar pliku:
-        for %%A in (publish\SecureDesktop.exe) do echo %%~zA bajtow
-
-    - name: Upload artifact
+    - name: Upload artifact (x86)
       uses: actions/upload-artifact@v4
       with:
-        name: SecureDesktop-SingleEXE
-        path: publish\SecureDesktop.exe
+        name: SecureDesktop-x86-32bit
+        path: |
+          src\SecureDesktop\bin\Release\SecureDesktop.exe
+          src\SecureDesktop\bin\Release\Newtonsoft.Json.dll
         retention-days: 30
 
     - name: Create Release
       if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
       uses: softprops/action-gh-release@v2
       with:
-        name: "SecureDesktop v1.0.${{ github.run_number }}"
+        name: "SecureDesktop v1.0.${{ github.run_number }} - 32-bit"
         tag_name: "v1.0.${{ github.run_number }}"
-        body: "SecureDesktop - JEDEN PLIK EXE - Gotowy do uzycia"
-        files: publish\SecureDesktop.exe
+        body: |
+          ## 🔒 SecureDesktop - Wersja 32-bit (x86)
+          
+          ✅ Działa na Windows 10/11 **32-bit i 64-bit**
+          ✅ Wymaga .NET Framework 4.8
+          
+          **Instalacja:**
+          1. Pobierz pliki
+          2. Umieść w folderze
+          3. Utwórz podfoldery: Database, Backup, Logs
+          4. Uruchom SecureDesktop.exe
+          
+          **Logowanie:** admin / admin
+        files: |
+          src\SecureDesktop\bin\Release\SecureDesktop.exe
+          src\SecureDesktop\bin\Release\Newtonsoft.Json.dll
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
