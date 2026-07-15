@@ -40,9 +40,9 @@ namespace SecureDesktop.Forms
             _patterns = new List<Pattern>();
             this.Icon = Program.AppIcon;
             InitializeDatabase();
-            InitializeComponent();          // Tworzy wszystkie kontrolki (_checkpointPathBox itp.)
-            LoadPatternsFromDatabase();     // Ładuje patterny
-            LoadSettingsIntoControls();     // Wczytuje ustawienia do kontrolek
+            InitializeComponent();
+            LoadPatternsFromDatabase();
+            LoadSettingsIntoControls();
         }
 
         private void InitializeDatabase()
@@ -115,7 +115,6 @@ namespace SecureDesktop.Forms
             tabControl.TabPages.Add(tabCheckpoint);
             tabControl.TabPages.Add(tabBackup);
 
-            // Buduj wszystkie zakładki od razu
             BuildGeneralTab(tabGeneral);
             BuildPatternsTab(tabPatterns);
             BuildCheckpointTab(tabCheckpoint);
@@ -153,99 +152,45 @@ namespace SecureDesktop.Forms
             this.Controls.AddRange(new Control[] { headerPanel, tabControl, saveBtn, cancelBtn });
         }
 
-        // NOWA metoda – wczytuje ustawienia z JSON do kontrolek
         private void LoadSettingsIntoControls()
         {
             try
             {
-                if (_db == null)
-                {
-                    MessageBox.Show("LoadSettings: _db jest NULL", "DEBUG");
-                    return;
-                }
+                if (_db == null) return;
                 var data = _db.GetData();
-                if (data == null || data.Settings == null)
-                {
-                    MessageBox.Show("LoadSettings: data lub Settings NULL", "DEBUG");
-                    return;
-                }
+                if (data == null || data.Settings == null) return;
 
-                string debugInfo = "=== WCZYTYWANIE USTAWIEŃ ===\n";
-                debugInfo += $"Settings count: {data.Settings.Count}\n\n";
-
-                // Ogólne
                 if (data.Settings.ContainsKey("AdminPassword") && _adminPasswordBox != null)
-                {
                     _adminPasswordBox.Text = data.Settings["AdminPassword"];
-                    debugInfo += $"AdminPassword: {_adminPasswordBox.Text}\n";
-                }
-                else debugInfo += $"AdminPassword: brak lub kontrolka NULL\n";
-
                 if (data.Settings.ContainsKey("AutoStart") && _autoStartCheck != null)
-                {
                     _autoStartCheck.Checked = data.Settings["AutoStart"] == "True";
-                    debugInfo += $"AutoStart: {_autoStartCheck.Checked}\n";
-                }
-                else debugInfo += $"AutoStart: brak lub NULL\n";
-
                 if (data.Settings.ContainsKey("MinimizeToTray") && _trayCheck != null)
-                {
                     _trayCheck.Checked = data.Settings["MinimizeToTray"] == "True";
-                    debugInfo += $"MinimizeToTray: {_trayCheck.Checked}\n";
-                }
 
-                // Backup
                 if (data.Settings.ContainsKey("BackupPath") && _backupPathBox != null)
-                {
                     _backupPathBox.Text = data.Settings["BackupPath"];
-                    debugInfo += $"BackupPath: {_backupPathBox.Text}\n";
-                }
-                else debugInfo += $"BackupPath: brak lub NULL\n";
-
                 if (data.Settings.ContainsKey("MonitoredFile") && _monitorPathBox != null)
-                {
                     _monitorPathBox.Text = data.Settings["MonitoredFile"];
-                    debugInfo += $"MonitoredFile: {_monitorPathBox.Text}\n";
-                }
-                else debugInfo += $"MonitoredFile: brak lub NULL\n";
 
-                // CheckPoint
                 if (data.Settings.ContainsKey("CheckpointPath") && _checkpointPathBox != null)
-                {
                     _checkpointPathBox.Text = data.Settings["CheckpointPath"];
-                    debugInfo += $"CheckpointPath: {_checkpointPathBox.Text}\n";
-                }
-                else debugInfo += $"CheckpointPath: brak lub NULL (kontrolka: {(_checkpointPathBox != null ? "OK" : "NULL")})\n";
-
                 if (data.Settings.ContainsKey("CheckpointArgs") && _checkpointArgsBox != null)
-                {
                     _checkpointArgsBox.Text = data.Settings["CheckpointArgs"];
-                    debugInfo += $"CheckpointArgs: {_checkpointArgsBox.Text}\n";
-                }
 
-                // Patterny
                 if (data.Settings.ContainsKey("PatternThreshold") && _thresholdBox != null)
                 {
                     if (int.TryParse(data.Settings["PatternThreshold"], out int th))
-                    {
                         _thresholdBox.Value = th;
-                        debugInfo += $"PatternThreshold: {th}\n";
-                    }
                 }
                 if (data.Settings.ContainsKey("SearchInterval") && _intervalBox != null)
                 {
                     if (int.TryParse(data.Settings["SearchInterval"], out int si))
-                    {
                         _intervalBox.Value = si;
-                        debugInfo += $"SearchInterval: {si}\n";
-                    }
                 }
-
-                MessageBox.Show(debugInfo, "DEBUG - LoadSettingsIntoControls");
             }
             catch (Exception ex)
             {
-                MessageBox.Show("LoadSettings error: " + ex.Message);
+                System.Diagnostics.Debug.WriteLine("LoadSettingsIntoControls error: " + ex.Message);
             }
         }
 
@@ -817,23 +762,7 @@ namespace SecureDesktop.Forms
 
                     _db.Save();
 
-                    string msg = "Ustawienia zapisane!\n\n";
-                    msg += "=== OGOLNE ===\n";
-                    msg += "Haslo admina: " + (string.IsNullOrEmpty(_adminPasswordBox.Text) ? "nie ustawione" : "********") + "\n";
-                    msg += "Autostart: " + (_autoStartCheck?.Checked == true ? "TAK" : "NIE") + "\n";
-                    msg += "Minimalizuj do tray: " + (_trayCheck?.Checked == true ? "TAK" : "NIE") + "\n\n";
-                    msg += "=== BACKUP ===\n";
-                    msg += "Folder: " + _backupPathBox.Text + "\n";
-                    msg += "Monitorowany plik: " + (_monitorPathBox != null ? _monitorPathBox.Text : "nie wybrano") + "\n\n";
-                    msg += "=== CHECKPOINT ===\n";
-                    msg += "EXE: " + _checkpointPathBox.Text + "\n";
-                    msg += "Argumenty: " + _checkpointArgsBox.Text + "\n\n";
-                    msg += "=== PATTERNY ===\n";
-                    msg += "Liczba wzorcow: " + _patterns.Count + "\n";
-                    msg += "Prog zgodnosci: " + _thresholdBox.Value + "%\n";
-                    msg += "Interwal: " + _intervalBox.Value + "ms\n";
-
-                    MessageBox.Show(msg, "Zapisano", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    MessageBox.Show("Ustawienia zapisane!", "Sukces", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
                 else
                 {
