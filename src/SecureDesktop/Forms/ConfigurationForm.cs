@@ -49,19 +49,27 @@ namespace SecureDesktop.Forms
             LoadPatternsFromDatabase();
         }
 
-        private void InitializeDatabase()
-        {
-            try
-            {
-                var dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
-                _db = new DatabaseInitializer(dbPath);
-                _db.Initialize();
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show("Blad inicjalizacji bazy: " + ex.Message, "Blad", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
+       private void InitializeDatabase()
+{
+    try
+    {
+        var dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
+        _db = new DatabaseInitializer(dbPath);
+        _db.Initialize();
+        
+        // DEBUG
+        var data = _db.GetData();
+        MessageBox.Show(
+            $"DB loaded. Settings: {data.Settings?.Count ?? 0}\n" +
+            $"Patterns: {data.Patterns?.Count ?? 0}\n" +
+            $"CheckpointPath: {(data.Settings?.ContainsKey("CheckpointPath") == true ? data.Settings["CheckpointPath"] : "BRAK")}",
+            "DEBUG InitializeDatabase");
+    }
+    catch (Exception ex)
+    {
+        MessageBox.Show("Blad inicjalizacji bazy: " + ex.Message, "Blad", MessageBoxButtons.OK, MessageBoxIcon.Error);
+    }
+}
 
        private void InitializeComponent()
 {
@@ -365,6 +373,14 @@ namespace SecureDesktop.Forms
 
         private void BuildCheckpointTab(TabPage tab)
         {
+            if (_db != null && _db.GetData().Settings != null)
+{
+    string path = _db.GetData().Settings.ContainsKey("CheckpointPath") ? 
+        _db.GetData().Settings["CheckpointPath"] : "BRAK";
+    string args = _db.GetData().Settings.ContainsKey("CheckpointArgs") ? 
+        _db.GetData().Settings["CheckpointArgs"] : "BRAK";
+    MessageBox.Show($"ODCZYT Z JSON:\nCheckpointPath={path}\nCheckpointArgs={args}", "DEBUG");
+}
             int y = 20;
 
             var pathLabel = new Label { Text = "Sciezka do pliku EXE:", Location = new Point(20, y), AutoSize = true, Font = new Font("Segoe UI", 10) };
@@ -733,6 +749,10 @@ namespace SecureDesktop.Forms
                     data.Settings["SearchInterval"] = _intervalBox.Value.ToString();
 
                     _db.Save();
+                  
+// DODAJ TO:
+string debugJson = JsonConvert.SerializeObject(data.Settings, Formatting.Indented);
+MessageBox.Show("ZAPISANE DO JSON:\n" + debugJson, "DEBUG");
 
                     string msg = "Ustawienia zapisane!\n\n";
                     msg += "=== OGOLNE ===\n";

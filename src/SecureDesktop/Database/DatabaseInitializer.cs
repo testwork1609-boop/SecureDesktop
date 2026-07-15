@@ -70,10 +70,14 @@ namespace SecureDesktop.Database
         }
 
         public void Save()
-        {
-            var json = JsonConvert.SerializeObject(_data, Formatting.Indented);
-            File.WriteAllText(_dbPath, json);
-        }
+{
+    var json = JsonConvert.SerializeObject(_data, Formatting.Indented);
+    File.WriteAllText(_dbPath, json);
+    
+    // DODAJ TO:
+    System.Diagnostics.Debug.WriteLine($"Saved to: {_dbPath}");
+    System.Diagnostics.Debug.WriteLine($"Settings count: {_data.Settings?.Count}");
+}
 
         public DatabaseData GetData() => _data;
     }
