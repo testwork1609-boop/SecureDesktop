@@ -35,144 +35,219 @@ namespace SecureDesktop.Forms
         private List<Pattern> _patterns;
         private DatabaseInitializer _db;
 
-        private bool _generalBuilt = false;
-        private bool _patternsBuilt = false;
-        private bool _checkpointBuilt = false;
-        private bool _backupBuilt = false;
-
         public ConfigurationForm()
         {
             _patterns = new List<Pattern>();
             this.Icon = Program.AppIcon;
             InitializeDatabase();
-            InitializeComponent();
-            LoadPatternsFromDatabase();
+            InitializeComponent();          // Tworzy wszystkie kontrolki (_checkpointPathBox itp.)
+            LoadPatternsFromDatabase();     // Ładuje patterny
+            LoadSettingsIntoControls();     // Wczytuje ustawienia do kontrolek
         }
 
-       private void InitializeDatabase()
-{
-    try
-    {
-        var dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
-        _db = new DatabaseInitializer(dbPath);
-        _db.Initialize();
-        
-        // DEBUG
-        var data = _db.GetData();
-        MessageBox.Show(
-            $"DB loaded. Settings: {data.Settings?.Count ?? 0}\n" +
-            $"Patterns: {data.Patterns?.Count ?? 0}\n" +
-            $"CheckpointPath: {(data.Settings?.ContainsKey("CheckpointPath") == true ? data.Settings["CheckpointPath"] : "BRAK")}",
-            "DEBUG InitializeDatabase");
-    }
-    catch (Exception ex)
-    {
-        MessageBox.Show("Blad inicjalizacji bazy: " + ex.Message, "Blad", MessageBoxButtons.OK, MessageBoxIcon.Error);
-    }
-}
-
-       private void InitializeComponent()
-{
-    this.Text = "Konfiguracja SecureDesktop";
-    this.Size = new Size(820, 650);
-    this.StartPosition = FormStartPosition.CenterParent;
-    this.BackColor = bgColor;
-    this.ForeColor = textColor;
-    this.FormBorderStyle = FormBorderStyle.FixedDialog;
-    this.MaximizeBox = false;
-    this.MinimizeBox = false;
-    this.Font = new Font("Segoe UI", 9);
-    this.KeyPreview = true;
-
-    this.KeyDown += (s, e) =>
-    {
-        if (e.KeyCode == Keys.Enter && e.Control)
+        private void InitializeDatabase()
         {
-            e.SuppressKeyPress = true;
-            SaveAllSettings(null, e);
+            try
+            {
+                var dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
+                _db = new DatabaseInitializer(dbPath);
+                _db.Initialize();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Blad inicjalizacji bazy: " + ex.Message, "Blad", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
-        else if (e.KeyCode == Keys.Escape)
+
+        private void InitializeComponent()
         {
-            this.Close();
+            this.Text = "Konfiguracja SecureDesktop";
+            this.Size = new Size(820, 650);
+            this.StartPosition = FormStartPosition.CenterParent;
+            this.BackColor = bgColor;
+            this.ForeColor = textColor;
+            this.FormBorderStyle = FormBorderStyle.FixedDialog;
+            this.MaximizeBox = false;
+            this.MinimizeBox = false;
+            this.Font = new Font("Segoe UI", 9);
+            this.KeyPreview = true;
+
+            this.KeyDown += (s, e) =>
+            {
+                if (e.KeyCode == Keys.Escape)
+                {
+                    this.Close();
+                }
+            };
+
+            var headerPanel = new Panel
+            {
+                Location = new Point(0, 0),
+                Size = new Size(820, 55),
+                BackColor = primaryColor
+            };
+
+            var headerTitle = new Label
+            {
+                Text = "Konfiguracja SecureDesktop",
+                Font = new Font("Segoe UI", 16, FontStyle.Bold),
+                Location = new Point(20, 12),
+                AutoSize = true,
+                ForeColor = Color.White
+            };
+
+            headerPanel.Controls.Add(headerTitle);
+
+            var tabControl = new TabControl
+            {
+                Location = new Point(10, 65),
+                Size = new Size(785, 490),
+                Appearance = TabAppearance.FlatButtons
+            };
+
+            var tabGeneral = new TabPage("  Ogolne  ") { BackColor = bgColor };
+            var tabPatterns = new TabPage("  Patterny  ") { BackColor = bgColor };
+            var tabCheckpoint = new TabPage("  CheckPoint  ") { BackColor = bgColor };
+            var tabBackup = new TabPage("  Backup  ") { BackColor = bgColor };
+
+            tabControl.TabPages.Add(tabGeneral);
+            tabControl.TabPages.Add(tabPatterns);
+            tabControl.TabPages.Add(tabCheckpoint);
+            tabControl.TabPages.Add(tabBackup);
+
+            // Buduj wszystkie zakładki od razu
+            BuildGeneralTab(tabGeneral);
+            BuildPatternsTab(tabPatterns);
+            BuildCheckpointTab(tabCheckpoint);
+            BuildBackupTab(tabBackup);
+
+            var saveBtn = new Button
+            {
+                Text = "Zapisz wszystkie ustawienia",
+                Location = new Point(250, 565),
+                Size = new Size(220, 38),
+                BackColor = primaryColor,
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat,
+                Font = new Font("Segoe UI", 10, FontStyle.Bold),
+                Cursor = Cursors.Hand
+            };
+            saveBtn.FlatAppearance.BorderSize = 0;
+            saveBtn.Click += SaveAllSettings;
+
+            var cancelBtn = new Button
+            {
+                Text = "Zamknij",
+                Location = new Point(490, 565),
+                Size = new Size(100, 38),
+                BackColor = Color.White,
+                ForeColor = subtitleColor,
+                FlatStyle = FlatStyle.Flat,
+                Font = new Font("Segoe UI", 10),
+                Cursor = Cursors.Hand
+            };
+            cancelBtn.FlatAppearance.BorderColor = borderColor;
+            cancelBtn.FlatAppearance.BorderSize = 1;
+            cancelBtn.Click += (s, e) => this.Close();
+
+            this.Controls.AddRange(new Control[] { headerPanel, tabControl, saveBtn, cancelBtn });
         }
-    };
 
-    var headerPanel = new Panel
-    {
-        Location = new Point(0, 0),
-        Size = new Size(820, 55),
-        BackColor = primaryColor
-    };
+        // NOWA metoda – wczytuje ustawienia z JSON do kontrolek
+        private void LoadSettingsIntoControls()
+        {
+            try
+            {
+                if (_db == null)
+                {
+                    MessageBox.Show("LoadSettings: _db jest NULL", "DEBUG");
+                    return;
+                }
+                var data = _db.GetData();
+                if (data == null || data.Settings == null)
+                {
+                    MessageBox.Show("LoadSettings: data lub Settings NULL", "DEBUG");
+                    return;
+                }
 
-    var headerTitle = new Label
-    {
-        Text = "Konfiguracja SecureDesktop",
-        Font = new Font("Segoe UI", 16, FontStyle.Bold),
-        Location = new Point(20, 12),
-        AutoSize = true,
-        ForeColor = Color.White
-    };
+                string debugInfo = "=== WCZYTYWANIE USTAWIEŃ ===\n";
+                debugInfo += $"Settings count: {data.Settings.Count}\n\n";
 
-    headerPanel.Controls.Add(headerTitle);
+                // Ogólne
+                if (data.Settings.ContainsKey("AdminPassword") && _adminPasswordBox != null)
+                {
+                    _adminPasswordBox.Text = data.Settings["AdminPassword"];
+                    debugInfo += $"AdminPassword: {_adminPasswordBox.Text}\n";
+                }
+                else debugInfo += $"AdminPassword: brak lub kontrolka NULL\n";
 
-    var tabControl = new TabControl
-    {
-        Location = new Point(10, 65),
-        Size = new Size(785, 490),
-        Appearance = TabAppearance.FlatButtons
-    };
+                if (data.Settings.ContainsKey("AutoStart") && _autoStartCheck != null)
+                {
+                    _autoStartCheck.Checked = data.Settings["AutoStart"] == "True";
+                    debugInfo += $"AutoStart: {_autoStartCheck.Checked}\n";
+                }
+                else debugInfo += $"AutoStart: brak lub NULL\n";
 
-    var tabGeneral = new TabPage("  Ogolne  ") { BackColor = bgColor };
-    var tabPatterns = new TabPage("  Patterny  ") { BackColor = bgColor };
-    var tabCheckpoint = new TabPage("  CheckPoint  ") { BackColor = bgColor };
-    var tabBackup = new TabPage("  Backup  ") { BackColor = bgColor };
+                if (data.Settings.ContainsKey("MinimizeToTray") && _trayCheck != null)
+                {
+                    _trayCheck.Checked = data.Settings["MinimizeToTray"] == "True";
+                    debugInfo += $"MinimizeToTray: {_trayCheck.Checked}\n";
+                }
 
-    tabControl.TabPages.Add(tabGeneral);
-    tabControl.TabPages.Add(tabPatterns);
-    tabControl.TabPages.Add(tabCheckpoint);
-    tabControl.TabPages.Add(tabBackup);
+                // Backup
+                if (data.Settings.ContainsKey("BackupPath") && _backupPathBox != null)
+                {
+                    _backupPathBox.Text = data.Settings["BackupPath"];
+                    debugInfo += $"BackupPath: {_backupPathBox.Text}\n";
+                }
+                else debugInfo += $"BackupPath: brak lub NULL\n";
 
-    // BUDUJ WSZYSTKIE ZAKŁADKI OD RAZU
-    BuildGeneralTab(tabGeneral);
-    BuildPatternsTab(tabPatterns);
-    BuildCheckpointTab(tabCheckpoint);
-    BuildBackupTab(tabBackup);
-    _generalBuilt = true;
-    _patternsBuilt = true;
-    _checkpointBuilt = true;
-    _backupBuilt = true;
+                if (data.Settings.ContainsKey("MonitoredFile") && _monitorPathBox != null)
+                {
+                    _monitorPathBox.Text = data.Settings["MonitoredFile"];
+                    debugInfo += $"MonitoredFile: {_monitorPathBox.Text}\n";
+                }
+                else debugInfo += $"MonitoredFile: brak lub NULL\n";
 
-    var saveBtn = new Button
-    {
-        Text = "Zapisz wszystkie ustawienia",
-        Location = new Point(250, 565),
-        Size = new Size(220, 38),
-        BackColor = primaryColor,
-        ForeColor = Color.White,
-        FlatStyle = FlatStyle.Flat,
-        Font = new Font("Segoe UI", 10, FontStyle.Bold),
-        Cursor = Cursors.Hand
-    };
-    saveBtn.FlatAppearance.BorderSize = 0;
-    saveBtn.Click += SaveAllSettings;
+                // CheckPoint
+                if (data.Settings.ContainsKey("CheckpointPath") && _checkpointPathBox != null)
+                {
+                    _checkpointPathBox.Text = data.Settings["CheckpointPath"];
+                    debugInfo += $"CheckpointPath: {_checkpointPathBox.Text}\n";
+                }
+                else debugInfo += $"CheckpointPath: brak lub NULL (kontrolka: {(_checkpointPathBox != null ? "OK" : "NULL")})\n";
 
-    var cancelBtn = new Button
-    {
-        Text = "Anuluj",
-        Location = new Point(490, 565),
-        Size = new Size(100, 38),
-        BackColor = Color.White,
-        ForeColor = subtitleColor,
-        FlatStyle = FlatStyle.Flat,
-        Font = new Font("Segoe UI", 10),
-        Cursor = Cursors.Hand
-    };
-    cancelBtn.FlatAppearance.BorderColor = borderColor;
-    cancelBtn.FlatAppearance.BorderSize = 1;
-    cancelBtn.Click += (s, e) => this.Close();
+                if (data.Settings.ContainsKey("CheckpointArgs") && _checkpointArgsBox != null)
+                {
+                    _checkpointArgsBox.Text = data.Settings["CheckpointArgs"];
+                    debugInfo += $"CheckpointArgs: {_checkpointArgsBox.Text}\n";
+                }
 
-    this.Controls.AddRange(new Control[] { headerPanel, tabControl, saveBtn, cancelBtn });
-}
+                // Patterny
+                if (data.Settings.ContainsKey("PatternThreshold") && _thresholdBox != null)
+                {
+                    if (int.TryParse(data.Settings["PatternThreshold"], out int th))
+                    {
+                        _thresholdBox.Value = th;
+                        debugInfo += $"PatternThreshold: {th}\n";
+                    }
+                }
+                if (data.Settings.ContainsKey("SearchInterval") && _intervalBox != null)
+                {
+                    if (int.TryParse(data.Settings["SearchInterval"], out int si))
+                    {
+                        _intervalBox.Value = si;
+                        debugInfo += $"SearchInterval: {si}\n";
+                    }
+                }
+
+                MessageBox.Show(debugInfo, "DEBUG - LoadSettingsIntoControls");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("LoadSettings error: " + ex.Message);
+            }
+        }
 
         private void BuildGeneralTab(TabPage tab)
         {
@@ -373,14 +448,6 @@ namespace SecureDesktop.Forms
 
         private void BuildCheckpointTab(TabPage tab)
         {
-            if (_db != null && _db.GetData().Settings != null)
-{
-    string path = _db.GetData().Settings.ContainsKey("CheckpointPath") ? 
-        _db.GetData().Settings["CheckpointPath"] : "BRAK";
-    string args = _db.GetData().Settings.ContainsKey("CheckpointArgs") ? 
-        _db.GetData().Settings["CheckpointArgs"] : "BRAK";
-    MessageBox.Show($"ODCZYT Z JSON:\nCheckpointPath={path}\nCheckpointArgs={args}", "DEBUG");
-}
             int y = 20;
 
             var pathLabel = new Label { Text = "Sciezka do pliku EXE:", Location = new Point(20, y), AutoSize = true, Font = new Font("Segoe UI", 10) };
@@ -749,10 +816,6 @@ namespace SecureDesktop.Forms
                     data.Settings["SearchInterval"] = _intervalBox.Value.ToString();
 
                     _db.Save();
-                  
-// DODAJ TO:
-string debugJson = JsonConvert.SerializeObject(data.Settings, Formatting.Indented);
-MessageBox.Show("ZAPISANE DO JSON:\n" + debugJson, "DEBUG");
 
                     string msg = "Ustawienia zapisane!\n\n";
                     msg += "=== OGOLNE ===\n";
@@ -781,8 +844,6 @@ MessageBox.Show("ZAPISANE DO JSON:\n" + debugJson, "DEBUG");
             {
                 MessageBox.Show("Blad zapisu: " + ex.Message, "Blad", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
-
-          //  this.Close();
         }
     }
 
