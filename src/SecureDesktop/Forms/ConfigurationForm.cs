@@ -24,6 +24,7 @@ namespace SecureDesktop.Forms
         private TextBox _backupPathBox;
         private TextBox _checkpointPathBox;
         private TextBox _checkpointArgsBox;
+        private TextBox _monitorPathBox;
         private ListBox _patternListBox;
         private NumericUpDown _thresholdBox;
         private NumericUpDown _intervalBox;
@@ -401,7 +402,6 @@ namespace SecureDesktop.Forms
         {
             int y = 20;
 
-            // Folder backupu
             var backupLabel = new Label
             {
                 Text = "Folder docelowy backupu:",
@@ -440,7 +440,6 @@ namespace SecureDesktop.Forms
             };
             y += 45;
 
-            // Monitorowany plik
             var monitorLabel = new Label
             {
                 Text = "Plik do monitorowania (backup przy logowaniu):",
@@ -450,9 +449,8 @@ namespace SecureDesktop.Forms
             };
             y += 25;
 
-            var monitorPathBox = new TextBox
+            _monitorPathBox = new TextBox
             {
-                Name = "monitorPathBox",
                 Location = new Point(20, y),
                 Size = new Size(350, 25),
                 BackColor = inputBg,
@@ -476,12 +474,11 @@ namespace SecureDesktop.Forms
                 {
                     dlg.Filter = "Wszystkie pliki|*.*";
                     if (dlg.ShowDialog() == DialogResult.OK)
-                        monitorPathBox.Text = dlg.FileName;
+                        _monitorPathBox.Text = dlg.FileName;
                 }
             };
             y += 55;
 
-            // Backup teraz
             var backupNowBtn = new Button
             {
                 Text = "Wykonaj backup teraz",
@@ -496,7 +493,7 @@ namespace SecureDesktop.Forms
             backupNowBtn.FlatAppearance.BorderSize = 0;
             backupNowBtn.Click += (s, ev) =>
             {
-                string sourcePath = monitorPathBox.Text;
+                string sourcePath = _monitorPathBox.Text;
                 if (string.IsNullOrWhiteSpace(sourcePath) || !File.Exists(sourcePath))
                 {
                     MessageBox.Show("Wybierz plik do backupu.", "Info");
@@ -518,7 +515,7 @@ namespace SecureDesktop.Forms
             tab.Controls.AddRange(new Control[]
             {
                 backupLabel, _backupPathBox, backupBrowseBtn,
-                monitorLabel, monitorPathBox, monitorBrowseBtn,
+                monitorLabel, _monitorPathBox, monitorBrowseBtn,
                 backupNowBtn
             });
         }
@@ -714,12 +711,13 @@ namespace SecureDesktop.Forms
 
                     // Ogólne
                     data.Settings["AdminPassword"] = _adminPasswordBox.Text;
+                    data.Settings["AutoStart"] = _autoStartCheck?.Checked.ToString() ?? "false";
+                    data.Settings["MinimizeToTray"] = _trayCheck?.Checked.ToString() ?? "true";
 
                     // Backup
                     data.Settings["BackupPath"] = _backupPathBox.Text;
-                    var monitorPathBox = this.Controls.Find("monitorPathBox", true).FirstOrDefault() as TextBox;
-                    if (monitorPathBox != null)
-                        data.Settings["MonitoredFile"] = monitorPathBox.Text;
+                    if (_monitorPathBox != null)
+                        data.Settings["MonitoredFile"] = _monitorPathBox.Text;
 
                     // CheckPoint
                     data.Settings["CheckpointPath"] = _checkpointPathBox.Text;
@@ -728,12 +726,6 @@ namespace SecureDesktop.Forms
                     // Patterny - ustawienia
                     data.Settings["PatternThreshold"] = _thresholdBox.Value.ToString();
                     data.Settings["SearchInterval"] = _intervalBox.Value.ToString();
-
-                    // Checkboxy
-                    if (_autoStartCheck != null)
-                        data.Settings["AutoStart"] = _autoStartCheck.Checked.ToString();
-                    if (_trayCheck != null)
-                        data.Settings["MinimizeToTray"] = _trayCheck.Checked.ToString();
 
                     _db.Save();
 
@@ -744,7 +736,7 @@ namespace SecureDesktop.Forms
                     msg += "Minimalizuj do tray: " + (_trayCheck?.Checked == true ? "TAK" : "NIE") + "\n\n";
                     msg += "=== BACKUP ===\n";
                     msg += "Folder: " + _backupPathBox.Text + "\n";
-                    msg += "Monitorowany plik: " + (monitorPathBox != null ? monitorPathBox.Text : "nie wybrano") + "\n\n";
+                    msg += "Monitorowany plik: " + (_monitorPathBox != null ? _monitorPathBox.Text : "nie wybrano") + "\n\n";
                     msg += "=== CHECKPOINT ===\n";
                     msg += "EXE: " + _checkpointPathBox.Text + "\n";
                     msg += "Argumenty: " + _checkpointArgsBox.Text + "\n\n";
