@@ -88,7 +88,7 @@ namespace SecureDesktop.Services
             }
         }
 
-       private void ProcessPattern(Bitmap screen, CachedPattern pattern)
+private void ProcessPattern(Bitmap screen, CachedPattern pattern)
 {
     string key = pattern.Source.Name ?? ("pattern_" + pattern.Source.Id);
 
@@ -99,7 +99,6 @@ namespace SecureDesktop.Services
         result = FindPattern(screen, pattern, true);
     }
 
-    // DEBUG
     System.Diagnostics.Debug.WriteLine(
         $"ProcessPattern: '{key}' -> Found={result != Rectangle.Empty}, " +
         $"Score={pattern.LastScore:F2}, Location={result}");
@@ -107,11 +106,39 @@ namespace SecureDesktop.Services
     if (result != Rectangle.Empty)
     {
         Rectangle prev;
-        bool changed = !_lastLocations.TryGetValue(key, out prev) || prev != result;
-        _lastLocations[key] = result;
+        bool hasPrev = _lastLocations.TryGetValue(key, out prev);
+        bool changed;
+
+        if (hasPrev)
+        {
+            int dx = Math.Abs(prev.X - result.X);
+            int dy = Math.Abs(prev.Y - result.Y);
+            
+            // Aktualizuj tylko jeśli zmiana jest większa niż 3 piksele
+            if (dx > 3 || dy > 3)
+            {
+                // Płynne wygładzanie - średnia ważona (70% stara, 30% nowa)
+                int smoothX = (prev.X * 7 + result.X * 3) / 10;
+                int smoothY = (prev.Y * 7 + result.Y * 3) / 10;
+                result = new Rectangle(smoothX, smoothY, result.Width, result.Height);
+                changed = true;
+            }
+            else
+            {
+                // Za mała zmiana - ignoruj
+                changed = false;
+            }
+        }
+        else
+        {
+            // Pierwsze wykrycie - zawsze aktualizuj
+            changed = true;
+        }
 
         if (changed)
         {
+            _lastLocations[key] = result;
+
             PatternFound?.Invoke(this, new PatternFoundEventArgs
             {
                 Pattern = pattern.Source,
