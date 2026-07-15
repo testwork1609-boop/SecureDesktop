@@ -37,6 +37,7 @@ namespace SecureDesktop.Forms
         public ConfigurationForm()
         {
             _patterns = new List<Pattern>();
+            this.Icon = Program.AppIcon;
             InitializeDatabase();
             InitializeComponent();
             LoadPatternsFromDatabase();
@@ -58,9 +59,6 @@ namespace SecureDesktop.Forms
 
         private void InitializeComponent()
         {
-            this.Icon = Program.AppIcon;
-            this.KeyPreview = true;
-            this.KeyDown += (s, e) => { if (e.KeyCode == Keys.Escape) this.Close(); };
             this.Text = "Konfiguracja SecureDesktop";
             this.Size = new Size(820, 650);
             this.StartPosition = FormStartPosition.CenterParent;
@@ -68,7 +66,22 @@ namespace SecureDesktop.Forms
             this.ForeColor = textColor;
             this.FormBorderStyle = FormBorderStyle.FixedDialog;
             this.MaximizeBox = false;
+            this.MinimizeBox = false;
             this.Font = new Font("Segoe UI", 9);
+            this.KeyPreview = true;
+
+            this.KeyDown += (s, e) =>
+            {
+                if (e.KeyCode == Keys.Enter && e.Control)
+                {
+                    e.SuppressKeyPress = true;
+                    SaveAllSettings(s, e);
+                }
+                else if (e.KeyCode == Keys.Escape)
+                {
+                    this.Close();
+                }
+            };
 
             var headerPanel = new Panel
             {
@@ -112,34 +125,19 @@ namespace SecureDesktop.Forms
             tabControl.TabPages.Add(tabCheckpoint);
             tabControl.TabPages.Add(tabBackup);
 
- var saveBtn = new Button
-{
-    Text = "💾  Zapisz wszystkie ustawienia",
-    Location = new Point(250, 565),
-    Size = new Size(220, 38),
-    BackColor = primaryColor,
-    ForeColor = Color.White,
-    FlatStyle = FlatStyle.Flat,
-    Font = new Font("Segoe UI", 10, FontStyle.Bold),
-    Cursor = Cursors.Hand
-};
-saveBtn.FlatAppearance.BorderSize = 0;
-saveBtn.Click += SaveAllSettings;
-
-// DODAJ TO - ENTER = Zapisz (Ctrl+Enter)
-this.KeyPreview = true;
-this.KeyDown += (s, e) =>
-{
-    if (e.KeyCode == Keys.Enter && e.Control)
-    {
-        e.SuppressKeyPress = true;
-        SaveAllSettings(s, e);
-    }
-    else if (e.KeyCode == Keys.Escape)
-    {
-        this.Close();
-    }
-};;
+            var saveBtn = new Button
+            {
+                Text = "Zapisz wszystkie ustawienia",
+                Location = new Point(250, 565),
+                Size = new Size(220, 38),
+                BackColor = primaryColor,
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat,
+                Font = new Font("Segoe UI", 10, FontStyle.Bold),
+                Cursor = Cursors.Hand
+            };
+            saveBtn.FlatAppearance.BorderSize = 0;
+            saveBtn.Click += SaveAllSettings;
 
             var cancelBtn = new Button
             {
@@ -305,7 +303,7 @@ this.KeyDown += (s, e) =>
             _thresholdBox = new NumericUpDown
             {
                 Location = new Point(530, 292), Size = new Size(70, 25),
-                Minimum = 50, Maximum = 100, Value = 95,
+                Minimum = 50, Maximum = 100, Value = 75,
                 BackColor = inputBg, BorderStyle = BorderStyle.FixedSingle
             };
 
@@ -313,7 +311,7 @@ this.KeyDown += (s, e) =>
             _intervalBox = new NumericUpDown
             {
                 Location = new Point(530, 322), Size = new Size(70, 25),
-                Minimum = 100, Maximum = 5000, Value = 500, Increment = 100,
+                Minimum = 100, Maximum = 5000, Value = 200, Increment = 100,
                 BackColor = inputBg, BorderStyle = BorderStyle.FixedSingle
             };
 
@@ -374,10 +372,10 @@ this.KeyDown += (s, e) =>
                 BackColor = primaryColor, ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand
             };
             pathBtn.FlatAppearance.BorderSize = 0;
-            pathBtn.Click += (s, e) => { using (var dlg = new OpenFileDialog()) { dlg.Filter = "EXE|*.exe"; if (dlg.ShowDialog() == DialogResult.OK) _checkpointPathBox.Text = dlg.FileName; } };
+            pathBtn.Click += (s, ev) => { using (var dlg = new OpenFileDialog()) { dlg.Filter = "EXE|*.exe"; if (dlg.ShowDialog() == DialogResult.OK) _checkpointPathBox.Text = dlg.FileName; } };
             y += 40;
 
-            var argsLabel = new Label { Text = "Parametry:", Location = new Point(20, y), AutoSize = true, Font = new Font("Segoe UI", 10) };
+            var argsLabel = new Label { Text = "Parametry uruchomienia:", Location = new Point(20, y), AutoSize = true, Font = new Font("Segoe UI", 10) };
             y += 25;
             _checkpointArgsBox = new TextBox { Location = new Point(20, y), Size = new Size(300, 25), BackColor = inputBg, BorderStyle = BorderStyle.FixedSingle };
             y += 45;
@@ -390,7 +388,7 @@ this.KeyDown += (s, e) =>
                 Font = new Font("Segoe UI", 10, FontStyle.Bold), Cursor = Cursors.Hand
             };
             testBtn.FlatAppearance.BorderSize = 0;
-            testBtn.Click += (s, e) =>
+            testBtn.Click += (s, ev) =>
             {
                 try { System.Diagnostics.Process.Start(_checkpointPathBox.Text, _checkpointArgsBox.Text); }
                 catch (Exception ex) { MessageBox.Show("Blad: " + ex.Message); }
@@ -403,80 +401,126 @@ this.KeyDown += (s, e) =>
         {
             int y = 20;
 
-            var backupLabel = new Label { Text = "Folder backupu:", Location = new Point(20, y), AutoSize = true, Font = new Font("Segoe UI", 10) };
+            // Folder backupu
+            var backupLabel = new Label
+            {
+                Text = "Folder docelowy backupu:",
+                Location = new Point(20, y),
+                AutoSize = true,
+                Font = new Font("Segoe UI", 10)
+            };
             y += 25;
 
             _backupPathBox = new TextBox
             {
-                Location = new Point(20, y), Size = new Size(450, 25),
-                BackColor = inputBg, BorderStyle = BorderStyle.FixedSingle, Text = ".\\Backup"
+                Location = new Point(20, y),
+                Size = new Size(350, 25),
+                BackColor = inputBg,
+                BorderStyle = BorderStyle.FixedSingle,
+                Text = ".\\Backup"
             };
-            var browseBtn = new Button
+            var backupBrowseBtn = new Button
             {
-                Text = "Przegladaj", Location = new Point(480, y), Size = new Size(90, 25),
-                BackColor = primaryColor, ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand
+                Text = "Przegladaj",
+                Location = new Point(380, y),
+                Size = new Size(90, 25),
+                BackColor = primaryColor,
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat,
+                Cursor = Cursors.Hand
             };
-            browseBtn.FlatAppearance.BorderSize = 0;
-            browseBtn.Click += (s, e) => { using (var dlg = new FolderBrowserDialog()) { if (dlg.ShowDialog() == DialogResult.OK) _backupPathBox.Text = dlg.SelectedPath; } };
-            y += 60;
-// Plik do monitorowania
-var monitorLabel = new Label 
-{ 
-    Text = "Monitorowany plik:", 
-    Location = new Point(20, y), 
-    AutoSize = true, 
-    Font = new Font("Segoe UI", 10) 
-};
-y += 25;
+            backupBrowseBtn.FlatAppearance.BorderSize = 0;
+            backupBrowseBtn.Click += (s, ev) =>
+            {
+                using (var dlg = new FolderBrowserDialog())
+                {
+                    if (dlg.ShowDialog() == DialogResult.OK)
+                        _backupPathBox.Text = dlg.SelectedPath;
+                }
+            };
+            y += 45;
 
-var monitorPathBox = new TextBox
-{
-    Location = new Point(20, y),
-    Size = new Size(350, 25),
-    BackColor = inputBg,
-    BorderStyle = BorderStyle.FixedSingle,
-    Name = "monitorPathBox"
-};
-var monitorBrowseBtn = new Button
-{
-    Text = "Przegladaj",
-    Location = new Point(380, y),
-    Size = new Size(90, 25),
-    BackColor = primaryColor,
-    ForeColor = Color.White,
-    FlatStyle = FlatStyle.Flat,
-    Cursor = Cursors.Hand
-};
-monitorBrowseBtn.FlatAppearance.BorderSize = 0;
-monitorBrowseBtn.Click += (s, ev) =>
-{
-    using (var dlg = new OpenFileDialog())
-    {
-        if (dlg.ShowDialog() == DialogResult.OK)
-            monitorPathBox.Text = dlg.FileName;
-    }
-};
-y += 40;
+            // Monitorowany plik
+            var monitorLabel = new Label
+            {
+                Text = "Plik do monitorowania (backup przy logowaniu):",
+                Location = new Point(20, y),
+                AutoSize = true,
+                Font = new Font("Segoe UI", 10)
+            };
+            y += 25;
+
+            var monitorPathBox = new TextBox
+            {
+                Name = "monitorPathBox",
+                Location = new Point(20, y),
+                Size = new Size(350, 25),
+                BackColor = inputBg,
+                BorderStyle = BorderStyle.FixedSingle,
+                Text = ""
+            };
+            var monitorBrowseBtn = new Button
+            {
+                Text = "Przegladaj",
+                Location = new Point(380, y),
+                Size = new Size(90, 25),
+                BackColor = primaryColor,
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat,
+                Cursor = Cursors.Hand
+            };
+            monitorBrowseBtn.FlatAppearance.BorderSize = 0;
+            monitorBrowseBtn.Click += (s, ev) =>
+            {
+                using (var dlg = new OpenFileDialog())
+                {
+                    dlg.Filter = "Wszystkie pliki|*.*";
+                    if (dlg.ShowDialog() == DialogResult.OK)
+                        monitorPathBox.Text = dlg.FileName;
+                }
+            };
+            y += 55;
+
+            // Backup teraz
             var backupNowBtn = new Button
             {
                 Text = "Wykonaj backup teraz",
-                Location = new Point(150, y), Size = new Size(250, 40),
-                BackColor = primaryColor, ForeColor = Color.White, FlatStyle = FlatStyle.Flat,
-                Font = new Font("Segoe UI", 10, FontStyle.Bold), Cursor = Cursors.Hand
+                Location = new Point(100, y),
+                Size = new Size(250, 40),
+                BackColor = primaryColor,
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat,
+                Font = new Font("Segoe UI", 10, FontStyle.Bold),
+                Cursor = Cursors.Hand
             };
             backupNowBtn.FlatAppearance.BorderSize = 0;
-            backupNowBtn.Click += (s, e) =>
+            backupNowBtn.Click += (s, ev) =>
             {
-                var source = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
-                if (File.Exists(source))
+                string sourcePath = monitorPathBox.Text;
+                if (string.IsNullOrWhiteSpace(sourcePath) || !File.Exists(sourcePath))
                 {
-                    new Services.BackupService().CreateBackup(source, _backupPathBox.Text);
-                    MessageBox.Show("Backup wykonany!", "OK");
+                    MessageBox.Show("Wybierz plik do backupu.", "Info");
+                    return;
                 }
-                else MessageBox.Show("Brak bazy danych.");
+
+                try
+                {
+                    var backupService = new Services.BackupService();
+                    string result = backupService.CreateBackup(sourcePath, _backupPathBox.Text);
+                    MessageBox.Show("Backup utworzony!\n\n" + result, "Sukces");
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show("Blad: " + ex.Message, "Blad");
+                }
             };
 
-            tab.Controls.AddRange(new Control[] { backupLabel, _backupPathBox, browseBtn, backupNowBtn });
+            tab.Controls.AddRange(new Control[]
+            {
+                backupLabel, _backupPathBox, backupBrowseBtn,
+                monitorLabel, monitorPathBox, monitorBrowseBtn,
+                backupNowBtn
+            });
         }
 
         private void LoadPatternsFromDatabase()
@@ -537,18 +581,6 @@ y += 40;
                 {
                     _db.GetData().Patterns = _patterns;
                     _db.Save();
-
-                    System.Threading.Thread.Sleep(100);
-
-                    var dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
-                    if (File.Exists(dbPath))
-                    {
-                        var json = File.ReadAllText(dbPath);
-                        if (!json.Contains("\"Patterns\""))
-                        {
-                            MessageBox.Show("UWAGA: Patterny nie zostaly zapisane do pliku!", "Blad zapisu");
-                        }
-                    }
                 }
             }
             catch (Exception ex)
@@ -599,30 +631,9 @@ y += 40;
                                 TopMost = true
                             };
 
-                            var nameLabel = new Label
-                            {
-                                Text = "Podaj nazwe wzorca:",
-                                Location = new Point(20, 20),
-                                AutoSize = true,
-                                Font = new Font("Segoe UI", 10)
-                            };
-                            var nameBox = new TextBox
-                            {
-                                Location = new Point(20, 50),
-                                Size = new Size(290, 25),
-                                Font = new Font("Segoe UI", 10),
-                                BackColor = inputBg,
-                                BorderStyle = BorderStyle.FixedSingle
-                            };
-                            var okBtn = new Button
-                            {
-                                Text = "Zapisz",
-                                Location = new Point(100, 90),
-                                Size = new Size(120, 35),
-                                BackColor = primaryColor,
-                                ForeColor = Color.White,
-                                FlatStyle = FlatStyle.Flat
-                            };
+                            var nameLabel = new Label { Text = "Podaj nazwe wzorca:", Location = new Point(20, 20), AutoSize = true, Font = new Font("Segoe UI", 10) };
+                            var nameBox = new TextBox { Location = new Point(20, 50), Size = new Size(290, 25), Font = new Font("Segoe UI", 10), BackColor = inputBg, BorderStyle = BorderStyle.FixedSingle };
+                            var okBtn = new Button { Text = "Zapisz", Location = new Point(100, 90), Size = new Size(120, 35), BackColor = primaryColor, ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
                             okBtn.FlatAppearance.BorderSize = 0;
                             okBtn.Click += (s2, args) =>
                             {
@@ -690,40 +701,72 @@ y += 40;
             }
         }
 
-       private void SaveAllSettings(object sender, EventArgs e)
-{
-    try
-    {
-        if (_db != null)
+        private void SaveAllSettings(object sender, EventArgs e)
         {
-            var data = _db.GetData();
-            
-            // Zapisz patterny
-            data.Patterns = _patterns;
-            
-            // Zapisz ustawienia z WSZYSTKICH zakładek
-            data.Settings["AdminPassword"] = _adminPasswordBox.Text;
-            data.Settings["BackupPath"] = _backupPathBox.Text;
-            data.Settings["CheckpointPath"] = _checkpointPathBox.Text;
-            data.Settings["CheckpointArgs"] = _checkpointArgsBox.Text;
-            data.Settings["PatternThreshold"] = _thresholdBox.Value.ToString();
-            data.Settings["SearchInterval"] = _intervalBox.Value.ToString();
-            data.Settings["AutoStart"] = _autoStartCheck.Checked.ToString();
-            data.Settings["MinimizeToTray"] = _trayCheck.Checked.ToString();
-            
-            _db.Save();
+            try
+            {
+                if (_db != null)
+                {
+                    var data = _db.GetData();
+
+                    // Patterny
+                    data.Patterns = _patterns;
+
+                    // Ogólne
+                    data.Settings["AdminPassword"] = _adminPasswordBox.Text;
+
+                    // Backup
+                    data.Settings["BackupPath"] = _backupPathBox.Text;
+                    var monitorPathBox = this.Controls.Find("monitorPathBox", true).FirstOrDefault() as TextBox;
+                    if (monitorPathBox != null)
+                        data.Settings["MonitoredFile"] = monitorPathBox.Text;
+
+                    // CheckPoint
+                    data.Settings["CheckpointPath"] = _checkpointPathBox.Text;
+                    data.Settings["CheckpointArgs"] = _checkpointArgsBox.Text;
+
+                    // Patterny - ustawienia
+                    data.Settings["PatternThreshold"] = _thresholdBox.Value.ToString();
+                    data.Settings["SearchInterval"] = _intervalBox.Value.ToString();
+
+                    // Checkboxy
+                    if (_autoStartCheck != null)
+                        data.Settings["AutoStart"] = _autoStartCheck.Checked.ToString();
+                    if (_trayCheck != null)
+                        data.Settings["MinimizeToTray"] = _trayCheck.Checked.ToString();
+
+                    _db.Save();
+
+                    string msg = "Ustawienia zapisane!\n\n";
+                    msg += "=== OGOLNE ===\n";
+                    msg += "Haslo admina: " + (string.IsNullOrEmpty(_adminPasswordBox.Text) ? "nie ustawione" : "********") + "\n";
+                    msg += "Autostart: " + (_autoStartCheck?.Checked == true ? "TAK" : "NIE") + "\n";
+                    msg += "Minimalizuj do tray: " + (_trayCheck?.Checked == true ? "TAK" : "NIE") + "\n\n";
+                    msg += "=== BACKUP ===\n";
+                    msg += "Folder: " + _backupPathBox.Text + "\n";
+                    msg += "Monitorowany plik: " + (monitorPathBox != null ? monitorPathBox.Text : "nie wybrano") + "\n\n";
+                    msg += "=== CHECKPOINT ===\n";
+                    msg += "EXE: " + _checkpointPathBox.Text + "\n";
+                    msg += "Argumenty: " + _checkpointArgsBox.Text + "\n\n";
+                    msg += "=== PATTERNY ===\n";
+                    msg += "Liczba wzorcow: " + _patterns.Count + "\n";
+                    msg += "Prog zgodnosci: " + _thresholdBox.Value + "%\n";
+                    msg += "Interwal: " + _intervalBox.Value + "ms\n";
+
+                    MessageBox.Show(msg, "Zapisano", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+                else
+                {
+                    MessageBox.Show("Blad: Brak polaczenia z baza danych.", "Blad", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Blad zapisu: " + ex.Message, "Blad", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+
+            this.Close();
         }
-
-        MessageBox.Show("Wszystkie ustawienia zapisane!\n\nLiczba patternow: " + _patterns.Count,
-            "Sukces", MessageBoxButtons.OK, MessageBoxIcon.Information);
-    }
-    catch (Exception ex)
-    {
-        MessageBox.Show("Blad zapisu: " + ex.Message, "Blad", MessageBoxButtons.OK, MessageBoxIcon.Error);
-    }
-
-    this.Close();
-}
     }
 
     public class ScreenSelectionForm : Form
