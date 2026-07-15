@@ -1,7 +1,7 @@
 using System;
+using System.Drawing;
 using System.IO;
 using System.Windows.Forms;
-using Newtonsoft.Json;
 using SecureDesktop.Database;
 
 namespace SecureDesktop
@@ -37,7 +37,6 @@ namespace SecureDesktop
 
                     if (result == DialogResult.OK)
                     {
-                        // WYKONAJ BACKUP PO ZALOGOWANIU
                         PerformBackupAfterLogin(db);
 
                         var dashboard = new Forms.DashboardForm(loginForm.LoggedInUser, db);
@@ -52,9 +51,6 @@ namespace SecureDesktop
             }
         }
 
-        /// <summary>
-        /// Wykonuje backup monitorowanego pliku po zalogowaniu
-        /// </summary>
         private static void PerformBackupAfterLogin(DatabaseInitializer db)
         {
             try
@@ -62,24 +58,20 @@ namespace SecureDesktop
                 var data = db.GetData();
                 if (data == null || data.Settings == null) return;
 
-                // Sprawdź czy jest skonfigurowany plik do monitorowania
-                if (!data.Settings.ContainsKey("MonitoredFile") || 
+                if (!data.Settings.ContainsKey("MonitoredFile") ||
                     string.IsNullOrWhiteSpace(data.Settings["MonitoredFile"]))
                     return;
 
                 string monitoredFile = data.Settings["MonitoredFile"];
                 if (!File.Exists(monitoredFile)) return;
 
-                // Pobierz folder backupu
-                string backupFolder = data.Settings.ContainsKey("BackupPath") 
-                    ? data.Settings["BackupPath"] 
+                string backupFolder = data.Settings.ContainsKey("BackupPath")
+                    ? data.Settings["BackupPath"]
                     : "Backup";
 
-                // Wykonaj backup
                 var backupService = new Services.BackupService();
                 string backupPath = backupService.CreateBackup(monitoredFile, backupFolder);
 
-                // Zapisz informacje o backupie
                 var eventRepo = new Database.Repositories.EventLogRepository(db);
                 eventRepo.Create(new Models.EventLog
                 {
@@ -87,8 +79,6 @@ namespace SecureDesktop
                     Result = "Success",
                     Description = $"Backup pliku: {monitoredFile} -> {backupPath}"
                 });
-
-                System.Diagnostics.Debug.WriteLine($"Backup wykonany: {backupPath}");
             }
             catch (Exception ex)
             {
