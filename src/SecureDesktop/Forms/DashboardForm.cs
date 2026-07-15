@@ -65,7 +65,6 @@ namespace SecureDesktop.Forms
             this.FormBorderStyle = FormBorderStyle.FixedSingle;
             this.MaximizeBox = false;
 
-            // Naglowek
             var headerPanel = new Panel
             {
                 Location = new Point(0, 0),
@@ -94,7 +93,6 @@ namespace SecureDesktop.Forms
             headerPanel.Controls.Add(logoLabel);
             headerPanel.Controls.Add(userLabel);
 
-            // Panel boczny
             var sidebarPanel = new Panel
             {
                 Location = new Point(0, 60),
@@ -111,7 +109,6 @@ namespace SecureDesktop.Forms
 
             int yPos = 25;
 
-            // Blokuj caly ekran
             var lockAllBtn = CreateSidebarButton("Blokuj caly ekran", yPos, primaryColor);
             lockAllBtn.Click += (s, e) =>
             {
@@ -120,7 +117,6 @@ namespace SecureDesktop.Forms
             };
             yPos += 55;
 
-            // Blokuj z Pattern
             var lockPatternBtn = CreateSidebarButton("Blokuj z Pattern", yPos, primaryColor);
             lockPatternBtn.Click += (s, e) =>
             {
@@ -135,11 +131,21 @@ namespace SecureDesktop.Forms
 
                     var json = File.ReadAllText(dbPath);
                     var data = JsonConvert.DeserializeObject<DatabaseData>(json);
-                    var patterns = data?.Patterns?.Where(p => p.IsActive).ToList() ?? new List<Pattern>();
+                    
+                    // BIERZEMY WSZYSTKIE PATTERNY (bez filtra IsActive dla testu)
+                    var patterns = data?.Patterns?.ToList() ?? new List<Pattern>();
+
+                    string debugMsg = $"Patterny w bazie: {data?.Patterns?.Count ?? 0}\n";
+                    debugMsg += $"Przekazywane do blokady: {patterns.Count}\n\n";
+                    foreach (var p in patterns)
+                    {
+                        debugMsg += $"• {p.Name} (Id={p.Id}, Active={p.IsActive}, HasImage={p.ImageData != null && p.ImageData.Length > 0})\n";
+                    }
+                    MessageBox.Show(debugMsg, "DEBUG - Patterny");
 
                     if (patterns.Count == 0)
                     {
-                        var result = MessageBox.Show("Brak aktywnych wzorcow. Chcesz przejsc do konfiguracji?",
+                        var result = MessageBox.Show("Brak wzorcow. Chcesz przejsc do konfiguracji?",
                             "Pattern Lock", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
                         if (result == DialogResult.Yes)
                         {
@@ -154,7 +160,7 @@ namespace SecureDesktop.Forms
                             "Pattern Lock", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
                         if (result == DialogResult.Yes)
                         {
-                            _lockService.LockWithPatterns(patterns, new PatternRecognitionService(0.90));
+                            _lockService.LockWithPatterns(patterns, new PatternRecognitionService(0.75));
                         }
                     }
                 }
@@ -162,7 +168,6 @@ namespace SecureDesktop.Forms
             };
             yPos += 55;
 
-            // CheckPoint
             var checkpointBtn = CreateSidebarButton("CheckPoint", yPos, primaryColor);
             checkpointBtn.Click += (s, e) =>
             {
@@ -184,7 +189,6 @@ namespace SecureDesktop.Forms
             };
             yPos += 55;
 
-            // Konfiguracja
             var configBtn = CreateSidebarButton("Konfiguracja", yPos, primaryColor);
             configBtn.Click += (s, e) =>
             {
@@ -193,12 +197,10 @@ namespace SecureDesktop.Forms
             };
             yPos += 55;
 
-            // Historia
             var historyBtn = CreateSidebarButton("Historia zdarzen", yPos, primaryColor);
             historyBtn.Click += (s, e) => new EventHistoryForm().ShowDialog(this);
             yPos += 55;
 
-            // Backup
             var backupBtn = CreateSidebarButton("Wykonaj backup", yPos, primaryColor);
             backupBtn.Click += (s, e) =>
             {
@@ -216,7 +218,6 @@ namespace SecureDesktop.Forms
             };
             yPos += 55;
 
-            // Wyloguj
             var logoutBtn = CreateSidebarButton("Wyloguj", yPos, Color.FromArgb(220, 80, 80));
             logoutBtn.Click += (s, e) =>
             {
@@ -236,7 +237,6 @@ namespace SecureDesktop.Forms
 
             sidebarPanel.Controls.AddRange(new Control[] { lockAllBtn, lockPatternBtn, checkpointBtn, configBtn, historyBtn, backupBtn, logoutBtn });
 
-            // Panel glowny
             var mainPanel = new Panel
             {
                 Location = new Point(300, 80),
