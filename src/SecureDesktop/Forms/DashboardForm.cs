@@ -160,7 +160,7 @@ namespace SecureDesktop.Forms
                             "Pattern Lock", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
                         if (result == DialogResult.Yes)
                         {
-                            _lockService.LockWithPatterns(patterns, new PatternRecognitionService(0.75));
+                            _lockService.LockWithPatterns(patterns, new PatternRecognitionService(0.40, 0.60));
                         }
                     }
                 }
