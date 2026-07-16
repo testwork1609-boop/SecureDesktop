@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Windows.Forms;
@@ -23,11 +24,11 @@ namespace SecureDesktop.Database.Repositories
             entry.Timestamp = DateTime.Now;
             data.EventLogs.Add(entry);
 
-            // 🔍 Diagnostyka przed Save()
+            // Diagnostyka przed Save()
             int beforeSave = data.Users.Count;
             _db.Save();
 
-            // 🔍 Diagnostyka po Save() – sprawdź, czy użytkownicy nie zginęli
+            // Diagnostyka po Save() – sprawdź, czy użytkownicy nie zginęli
             string json = File.ReadAllText(_db.GetDatabasePath());
             var checkData = JsonConvert.DeserializeObject<DatabaseData>(json);
             int afterSave = checkData?.Users?.Count ?? 0;
