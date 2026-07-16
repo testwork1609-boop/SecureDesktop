@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Windows.Forms;
 using Newtonsoft.Json;
 
 namespace SecureDesktop.Database
@@ -72,8 +73,33 @@ namespace SecureDesktop.Database
 
         public void Save()
         {
-            var json = JsonConvert.SerializeObject(_data, Formatting.Indented);
-            File.WriteAllText(_dbPath, json);
+            try
+            {
+                var json = JsonConvert.SerializeObject(_data, Formatting.Indented);
+                File.WriteAllText(_dbPath, json);
+
+                // 🔍 Diagnostyka – sprawdź, czy plik zawiera wszystkich użytkowników
+                string checkJson = File.ReadAllText(_dbPath);
+                var checkData = JsonConvert.DeserializeObject<DatabaseData>(checkJson);
+                int count = checkData?.Users?.Count ?? 0;
+                string userList = string.Join(", ", checkData?.Users?.ConvertAll(u => u.IdentificationNumber) ?? new List<string>());
+
+                MessageBox.Show(
+                    $"Zapisano plik: {_dbPath}\n" +
+                    $"Liczba użytkowników w pliku: {count}\n" +
+                    $"Użytkownicy: {userList}",
+                    "Diagnostyka Save()",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    $"Błąd podczas zapisywania bazy danych:\n{ex}",
+                    "Błąd zapisu",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
         }
 
         public DatabaseData GetData() => _data;
@@ -89,7 +115,6 @@ namespace SecureDesktop.Database
         public List<Models.Pattern> Patterns { get; set; } = new List<Models.Pattern>();
         public Dictionary<string, string> Settings { get; set; } = new Dictionary<string, string>();
 
-        // Pola wymagane przez repozytoria
         public int NextUserId { get; set; } = 2;
         public int NextSessionId { get; set; } = 1;
         public int NextEventId { get; set; } = 1;
