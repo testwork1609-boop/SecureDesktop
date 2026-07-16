@@ -9,6 +9,7 @@ namespace SecureDesktop
     static class Program
     {
         public static Icon AppIcon;
+        private static DatabaseInitializer _globalDb;
 
         [STAThread]
         static void Main()
@@ -18,28 +19,30 @@ namespace SecureDesktop
 
             AppIcon = CreateLockIcon();
 
+            // Inicjalizacja bazy tylko RAZ
+            var dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
+            _globalDb = new DatabaseInitializer(dbPath);
+            _globalDb.Initialize();
+
             while (true)
             {
+                // Tworzenie folderów (jeśli nie istnieją)
                 foreach (var dir in new[] { "Database", "Backup", "Logs" })
                 {
                     if (!Directory.Exists(dir))
                         Directory.CreateDirectory(dir);
                 }
 
-                var dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
-                var db = new Database.DatabaseInitializer(dbPath);
-                db.Initialize();
-
-                using (var loginForm = new Forms.LoginForm(db))
+                using (var loginForm = new Forms.LoginForm(_globalDb))
                 {
                     loginForm.Icon = AppIcon;
                     var result = loginForm.ShowDialog();
 
                     if (result == DialogResult.OK)
                     {
-                        PerformBackupAfterLogin(db);
+                        PerformBackupAfterLogin(_globalDb);
 
-                        var dashboard = new Forms.DashboardForm(loginForm.LoggedInUser, db);
+                        var dashboard = new Forms.DashboardForm(loginForm.LoggedInUser, _globalDb);
                         dashboard.Icon = AppIcon;
                         Application.Run(dashboard);
                     }
