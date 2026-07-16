@@ -1,123 +1,36 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Windows.Forms;
-using Newtonsoft.Json;
-
-namespace SecureDesktop.Database
+public void Initialize()
 {
-    public class DatabaseInitializer
+    try
     {
-        private readonly string _dbPath;
-        private DatabaseData _data;
+        var dbDirectory = Path.GetDirectoryName(_dbPath);
+        if (!Directory.Exists(dbDirectory))
+            Directory.CreateDirectory(dbDirectory);
 
-        public DatabaseInitializer(string dbPath)
+        if (File.Exists(_dbPath))
         {
-            _dbPath = dbPath ?? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
-        }
+            var json = File.ReadAllText(_dbPath);
+            _data = JsonConvert.DeserializeObject<DatabaseData>(json) ?? new DatabaseData();
 
-        public void Initialize()
+            // 🔍 Diagnostyka przy każdym uruchomieniu
+            int userCount = _data.Users?.Count ?? 0;
+            string users = string.Join(", ", _data.Users?.Select(u => u.IdentificationNumber) ?? new List<string>());
+            MessageBox.Show(
+                $"Wczytano bazę:\n{_dbPath}\n\n" +
+                $"Liczba użytkowników: {userCount}\n" +
+                $"Użytkownicy: {users}",
+                "Diagnostyka Initialize()",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+        }
+        else
         {
-            try
-            {
-                var dbDirectory = Path.GetDirectoryName(_dbPath);
-                if (!Directory.Exists(dbDirectory))
-                    Directory.CreateDirectory(dbDirectory);
-
-                if (File.Exists(_dbPath))
-                {
-                    var json = File.ReadAllText(_dbPath);
-                    _data = JsonConvert.DeserializeObject<DatabaseData>(json) ?? new DatabaseData();
-                }
-                else
-                {
-                    _data = new DatabaseData();
-                    InsertDefaultData();
-                    Save();
-                }
-            }
-            catch (Exception ex)
-            {
-                throw new Exception("Database init failed: " + ex.Message, ex);
-            }
+            _data = new DatabaseData();
+            InsertDefaultData();
+            Save();
         }
-
-        private void InsertDefaultData()
-        {
-            var salt = Convert.ToBase64String(Guid.NewGuid().ToByteArray());
-            var hash = Convert.ToBase64String(
-                System.Security.Cryptography.SHA256.Create().ComputeHash(
-                    System.Text.Encoding.UTF8.GetBytes("admin" + salt)
-                )
-            );
-
-            _data.Users.Add(new Models.User
-            {
-                Id = 1,
-                IdentificationNumber = "admin",
-                PasswordHash = hash,
-                Salt = salt,
-                IsAdmin = true,
-                CreatedAt = DateTime.Now,
-                IsActive = true
-            });
-
-            _data.Settings["PatternMatchThreshold"] = "0.95";
-            _data.Settings["SearchInterval"] = "200";
-            _data.Settings["AutoStart"] = "false";
-            _data.Settings["MinimizeToTray"] = "true";
-            _data.Settings["Theme"] = "Dark";
-            _data.Settings["AdminPassword"] = "admin";
-            _data.Settings["BackupPath"] = ".\\Backup";
-        }
-
-        public void Save()
-        {
-            try
-            {
-                var json = JsonConvert.SerializeObject(_data, Formatting.Indented);
-                File.WriteAllText(_dbPath, json);
-
-                // 🔍 Diagnostyka – sprawdź, czy plik zawiera wszystkich użytkowników
-                string checkJson = File.ReadAllText(_dbPath);
-                var checkData = JsonConvert.DeserializeObject<DatabaseData>(checkJson);
-                int count = checkData?.Users?.Count ?? 0;
-                string userList = string.Join(", ", checkData?.Users?.ConvertAll(u => u.IdentificationNumber) ?? new List<string>());
-
-                MessageBox.Show(
-                    $"Zapisano plik: {_dbPath}\n" +
-                    $"Liczba użytkowników w pliku: {count}\n" +
-                    $"Użytkownicy: {userList}",
-                    "Diagnostyka Save()",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Information);
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(
-                    $"Błąd podczas zapisywania bazy danych:\n{ex}",
-                    "Błąd zapisu",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error);
-            }
-        }
-
-        public DatabaseData GetData() => _data;
-
-        public string GetDatabasePath() => _dbPath;
     }
-
-    public class DatabaseData
+    catch (Exception ex)
     {
-        public List<Models.User> Users { get; set; } = new List<Models.User>();
-        public List<Models.Session> Sessions { get; set; } = new List<Models.Session>();
-        public List<Models.EventLog> EventLogs { get; set; } = new List<Models.EventLog>();
-        public List<Models.Pattern> Patterns { get; set; } = new List<Models.Pattern>();
-        public Dictionary<string, string> Settings { get; set; } = new Dictionary<string, string>();
-
-        public int NextUserId { get; set; } = 2;
-        public int NextSessionId { get; set; } = 1;
-        public int NextEventId { get; set; } = 1;
-        public int NextPatternId { get; set; } = 1;
+        throw new Exception("Database init failed: " + ex.Message, ex);
     }
 }
