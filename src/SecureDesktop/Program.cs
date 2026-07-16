@@ -26,7 +26,6 @@ namespace SecureDesktop
 
             while (true)
             {
-                // Tworzenie folderów (jeśli nie istnieją)
                 foreach (var dir in new[] { "Database", "Backup", "Logs" })
                 {
                     if (!Directory.Exists(dir))

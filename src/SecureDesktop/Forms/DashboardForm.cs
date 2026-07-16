@@ -33,17 +33,12 @@ namespace SecureDesktop.Forms
         {
             try
             {
-                var dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
-                if (File.Exists(dbPath))
+                var data = _db.GetData();
+                if (data != null)
                 {
-                    var json = File.ReadAllText(dbPath);
-                    var data = JsonConvert.DeserializeObject<DatabaseData>(json);
-                    if (data != null)
-                    {
-                        _totalPatterns = data.Patterns?.Count ?? 0;
-                        _activePatterns = data.Patterns?.Count(p => p.IsActive) ?? 0;
-                        _totalEvents = data.EventLogs?.Count ?? 0;
-                    }
+                    _totalPatterns = data.Patterns?.Count ?? 0;
+                    _activePatterns = data.Patterns?.Count(p => p.IsActive) ?? 0;
+                    _totalEvents = data.EventLogs?.Count ?? 0;
                 }
             }
             catch { }
@@ -119,13 +114,7 @@ namespace SecureDesktop.Forms
             {
                 try
                 {
-                    var dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
-                    if (!File.Exists(dbPath)) { MessageBox.Show("Brak bazy danych.", "Blad"); return; }
-
-                    var json = File.ReadAllText(dbPath);
-                    var data = JsonConvert.DeserializeObject<DatabaseData>(json);
-                    var patterns = data?.Patterns?.ToList() ?? new List<Pattern>();
-
+                    var patterns = _db.GetData()?.Patterns?.ToList() ?? new List<Pattern>();
                     if (patterns.Count == 0)
                     {
                         var result = MessageBox.Show("Brak wzorcow. Chcesz przejsc do konfiguracji?",
@@ -158,14 +147,9 @@ namespace SecureDesktop.Forms
                 try
                 {
                     string path = "notepad.exe";
-                    var dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
-                    if (File.Exists(dbPath))
-                    {
-                        var json = File.ReadAllText(dbPath);
-                        var data = JsonConvert.DeserializeObject<DatabaseData>(json);
-                        if (data?.Settings?.ContainsKey("CheckpointPath") == true)
-                            path = data.Settings["CheckpointPath"];
-                    }
+                    var data = _db.GetData();
+                    if (data?.Settings?.ContainsKey("CheckpointPath") == true)
+                        path = data.Settings["CheckpointPath"];
                     System.Diagnostics.Process.Start(path);
                     MessageBox.Show("Uruchomiono: " + path, "CheckPoint");
                 }
@@ -173,7 +157,6 @@ namespace SecureDesktop.Forms
             };
             yPos += 55;
 
-            // Przyciski tylko dla admina
             Button configBtn = null, historyBtn = null, backupBtn = null;
 
             if (_currentUser.IsAdmin)
@@ -225,7 +208,6 @@ namespace SecureDesktop.Forms
                 this.Close();
             };
 
-            // Dodanie przycisków do panelu
             var buttons = new List<Control> { lockAllBtn, lockPatternBtn, checkpointBtn };
             if (configBtn != null) buttons.Add(configBtn);
             if (historyBtn != null) buttons.Add(historyBtn);
@@ -233,7 +215,6 @@ namespace SecureDesktop.Forms
             buttons.Add(logoutBtn);
             sidebarPanel.Controls.AddRange(buttons.ToArray());
 
-            // Panel główny
             var mainPanel = new Panel
             {
                 Location = new Point(300, 80),

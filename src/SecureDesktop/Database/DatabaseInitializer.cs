@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Windows.Forms;
 using Newtonsoft.Json;
 
 namespace SecureDesktop.Database
@@ -81,31 +80,8 @@ namespace SecureDesktop.Database
 
         public void Save()
         {
-            try
-            {
-                var json = JsonConvert.SerializeObject(_data, Formatting.Indented);
-                File.WriteAllText(_dbPath, json);
-
-                // 🔍 Diagnostyka – natychmiastowy odczyt z pliku
-                string checkJson = File.ReadAllText(_dbPath);
-                var checkData = JsonConvert.DeserializeObject<DatabaseData>(checkJson);
-                int userCount = checkData?.Users?.Count ?? 0;
-                string userList = string.Join(", ", checkData?.Users?.Select(u => u.IdentificationNumber) ?? new List<string>());
-
-                MessageBox.Show(
-                    $"Save() wykonany\nPlik: {_dbPath}\nLiczba użytkowników w pliku: {userCount}\nUżytkownicy: {userList}",
-                    "Diagnostyka Save()",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Information);
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(
-                    $"Błąd podczas zapisywania bazy:\n{ex}",
-                    "Błąd Save()",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error);
-            }
+            var json = JsonConvert.SerializeObject(_data, Formatting.Indented);
+            File.WriteAllText(_dbPath, json);
         }
 
         public DatabaseData GetData() => _data;

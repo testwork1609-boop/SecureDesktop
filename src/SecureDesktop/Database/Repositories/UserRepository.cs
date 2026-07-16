@@ -1,9 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using System.Windows.Forms;
-using Newtonsoft.Json;
 using SecureDesktop.Models;
 
 namespace SecureDesktop.Database.Repositories
@@ -36,17 +33,6 @@ namespace SecureDesktop.Database.Repositories
             user.IsActive = true;
             data.Users.Add(user);
             _db.Save();
-
-            // 🔍 Diagnostyka – potwierdzenie, że użytkownik jest w pliku
-            string json = File.ReadAllText(_db.GetDatabasePath());
-            bool found = json.Contains(user.IdentificationNumber);
-            MessageBox.Show(
-                $"AddUser: {user.IdentificationNumber}\n" +
-                $"Zapisano w pliku: {(found ? "TAK ✅" : "NIE ❌")}\n\n" +
-                $"Ścieżka: {_db.GetDatabasePath()}",
-                "Diagnostyka AddUser",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
         }
 
         public void UpdateUser(User user)
