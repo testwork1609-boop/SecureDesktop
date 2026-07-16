@@ -38,7 +38,7 @@ namespace SecureDesktop.Database.Repositories
                 data.Users.Add(user);
                 _db.Save();
 
-                // Diagnostyka – sprawdź, czy dane są w pliku
+                // Diagnostyka
                 string json = File.ReadAllText(_db.GetDatabasePath());
                 bool found = json.Contains(user.IdentificationNumber);
 

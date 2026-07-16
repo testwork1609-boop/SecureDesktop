@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using Newtonsoft.Json;
 
 namespace SecureDesktop.Database
@@ -13,7 +12,7 @@ namespace SecureDesktop.Database
 
         public DatabaseInitializer(string dbPath)
         {
-            _dbPath = dbPath;
+            _dbPath = dbPath ?? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
         }
 
         public void Initialize()
@@ -63,23 +62,23 @@ namespace SecureDesktop.Database
             });
 
             _data.Settings["PatternMatchThreshold"] = "0.95";
-            _data.Settings["SearchInterval"] = "500";
+            _data.Settings["SearchInterval"] = "200";
             _data.Settings["AutoStart"] = "false";
             _data.Settings["MinimizeToTray"] = "true";
             _data.Settings["Theme"] = "Dark";
+            _data.Settings["AdminPassword"] = "admin";
+            _data.Settings["BackupPath"] = ".\\Backup";
         }
 
         public void Save()
-{
-    var json = JsonConvert.SerializeObject(_data, Formatting.Indented);
-    File.WriteAllText(_dbPath, json);
-    
-    // DODAJ TO:
-    System.Diagnostics.Debug.WriteLine($"Saved to: {_dbPath}");
-    System.Diagnostics.Debug.WriteLine($"Settings count: {_data.Settings?.Count}");
-}
+        {
+            var json = JsonConvert.SerializeObject(_data, Formatting.Indented);
+            File.WriteAllText(_dbPath, json);
+        }
 
         public DatabaseData GetData() => _data;
+
+        public string GetDatabasePath() => _dbPath;
     }
 
     public class DatabaseData
@@ -89,9 +88,5 @@ namespace SecureDesktop.Database
         public List<Models.EventLog> EventLogs { get; set; } = new List<Models.EventLog>();
         public List<Models.Pattern> Patterns { get; set; } = new List<Models.Pattern>();
         public Dictionary<string, string> Settings { get; set; } = new Dictionary<string, string>();
-        public int NextUserId { get; set; } = 2;
-        public int NextSessionId { get; set; } = 1;
-        public int NextEventId { get; set; } = 1;
-        public int NextPatternId { get; set; } = 1;
     }
 }
