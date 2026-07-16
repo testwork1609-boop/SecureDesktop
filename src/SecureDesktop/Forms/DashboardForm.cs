@@ -134,7 +134,7 @@ namespace SecureDesktop.Forms
                         {
                             if (_currentUser.IsAdmin)
                             {
-                                new ConfigurationForm().ShowDialog(this);
+                                new ConfigurationForm(_db).ShowDialog(this);
                                 LoadStats();
                             }
                             else
@@ -181,7 +181,7 @@ namespace SecureDesktop.Forms
                 configBtn = CreateSidebarButton("Konfiguracja", yPos, primaryColor);
                 configBtn.Click += (s, e) =>
                 {
-                    new ConfigurationForm().ShowDialog(this);
+                    new ConfigurationForm(_db).ShowDialog(this);
                     LoadStats();
                 };
                 yPos += 55;
