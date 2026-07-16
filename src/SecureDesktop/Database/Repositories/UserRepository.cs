@@ -36,9 +36,9 @@ namespace SecureDesktop.Database.Repositories
                 user.CreatedAt = DateTime.Now;
                 user.IsActive = true;
                 data.Users.Add(user);
-                _db.Save();           // Zapis do pliku JSON
+                _db.Save();
 
-                // 🔍 Diagnostyka – sprawdź, czy dane są w pliku
+                // Diagnostyka – sprawdź, czy dane są w pliku
                 string json = File.ReadAllText(_db.GetDatabasePath());
                 bool found = json.Contains(user.IdentificationNumber);
 
