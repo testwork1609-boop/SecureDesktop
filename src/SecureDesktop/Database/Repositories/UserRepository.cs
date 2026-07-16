@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Windows.Forms;
 using SecureDesktop.Models;
 
 namespace SecureDesktop.Database.Repositories
@@ -28,12 +29,35 @@ namespace SecureDesktop.Database.Repositories
 
         public void AddUser(User user)
         {
-            var data = _db.GetData();
-            user.Id = data.Users.Count > 0 ? data.Users.Max(u => u.Id) + 1 : 1;
-            user.CreatedAt = DateTime.Now;
-            user.IsActive = true;
-            data.Users.Add(user);
-            _db.Save();
+            try
+            {
+                var data = _db.GetData();
+                user.Id = data.Users.Count > 0 ? data.Users.Max(u => u.Id) + 1 : 1;
+                user.CreatedAt = DateTime.Now;
+                user.IsActive = true;
+                data.Users.Add(user);
+                _db.Save();           // Zapis do pliku JSON
+
+                // 🔍 Diagnostyka – sprawdź, czy dane są w pliku
+                string json = File.ReadAllText(_db.GetDatabasePath());
+                bool found = json.Contains(user.IdentificationNumber);
+
+                MessageBox.Show(
+                    $"Dodano użytkownika: {user.IdentificationNumber}\n" +
+                    $"Zapisano w pliku: {(found ? "TAK ✅" : "NIE ❌")}\n\n" +
+                    $"Ścieżka pliku:\n{_db.GetDatabasePath()}",
+                    "Diagnostyka UserRepository",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    $"Błąd podczas dodawania użytkownika:\n{ex}",
+                    "Błąd",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
         }
 
         public void UpdateUser(User user)
