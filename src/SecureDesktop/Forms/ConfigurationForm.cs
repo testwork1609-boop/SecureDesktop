@@ -39,29 +39,15 @@ namespace SecureDesktop.Forms
 
         private ListView _userListView;
 
-        public ConfigurationForm()
+        public ConfigurationForm(DatabaseInitializer db)
         {
+            _db = db;
+            _userRepo = new UserRepository(_db);
             _patterns = new List<Pattern>();
             this.Icon = Program.AppIcon;
-            InitializeDatabase();
             InitializeComponent();
             LoadPatternsFromDatabase();
             LoadSettingsIntoControls();
-        }
-
-        private void InitializeDatabase()
-        {
-            try
-            {
-                var dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
-                _db = new DatabaseInitializer(dbPath);
-                _db.Initialize();
-                _userRepo = new UserRepository(_db);
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show("Blad inicjalizacji bazy: " + ex.Message, "Blad", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
         }
 
         private void InitializeComponent()
@@ -756,41 +742,30 @@ namespace SecureDesktop.Forms
         {
             try
             {
-                var dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
-
-                if (File.Exists(dbPath))
+                var data = _db.GetData();
+                if (data != null && data.Patterns != null && data.Patterns.Count > 0)
                 {
-                    var json = File.ReadAllText(dbPath);
-                    var data = JsonConvert.DeserializeObject<DatabaseData>(json);
-
-                    if (data != null && data.Patterns != null && data.Patterns.Count > 0)
-                    {
-                        _patterns = data.Patterns;
-                    }
-                    else
-                    {
-                        _patterns = new List<Pattern>
-                        {
-                            new Pattern
-                            {
-                                Id = 1,
-                                Name = "Przykladowy wzorzec",
-                                Description = "Kliknij 'Zaznacz Pattern z ekranu' aby dodac wlasny",
-                                IsActive = true,
-                                CreatedAt = DateTime.Now,
-                                MarginTop = 10, MarginBottom = 10, MarginLeft = 10, MarginRight = 10
-                            }
-                        };
-                        if (_db != null)
-                        {
-                            _db.GetData().Patterns = _patterns;
-                            _db.Save();
-                        }
-                    }
+                    _patterns = data.Patterns;
                 }
                 else
                 {
-                    _patterns = new List<Pattern>();
+                    _patterns = new List<Pattern>
+                    {
+                        new Pattern
+                        {
+                            Id = 1,
+                            Name = "Przykladowy wzorzec",
+                            Description = "Kliknij 'Zaznacz Pattern z ekranu' aby dodac wlasny",
+                            IsActive = true,
+                            CreatedAt = DateTime.Now,
+                            MarginTop = 10, MarginBottom = 10, MarginLeft = 10, MarginRight = 10
+                        }
+                    };
+                    if (_db != null)
+                    {
+                        _db.GetData().Patterns = _patterns;
+                        _db.Save();
+                    }
                 }
             }
             catch (Exception ex)
