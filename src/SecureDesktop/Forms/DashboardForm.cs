@@ -84,7 +84,7 @@ namespace SecureDesktop.Forms
 
             var userLabel = new Label
             {
-                Text = _currentUser.IdentificationNumber + (_currentUser.IsAdmin ? " (Admin)" : ""),
+                Text = _currentUser.IdentificationNumber + (_currentUser.IsAdmin ? " (Admin)" : " (User)"),
                 Font = new Font("Segoe UI", 10),
                 Location = new Point(620, 22),
                 AutoSize = true,
@@ -111,11 +111,7 @@ namespace SecureDesktop.Forms
             int yPos = 25;
 
             var lockAllBtn = CreateSidebarButton("Blokuj caly ekran", yPos, primaryColor);
-            lockAllBtn.Click += (s, e) =>
-            {
-                try { _lockService.LockAllScreens(); }
-                catch (Exception ex) { MessageBox.Show("Blad: " + ex.Message); }
-            };
+            lockAllBtn.Click += (s, e) => { try { _lockService.LockAllScreens(); } catch (Exception ex) { MessageBox.Show("Blad: " + ex.Message); } };
             yPos += 55;
 
             var lockPatternBtn = CreateSidebarButton("Blokuj z Pattern", yPos, primaryColor);
@@ -124,25 +120,11 @@ namespace SecureDesktop.Forms
                 try
                 {
                     var dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
-                    if (!File.Exists(dbPath))
-                    {
-                        MessageBox.Show("Brak bazy danych.", "Blad");
-                        return;
-                    }
+                    if (!File.Exists(dbPath)) { MessageBox.Show("Brak bazy danych.", "Blad"); return; }
 
                     var json = File.ReadAllText(dbPath);
                     var data = JsonConvert.DeserializeObject<DatabaseData>(json);
-                    
-                    // BIERZEMY WSZYSTKIE PATTERNY (bez filtra IsActive dla testu)
                     var patterns = data?.Patterns?.ToList() ?? new List<Pattern>();
-
-                    string debugMsg = $"Patterny w bazie: {data?.Patterns?.Count ?? 0}\n";
-                    debugMsg += $"Przekazywane do blokady: {patterns.Count}\n\n";
-                    foreach (var p in patterns)
-                    {
-                        debugMsg += $"• {p.Name} (Id={p.Id}, Active={p.IsActive}, HasImage={p.ImageData != null && p.ImageData.Length > 0})\n";
-                    }
-                    MessageBox.Show(debugMsg, "DEBUG - Patterny");
 
                     if (patterns.Count == 0)
                     {
@@ -150,19 +132,20 @@ namespace SecureDesktop.Forms
                             "Pattern Lock", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
                         if (result == DialogResult.Yes)
                         {
-                            new ConfigurationForm().ShowDialog(this);
-                            LoadStats();
+                            if (_currentUser.IsAdmin)
+                            {
+                                new ConfigurationForm().ShowDialog(this);
+                                LoadStats();
+                            }
+                            else
+                            {
+                                MessageBox.Show("Tylko administrator moze konfigurowac wzorce.", "Info");
+                            }
                         }
                     }
                     else
                     {
-                        var names = string.Join("\n", patterns.Select(p => "• " + p.Name));
-                        var result = MessageBox.Show("Znaleziono " + patterns.Count + " wzorcow:\n" + names + "\n\nUruchomic blokade?",
-                            "Pattern Lock", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
-                        if (result == DialogResult.Yes)
-                        {
-                            _lockService.LockWithPatterns(patterns, new PatternRecognitionService(0.40, 0.60));
-                        }
+                        _lockService.LockWithPatterns(patterns, new PatternRecognitionService(0.75));
                     }
                 }
                 catch (Exception ex) { MessageBox.Show("Blad: " + ex.Message); }
@@ -190,34 +173,40 @@ namespace SecureDesktop.Forms
             };
             yPos += 55;
 
-            var configBtn = CreateSidebarButton("Konfiguracja", yPos, primaryColor);
-            configBtn.Click += (s, e) =>
-            {
-                new ConfigurationForm().ShowDialog(this);
-                LoadStats();
-            };
-            yPos += 55;
+            // Przyciski tylko dla admina
+            Button configBtn = null, historyBtn = null, backupBtn = null;
 
-            var historyBtn = CreateSidebarButton("Historia zdarzen", yPos, primaryColor);
-            historyBtn.Click += (s, e) => new EventHistoryForm().ShowDialog(this);
-            yPos += 55;
-
-            var backupBtn = CreateSidebarButton("Wykonaj backup", yPos, primaryColor);
-            backupBtn.Click += (s, e) =>
+            if (_currentUser.IsAdmin)
             {
-                try
+                configBtn = CreateSidebarButton("Konfiguracja", yPos, primaryColor);
+                configBtn.Click += (s, e) =>
                 {
-                    var sourcePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
-                    if (File.Exists(sourcePath))
+                    new ConfigurationForm().ShowDialog(this);
+                    LoadStats();
+                };
+                yPos += 55;
+
+                historyBtn = CreateSidebarButton("Historia zdarzen", yPos, primaryColor);
+                historyBtn.Click += (s, e) => new EventHistoryForm().ShowDialog(this);
+                yPos += 55;
+
+                backupBtn = CreateSidebarButton("Wykonaj backup", yPos, primaryColor);
+                backupBtn.Click += (s, e) =>
+                {
+                    try
                     {
-                        new BackupService().CreateBackup(sourcePath, "Backup");
-                        MessageBox.Show("Backup utworzony!", "Sukces");
+                        var sourcePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
+                        if (File.Exists(sourcePath))
+                        {
+                            new BackupService().CreateBackup(sourcePath, "Backup");
+                            MessageBox.Show("Backup utworzony!", "Sukces");
+                        }
+                        else { MessageBox.Show("Brak bazy danych."); }
                     }
-                    else { MessageBox.Show("Brak bazy danych."); }
-                }
-                catch (Exception ex) { MessageBox.Show("Blad: " + ex.Message); }
-            };
-            yPos += 55;
+                    catch (Exception ex) { MessageBox.Show("Blad: " + ex.Message); }
+                };
+                yPos += 55;
+            }
 
             var logoutBtn = CreateSidebarButton("Wyloguj", yPos, Color.FromArgb(220, 80, 80));
             logoutBtn.Click += (s, e) =>
@@ -236,8 +225,15 @@ namespace SecureDesktop.Forms
                 this.Close();
             };
 
-            sidebarPanel.Controls.AddRange(new Control[] { lockAllBtn, lockPatternBtn, checkpointBtn, configBtn, historyBtn, backupBtn, logoutBtn });
+            // Dodanie przycisków do panelu
+            var buttons = new List<Control> { lockAllBtn, lockPatternBtn, checkpointBtn };
+            if (configBtn != null) buttons.Add(configBtn);
+            if (historyBtn != null) buttons.Add(historyBtn);
+            if (backupBtn != null) buttons.Add(backupBtn);
+            buttons.Add(logoutBtn);
+            sidebarPanel.Controls.AddRange(buttons.ToArray());
 
+            // Panel główny
             var mainPanel = new Panel
             {
                 Location = new Point(300, 80),
@@ -273,35 +269,38 @@ namespace SecureDesktop.Forms
             welcomeCard.Controls.Add(welcomeTitle);
             welcomeCard.Controls.Add(welcomeSubtitle);
 
-            var statsCard = new Panel
-            {
-                Location = new Point(20, 140),
-                Size = new Size(490, 150),
-                BackColor = Color.White
-            };
-
-            var statsTitle = new Label
-            {
-                Text = "Statystyki",
-                Font = new Font("Segoe UI", 14, FontStyle.Bold),
-                Location = new Point(20, 15),
-                AutoSize = true
-            };
-
-            var statsText = new Label
-            {
-                Text = "Patterny: " + _totalPatterns + " (aktywne: " + _activePatterns + ")\nZdarzenia: " + _totalEvents,
-                Font = new Font("Segoe UI", 10),
-                Location = new Point(20, 50),
-                AutoSize = true,
-                ForeColor = subtitleColor
-            };
-
-            statsCard.Controls.Add(statsTitle);
-            statsCard.Controls.Add(statsText);
-
             mainPanel.Controls.Add(welcomeCard);
-            mainPanel.Controls.Add(statsCard);
+
+            if (_currentUser.IsAdmin)
+            {
+                var statsCard = new Panel
+                {
+                    Location = new Point(20, 140),
+                    Size = new Size(490, 150),
+                    BackColor = Color.White
+                };
+
+                var statsTitle = new Label
+                {
+                    Text = "Statystyki",
+                    Font = new Font("Segoe UI", 14, FontStyle.Bold),
+                    Location = new Point(20, 15),
+                    AutoSize = true
+                };
+
+                var statsText = new Label
+                {
+                    Text = "Patterny: " + _totalPatterns + " (aktywne: " + _activePatterns + ")\nZdarzenia: " + _totalEvents,
+                    Font = new Font("Segoe UI", 10),
+                    Location = new Point(20, 50),
+                    AutoSize = true,
+                    ForeColor = subtitleColor
+                };
+
+                statsCard.Controls.Add(statsTitle);
+                statsCard.Controls.Add(statsText);
+                mainPanel.Controls.Add(statsCard);
+            }
 
             this.Controls.Add(headerPanel);
             this.Controls.Add(sidebarPanel);

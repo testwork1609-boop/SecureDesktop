@@ -7,6 +7,7 @@ using System.Linq;
 using System.Windows.Forms;
 using Newtonsoft.Json;
 using SecureDesktop.Database;
+using SecureDesktop.Database.Repositories;
 using SecureDesktop.Models;
 
 namespace SecureDesktop.Forms
@@ -34,6 +35,9 @@ namespace SecureDesktop.Forms
         private PictureBox _patternPreviewBox;
         private List<Pattern> _patterns;
         private DatabaseInitializer _db;
+        private UserRepository _userRepo;
+
+        private ListView _userListView;
 
         public ConfigurationForm()
         {
@@ -52,6 +56,7 @@ namespace SecureDesktop.Forms
                 var dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
                 _db = new DatabaseInitializer(dbPath);
                 _db.Initialize();
+                _userRepo = new UserRepository(_db);
             }
             catch (Exception ex)
             {
@@ -109,16 +114,19 @@ namespace SecureDesktop.Forms
             var tabPatterns = new TabPage("  Patterny  ") { BackColor = bgColor };
             var tabCheckpoint = new TabPage("  CheckPoint  ") { BackColor = bgColor };
             var tabBackup = new TabPage("  Backup  ") { BackColor = bgColor };
+            var tabUsers = new TabPage("  Uzytkownicy  ") { BackColor = bgColor };
 
             tabControl.TabPages.Add(tabGeneral);
             tabControl.TabPages.Add(tabPatterns);
             tabControl.TabPages.Add(tabCheckpoint);
             tabControl.TabPages.Add(tabBackup);
+            tabControl.TabPages.Add(tabUsers);
 
             BuildGeneralTab(tabGeneral);
             BuildPatternsTab(tabPatterns);
             BuildCheckpointTab(tabCheckpoint);
             BuildBackupTab(tabBackup);
+            BuildUsersTab(tabUsers);
 
             var saveBtn = new Button
             {
@@ -554,6 +562,194 @@ namespace SecureDesktop.Forms
                 monitorLabel, _monitorPathBox, monitorBrowseBtn,
                 backupNowBtn
             });
+        }
+
+        private void BuildUsersTab(TabPage tab)
+        {
+            var titleLabel = new Label
+            {
+                Text = "Zarzadzanie uzytkownikami",
+                Location = new Point(15, 10),
+                Font = new Font("Segoe UI", 12, FontStyle.Bold),
+                AutoSize = true,
+                ForeColor = primaryColor
+            };
+
+            _userListView = new ListView
+            {
+                Location = new Point(15, 40),
+                Size = new Size(550, 320),
+                View = View.Details,
+                FullRowSelect = true,
+                GridLines = true,
+                BackColor = inputBg,
+                ForeColor = textColor,
+                BorderStyle = BorderStyle.FixedSingle
+            };
+            _userListView.Columns.Add("ID", 50);
+            _userListView.Columns.Add("Numer identyfikacyjny", 200);
+            _userListView.Columns.Add("Rola", 100);
+            _userListView.Columns.Add("Aktywny", 80);
+
+            RefreshUserList();
+
+            var addBtn = new Button
+            {
+                Text = "Dodaj uzytkownika",
+                Location = new Point(580, 40),
+                Size = new Size(150, 35),
+                BackColor = primaryColor,
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat,
+                Cursor = Cursors.Hand,
+                Font = new Font("Segoe UI", 9, FontStyle.Bold)
+            };
+            addBtn.FlatAppearance.BorderSize = 0;
+            addBtn.Click += AddUser;
+
+            var deleteBtn = new Button
+            {
+                Text = "Usun (dezaktywuj)",
+                Location = new Point(580, 85),
+                Size = new Size(150, 35),
+                BackColor = Color.White,
+                ForeColor = Color.FromArgb(220, 80, 80),
+                FlatStyle = FlatStyle.Flat,
+                Cursor = Cursors.Hand
+            };
+            deleteBtn.FlatAppearance.BorderColor = Color.FromArgb(220, 80, 80);
+            deleteBtn.FlatAppearance.BorderSize = 1;
+            deleteBtn.Click += DeleteUser;
+
+            var toggleAdminBtn = new Button
+            {
+                Text = "Zmien role (Admin/User)",
+                Location = new Point(580, 130),
+                Size = new Size(150, 35),
+                BackColor = Color.White,
+                ForeColor = primaryColor,
+                FlatStyle = FlatStyle.Flat,
+                Cursor = Cursors.Hand
+            };
+            toggleAdminBtn.FlatAppearance.BorderColor = primaryColor;
+            toggleAdminBtn.FlatAppearance.BorderSize = 1;
+            toggleAdminBtn.Click += ToggleUserRole;
+
+            tab.Controls.AddRange(new Control[] { titleLabel, _userListView, addBtn, deleteBtn, toggleAdminBtn });
+        }
+
+        private void RefreshUserList()
+        {
+            if (_userListView == null || _userRepo == null) return;
+            _userListView.Items.Clear();
+            var users = _userRepo.GetAllUsers();
+            foreach (var u in users)
+            {
+                var item = new ListViewItem(u.Id.ToString());
+                item.SubItems.Add(u.IdentificationNumber);
+                item.SubItems.Add(u.IsAdmin ? "Administrator" : "Uzytkownik");
+                item.SubItems.Add(u.IsActive ? "Tak" : "Nie");
+                _userListView.Items.Add(item);
+            }
+        }
+
+        private void AddUser(object sender, EventArgs e)
+        {
+            var dialog = new Form
+            {
+                Text = "Dodaj uzytkownika",
+                Size = new Size(350, 250),
+                StartPosition = FormStartPosition.CenterParent,
+                BackColor = bgColor,
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                MaximizeBox = false
+            };
+
+            var idLabel = new Label { Text = "Numer identyfikacyjny:", Location = new Point(20, 20), AutoSize = true };
+            var idBox = new TextBox { Location = new Point(20, 45), Size = new Size(280, 25), BackColor = inputBg, BorderStyle = BorderStyle.FixedSingle };
+
+            var adminCheck = new CheckBox { Text = "Uprawnienia administratora", Location = new Point(20, 85), AutoSize = true };
+
+            var okBtn = new Button { Text = "Dodaj", Location = new Point(100, 130), Size = new Size(100, 35), BackColor = primaryColor, ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
+            okBtn.FlatAppearance.BorderSize = 0;
+            okBtn.Click += (s, args) =>
+            {
+                if (string.IsNullOrWhiteSpace(idBox.Text))
+                {
+                    MessageBox.Show("Wprowadz numer identyfikacyjny.", "Info");
+                    return;
+                }
+                if (_userRepo.GetByIdentificationNumber(idBox.Text) != null)
+                {
+                    MessageBox.Show("Uzytkownik o takim numerze juz istnieje.", "Blad");
+                    return;
+                }
+
+                var newUser = new User
+                {
+                    IdentificationNumber = idBox.Text,
+                    IsAdmin = adminCheck.Checked,
+                    IsActive = true
+                };
+                _userRepo.AddUser(newUser);
+                RefreshUserList();
+                dialog.Close();
+            };
+
+            var cancelBtn = new Button { Text = "Anuluj", Location = new Point(210, 130), Size = new Size(100, 35), BackColor = Color.White, FlatStyle = FlatStyle.Flat };
+            cancelBtn.Click += (s, args) => dialog.Close();
+
+            dialog.Controls.AddRange(new Control[] { idLabel, idBox, adminCheck, okBtn, cancelBtn });
+            dialog.ShowDialog(this);
+        }
+
+        private void DeleteUser(object sender, EventArgs e)
+        {
+            if (_userListView.SelectedItems.Count == 0)
+            {
+                MessageBox.Show("Zaznacz uzytkownika do usuniecia.", "Info");
+                return;
+            }
+            var userId = int.Parse(_userListView.SelectedItems[0].Text);
+            var user = _userRepo.GetAllUsers().FirstOrDefault(u => u.Id == userId);
+            if (user == null) return;
+
+            if (user.IdentificationNumber == "admin")
+            {
+                MessageBox.Show("Nie mozna usunac domyslnego administratora.", "Blad");
+                return;
+            }
+
+            var result = MessageBox.Show($"Czy na pewno dezaktywowac uzytkownika {user.IdentificationNumber}?", "Potwierdzenie",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+            if (result == DialogResult.Yes)
+            {
+                _userRepo.DeleteUser(userId);
+                RefreshUserList();
+            }
+        }
+
+        private void ToggleUserRole(object sender, EventArgs e)
+        {
+            if (_userListView.SelectedItems.Count == 0)
+            {
+                MessageBox.Show("Zaznacz uzytkownika.", "Info");
+                return;
+            }
+            var userId = int.Parse(_userListView.SelectedItems[0].Text);
+            var user = _userRepo.GetAllUsers().FirstOrDefault(u => u.Id == userId);
+            if (user == null) return;
+
+            if (user.IdentificationNumber == "admin")
+            {
+                MessageBox.Show("Nie mozna zmienic roli domyslnego administratora.", "Blad");
+                return;
+            }
+
+            user.IsAdmin = !user.IsAdmin;
+            _userRepo.UpdateUser(user);
+            RefreshUserList();
+            MessageBox.Show($"Rola zmieniona na: {(user.IsAdmin ? "Administrator" : "Uzytkownik")}", "Sukces");
         }
 
         private void LoadPatternsFromDatabase()

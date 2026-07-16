@@ -122,7 +122,6 @@ namespace SecureDesktop.Forms
                 Visible = false
             };
 
-            // ENTER = logowanie
             this.KeyDown += (s, e) => { if (e.KeyCode == Keys.Enter) LoginAction(s, e); };
             _idBox.KeyDown += (s, e) => { if (e.KeyCode == Keys.Enter) { _passBox.Focus(); e.SuppressKeyPress = true; } };
             _passBox.KeyDown += (s, e) => { if (e.KeyCode == Keys.Enter) { LoginAction(s, e); e.SuppressKeyPress = true; } };
@@ -134,24 +133,32 @@ namespace SecureDesktop.Forms
         {
             try
             {
+                // Pobranie wspólnego hasła z ustawień
+                var adminPassword = "admin"; // domyślne, jeśli brak w ustawieniach
+                var settings = _db.GetData()?.Settings;
+                if (settings != null && settings.ContainsKey("AdminPassword"))
+                {
+                    adminPassword = settings["AdminPassword"];
+                }
+
+                // Weryfikacja hasła
+                if (_passBox.Text != adminPassword)
+                {
+                    ShowError("Nieprawidlowy login lub haslo");
+                    return;
+                }
+
+                // Wyszukanie użytkownika po numerze ID
                 var user = _userRepo.GetByIdentificationNumber(_idBox.Text);
-                
                 if (user == null)
                 {
-                    ShowError("Nieprawidlowy login lub haslo");
+                    ShowError("Uzytkownik nie istnieje");
                     return;
                 }
 
-                var hash = Utils.SecurityHelper.HashPassword(_passBox.Text, user.Salt);
-                
-                if (hash != user.PasswordHash)
-                {
-                    ShowError("Nieprawidlowy login lub haslo");
-                    return;
-                }
-
+                // Zalogowano pomyślnie
                 _userRepo.UpdateLastLogin(user.Id);
-                
+
                 var session = new Session
                 {
                     UserId = user.Id,
