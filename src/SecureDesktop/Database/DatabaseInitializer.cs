@@ -88,5 +88,11 @@ namespace SecureDesktop.Database
         public List<Models.EventLog> EventLogs { get; set; } = new List<Models.EventLog>();
         public List<Models.Pattern> Patterns { get; set; } = new List<Models.Pattern>();
         public Dictionary<string, string> Settings { get; set; } = new Dictionary<string, string>();
+
+        // Pola wymagane przez repozytoria
+        public int NextUserId { get; set; } = 2;
+        public int NextSessionId { get; set; } = 1;
+        public int NextEventId { get; set; } = 1;
+        public int NextPatternId { get; set; } = 1;
     }
 }
