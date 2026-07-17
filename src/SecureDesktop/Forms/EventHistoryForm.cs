@@ -64,7 +64,7 @@ namespace SecureDesktop.Forms
                 Font = new Font("Consolas", 10),
                 BorderStyle = BorderStyle.FixedSingle,
                 HorizontalScrollbar = true,
-                DrawMode = DrawMode.OwnerFixedHeight,
+                DrawMode = DrawMode.OwnerDrawFixed,
                 ItemHeight = 20
             };
             _eventList.DrawItem += EventList_DrawItem;
