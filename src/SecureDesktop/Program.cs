@@ -74,6 +74,10 @@ namespace SecureDesktop
                 var backupService = new Services.BackupService();
                 string backupPath = backupService.CreateBackup(monitoredFile, backupFolder);
 
+                // Ten backup staje sie nowym punktem odniesienia dla wykrywania zmian
+                // pliku (sprawdzanego przy kolejnej blokadzie/odblokowaniu ekranu).
+                new Services.FileMonitorService(db).SaveBaseline(monitoredFile);
+
                 var eventRepo = new Database.Repositories.EventLogRepository(db);
                 eventRepo.Create(new Models.EventLog
                 {

@@ -16,6 +16,7 @@ namespace SecureDesktop.Forms
         private readonly User _currentUser;
         private readonly DatabaseInitializer _db;
         private readonly ScreenLockService _lockService;
+        private readonly FileMonitorService _fileMonitor;
         private int _totalPatterns = 0;
         private int _activePatterns = 0;
         private int _totalEvents = 0;
@@ -25,6 +26,13 @@ namespace SecureDesktop.Forms
             _currentUser = user;
             _db = db;
             _lockService = new ScreenLockService();
+            _fileMonitor = new FileMonitorService(_db);
+
+            // Sprawdzaj monitorowany plik dokladnie w momencie zablokowania i
+            // odblokowania ekranu (a nie ciagle w tle), zgodnie z ustaleniami.
+            _lockService.LockActivated += (s, e) => _fileMonitor.CheckNow("blokada ekranu");
+            _lockService.LockDeactivated += (s, e) => _fileMonitor.CheckNow("odblokowanie ekranu");
+
             LoadStats();
             InitializeComponent();
         }
@@ -170,7 +178,7 @@ namespace SecureDesktop.Forms
                 yPos += 55;
 
                 historyBtn = CreateSidebarButton("Historia zdarzen", yPos, primaryColor);
-                historyBtn.Click += (s, e) => new EventHistoryForm().ShowDialog(this);
+                historyBtn.Click += (s, e) => new EventHistoryForm(_db).ShowDialog(this);
                 yPos += 55;
 
                 backupBtn = CreateSidebarButton("Wykonaj backup", yPos, primaryColor);

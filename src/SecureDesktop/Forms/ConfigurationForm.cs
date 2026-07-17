@@ -534,6 +534,11 @@ namespace SecureDesktop.Forms
                 {
                     var backupService = new Services.BackupService();
                     string result = backupService.CreateBackup(sourcePath, _backupPathBox.Text);
+
+                    // Reczny backup rowniez ustawia nowy punkt odniesienia dla
+                    // wykrywania zmian pliku (sprawdzanego przy blokadzie/odblokowaniu).
+                    new Services.FileMonitorService(_db).SaveBaseline(sourcePath);
+
                     MessageBox.Show("Backup utworzony!\n\n" + result, "Sukces");
                 }
                 catch (Exception ex)
@@ -922,8 +927,23 @@ namespace SecureDesktop.Forms
                     data.Settings["MinimizeToTray"] = _trayCheck?.Checked.ToString() ?? "true";
 
                     data.Settings["BackupPath"] = _backupPathBox.Text;
+
                     if (_monitorPathBox != null)
-                        data.Settings["MonitoredFile"] = _monitorPathBox.Text;
+                    {
+                        string oldMonitoredFile = data.Settings.ContainsKey("MonitoredFile") ? data.Settings["MonitoredFile"] : null;
+                        string newMonitoredFile = _monitorPathBox.Text;
+
+                        data.Settings["MonitoredFile"] = newMonitoredFile;
+
+                        // Jesli uzytkownik wskazal inny plik do monitorowania, poprzedni
+                        // zapisany "punkt odniesienia" (hash) dotyczy juz nieaktualnego
+                        // pliku - trzeba go zresetowac, zeby nie porownywac nowego pliku
+                        // z hashem starego (co dawaloby falszywy alarm o zmianie).
+                        if (!string.Equals(oldMonitoredFile, newMonitoredFile, StringComparison.Ordinal))
+                        {
+                            new Services.FileMonitorService(_db).ResetBaseline();
+                        }
+                    }
 
                     data.Settings["CheckpointPath"] = _checkpointPathBox.Text;
                     data.Settings["CheckpointArgs"] = _checkpointArgsBox.Text;
