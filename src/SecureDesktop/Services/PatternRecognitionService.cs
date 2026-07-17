@@ -88,71 +88,77 @@ namespace SecureDesktop.Services
             }
         }
 
-private void ProcessPattern(Bitmap screen, CachedPattern pattern)
-{
-    string key = pattern.Source.Name ?? ("pattern_" + pattern.Source.Id);
+        // Klucz MUSI byc unikalny dla kazdego wzorca - Id jest zawsze unikalne,
+        // w przeciwienstwie do Name (uzytkownik moze przypadkowo nadac dwa takie same
+        // lub puste nazwy, co wczesniej powodowalo nadpisywanie sie wpisow w slowniku
+        // sledzenia lokalizacji miedzy roznymi patternami).
+        private static string KeyFor(Pattern pattern) => "pattern_" + pattern.Id;
 
-    Rectangle result = FindPattern(screen, pattern, false);
-
-    if (result == Rectangle.Empty && _lastLocations.ContainsKey(key))
-    {
-        result = FindPattern(screen, pattern, true);
-    }
-
-    System.Diagnostics.Debug.WriteLine(
-        $"ProcessPattern: '{key}' -> Found={result != Rectangle.Empty}, " +
-        $"Score={pattern.LastScore:F2}, Location={result}");
-
-    if (result != Rectangle.Empty)
-    {
-        Rectangle prev;
-        bool hasPrev = _lastLocations.TryGetValue(key, out prev);
-        bool changed;
-
-        if (hasPrev)
+        private void ProcessPattern(Bitmap screen, CachedPattern pattern)
         {
-            int dx = Math.Abs(prev.X - result.X);
-            int dy = Math.Abs(prev.Y - result.Y);
-            
-            // Aktualizuj tylko jeśli zmiana jest większa niż 3 piksele
-            if (dx > 3 || dy > 3)
+            string key = KeyFor(pattern.Source);
+
+            Rectangle result = FindPattern(screen, pattern, false);
+
+            if (result == Rectangle.Empty && _lastLocations.ContainsKey(key))
             {
-                // Płynne wygładzanie - średnia ważona (70% stara, 30% nowa)
-                int smoothX = (prev.X * 7 + result.X * 3) / 10;
-                int smoothY = (prev.Y * 7 + result.Y * 3) / 10;
-                result = new Rectangle(smoothX, smoothY, result.Width, result.Height);
-                changed = true;
+                result = FindPattern(screen, pattern, true);
             }
-            else
+
+            System.Diagnostics.Debug.WriteLine(
+                $"ProcessPattern: '{key}' ({pattern.Source.Name}) -> Found={result != Rectangle.Empty}, " +
+                $"Score={pattern.LastScore:F2}, Location={result}");
+
+            if (result != Rectangle.Empty)
             {
-                // Za mała zmiana - ignoruj
-                changed = false;
+                Rectangle prev;
+                bool hasPrev = _lastLocations.TryGetValue(key, out prev);
+                bool changed;
+
+                if (hasPrev)
+                {
+                    int dx = Math.Abs(prev.X - result.X);
+                    int dy = Math.Abs(prev.Y - result.Y);
+
+                    // Aktualizuj tylko jesli zmiana jest wieksza niz 3 piksele
+                    if (dx > 3 || dy > 3)
+                    {
+                        // Plynne wygladzanie - srednia wazona (70% stara, 30% nowa)
+                        int smoothX = (prev.X * 7 + result.X * 3) / 10;
+                        int smoothY = (prev.Y * 7 + result.Y * 3) / 10;
+                        result = new Rectangle(smoothX, smoothY, result.Width, result.Height);
+                        changed = true;
+                    }
+                    else
+                    {
+                        // Za mala zmiana - ignoruj
+                        changed = false;
+                    }
+                }
+                else
+                {
+                    // Pierwsze wykrycie - zawsze aktualizuj
+                    changed = true;
+                }
+
+                if (changed)
+                {
+                    _lastLocations[key] = result;
+
+                    PatternFound?.Invoke(this, new PatternFoundEventArgs
+                    {
+                        Pattern = pattern.Source,
+                        Location = result,
+                        Confidence = pattern.LastScore
+                    });
+                }
+            }
+            else if (_lastLocations.ContainsKey(key))
+            {
+                _lastLocations.Remove(key);
+                PatternLost?.Invoke(this, new PatternLostEventArgs { Pattern = pattern.Source });
             }
         }
-        else
-        {
-            // Pierwsze wykrycie - zawsze aktualizuj
-            changed = true;
-        }
-
-        if (changed)
-        {
-            _lastLocations[key] = result;
-
-            PatternFound?.Invoke(this, new PatternFoundEventArgs
-            {
-                Pattern = pattern.Source,
-                Location = result,
-                Confidence = pattern.LastScore
-            });
-        }
-    }
-    else if (_lastLocations.ContainsKey(key))
-    {
-        _lastLocations.Remove(key);
-        PatternLost?.Invoke(this, new PatternLostEventArgs { Pattern = pattern.Source });
-    }
-}
 
         public void Stop()
         {
@@ -199,7 +205,7 @@ private void ProcessPattern(Bitmap screen, CachedPattern pattern)
 
         private Rectangle FindPattern(Bitmap screen, CachedPattern pattern, bool forceFullScreen)
         {
-            string key = pattern.Source.Name ?? ("pattern_" + pattern.Source.Id);
+            string key = KeyFor(pattern.Source);
             Rectangle searchArea = new Rectangle(0, 0, screen.Width, screen.Height);
 
             if (!forceFullScreen)
@@ -235,7 +241,14 @@ private void ProcessPattern(Bitmap screen, CachedPattern pattern)
             int maxY = searchArea.Height - pattern.Height;
             if (maxX <= 0 || maxY <= 0) return Rectangle.Empty;
 
-            int coarseStep = Math.Max(4, Math.Min(pattern.Width, pattern.Height) / 6);
+            // WAZNE: krok siatki gruboziarnistego przeszukiwania NIE moze rosnac bez
+            // ograniczenia wraz z rozmiarem patternu. Poprzednio "Math.Min(pattern.Width,
+            // pattern.Height) / 6" dawal np. krok ~25px dla duzego/zlozonego wzorca,
+            // przez co prawdziwe polozenie bylo latwo "przeskoczyc" siatka, a etap
+            // doprecyzowania (refine) przeszukiwal okolice tylko JEDNEGO, mozliwie
+            // bledengo kandydata. Teraz krok jest ograniczony do rozsadnego zakresu
+            // niezaleznie od rozmiaru wzorca.
+            int coarseStep = Math.Max(3, Math.Min(8, Math.Min(pattern.Width, pattern.Height) / 10));
             int rows = (maxY / coarseStep) + 1;
 
             var bestPerRow = new RowResult[rows];
@@ -243,7 +256,7 @@ private void ProcessPattern(Bitmap screen, CachedPattern pattern)
             Parallel.For(0, rows, ri =>
             {
                 int y = ri * coarseStep;
-                if (y > maxY) return;
+                if (y > maxY) { bestPerRow[ri] = new RowResult { Score = -1 }; return; }
 
                 double localBest = 0;
                 int localX = 0;
@@ -260,46 +273,59 @@ private void ProcessPattern(Bitmap screen, CachedPattern pattern)
                 bestPerRow[ri] = new RowResult { Score = localBest, X = localX, Y = y };
             });
 
-            RowResult candidate = new RowResult { Score = -1 };
-            for (int i = 0; i < bestPerRow.Length; i++)
-            {
-                if (bestPerRow[i].Score > candidate.Score)
-                    candidate = bestPerRow[i];
-            }
+            // Zamiast brac TYLKO jednego, globalnie najlepszego kandydata (co dla
+            // wiekszych/bardziej zlozonych patternow czesto bylo bledna lokalizacja
+            // przez rzadka siatke), bierzemy kilku najlepszych kandydatow i kazdego
+            // z nich doprecyzowujemy osobno. Wygrywa ten, ktory po doprecyzowaniu
+            // faktycznie osiaga najwyzszy wynik.
+            var candidates = bestPerRow
+                .Where(r => r.Score > 0)
+                .OrderByDescending(r => r.Score)
+                .Take(6)
+                .ToList();
 
-            if (candidate.Score < _matchThreshold * 0.6)
+            if (candidates.Count == 0 || candidates[0].Score < _matchThreshold * 0.55)
                 return Rectangle.Empty;
 
             double bestScore = 0;
-            int bestX = candidate.X;
-            int bestY = candidate.Y;
+            int bestX = 0;
+            int bestY = 0;
 
-            int refineRadius = coarseStep;
-            int rx0 = Math.Max(0, candidate.X - refineRadius);
-            int rx1 = Math.Min(maxX, candidate.X + refineRadius);
-            int ry0 = Math.Max(0, candidate.Y - refineRadius);
-            int ry1 = Math.Min(maxY, candidate.Y + refineRadius);
+            // Promien doprecyzowania rowniez ma sensowny minimalny zakres, tak aby
+            // dla duzych wzorcow (duzy coarseStep w ich wlasnym "CoarsePoints") nadal
+            // realnie objac obszar wokol kandydata.
+            int refineRadius = Math.Max(coarseStep * 2, 8);
 
-            for (int y = ry0; y <= ry1; y++)
+            foreach (var candidate in candidates)
             {
-                bool done = false;
-                for (int x = rx0; x <= rx1; x++)
-                {
-                    double score = CompareFast(ptr, stride, x, y, pattern.Points);
-                    if (score > bestScore)
-                    {
-                        bestScore = score;
-                        bestX = x;
-                        bestY = y;
+                int rx0 = Math.Max(0, candidate.X - refineRadius);
+                int rx1 = Math.Min(maxX, candidate.X + refineRadius);
+                int ry0 = Math.Max(0, candidate.Y - refineRadius);
+                int ry1 = Math.Min(maxY, candidate.Y + refineRadius);
 
-                        if (bestScore >= _acceptThreshold)
+                for (int y = ry0; y <= ry1; y++)
+                {
+                    bool done = false;
+                    for (int x = rx0; x <= rx1; x++)
+                    {
+                        double score = CompareFast(ptr, stride, x, y, pattern.Points);
+                        if (score > bestScore)
                         {
-                            done = true;
-                            break;
+                            bestScore = score;
+                            bestX = x;
+                            bestY = y;
+
+                            if (bestScore >= _acceptThreshold)
+                            {
+                                done = true;
+                                break;
+                            }
                         }
                     }
+                    if (done) break;
                 }
-                if (done) break;
+
+                if (bestScore >= _acceptThreshold) break;
             }
 
             if (bestScore >= _matchThreshold)
@@ -380,16 +406,23 @@ private void ProcessPattern(Bitmap screen, CachedPattern pattern)
                 Width = bmp.Width;
                 Height = bmp.Height;
 
-                int targetPoints = Clamp((Width * Height) / 40, 64, 600);
+                // Limit gornego pulapu podniesiony z 600 do 2000 punktow - dla wiekszych
+                // / bardziej zlozonych wzorcow poprzedni limit dawal relatywnie coraz
+                // rzadsze probkowanie wzgledem powierzchni obrazu, co obnizalo
+                // rozroznialnosc wzorca od tla i sprzyjalo falszywym dopasowaniom.
+                int targetPoints = Clamp((Width * Height) / 25, 100, 2000);
                 int gridSize = (int)Math.Sqrt(targetPoints);
                 int stepX = Math.Max(1, Width / gridSize);
                 int stepY = Math.Max(1, Height / gridSize);
 
                 Points = SamplePoints(bmp, stepX, stepY, 0);
 
-                int coarseStepX = stepX * 3;
-                int coarseStepY = stepY * 3;
-                CoarsePoints = SamplePoints(bmp, coarseStepX, coarseStepY, 12);
+                // Gestsze probkowanie "grube" (wczesniej mnoznik x3, teraz x2), aby
+                // etap wstepnego wyszukiwania mial wiecej cech rozroznialnych rowniez
+                // dla wiekszych patternow.
+                int coarseStepX = Math.Max(1, stepX * 2);
+                int coarseStepY = Math.Max(1, stepY * 2);
+                CoarsePoints = SamplePoints(bmp, coarseStepX, coarseStepY, 24);
             }
         }
 

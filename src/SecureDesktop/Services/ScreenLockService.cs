@@ -102,6 +102,13 @@ namespace SecureDesktop.Services
             }
         }
 
+        // Klucz regionu MUSI byc oparty o Id patternu, a nie o Name. Nazwa moze byc
+        // pusta lub przypadkowo powielona przez uzytkownika w Konfiguracji - w takim
+        // wypadku dwa rozne wzorce nadpisywalyby ten sam wpis w slowniku regionow
+        // odblokowania w kazdym ScreenLockForm, przez co tylko jeden z nich realnie
+        // odblokowywal ekran, a drugi wygladal na "niedzialajacy".
+        private static string KeyFor(Pattern pattern) => "pattern_" + pattern.Id;
+
         private void OnPatternFound(object sender, PatternFoundEventArgs e)
         {
             if (e.Pattern == null || e.Location == Rectangle.Empty) return;
@@ -118,7 +125,7 @@ namespace SecureDesktop.Services
             if (region.Width <= 0) region.Width = e.Location.Width;
             if (region.Height <= 0) region.Height = e.Location.Height;
 
-            string key = e.Pattern.Name ?? ("pattern_" + e.Pattern.Id);
+            string key = KeyFor(e.Pattern);
 
             foreach (var overlay in _overlays)
             {
@@ -138,7 +145,7 @@ namespace SecureDesktop.Services
 
         private void OnPatternLost(object sender, PatternLostEventArgs e)
         {
-            string key = e.Pattern.Name ?? ("pattern_" + e.Pattern.Id);
+            string key = KeyFor(e.Pattern);
 
             foreach (var overlay in _overlays)
             {
