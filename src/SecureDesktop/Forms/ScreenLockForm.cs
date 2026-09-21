@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
-using System.Drawing.Imaging;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using SecureDesktop.Utils;
@@ -10,18 +10,23 @@ namespace SecureDesktop.Forms
 {
     public class ScreenLockForm : Form
     {
-        private const uint WDA_MONITOR = 0x00000001;
-        private const uint WDA_EXCLUDEFROMCAPTURE = 0x00000011;
-
-        [DllImport("user32.dll", SetLastError = true)]
+        [DllImport("user32.dll")]
         private static extern bool SetWindowDisplayAffinity(IntPtr hWnd, uint dwAffinity);
+
+        // WDA_EXCLUDEFROMCAPTURE. Jeśli system nie obsługuje (Win10 < 2004),
+        // NIE ustawiamy WDA_MONITOR - ten fallback sprawia, że w zrzucie
+        // ekranu okno pojawia się jako czarny prostokąt, więc NCC nie widzi
+        // niczego. Wolimy warstwowy overlay z lekkim Opacity, który działa
+        // wszędzie i nie psuje NCC (NCC jest niezmienniczy na zmianę jasności).
+        private const uint WDA_EXCLUDEFROMCAPTURE = 0x00000011;
 
         private readonly Screen _screen;
         private readonly Dictionary<string, Rectangle> _unlockRegions;
         private readonly Func<string, bool> _verifyPassword;
         private readonly Bitmap _sourceScreenshot;
-        private Bitmap _dimmedBackground;
         private Bitmap _lockIconBitmap;
+
+        private static readonly object _logLock = new object();
 
         public Rectangle ScreenBounds => _screen.Bounds;
 
@@ -37,16 +42,7 @@ namespace SecureDesktop.Forms
         protected override void OnHandleCreated(EventArgs e)
         {
             base.OnHandleCreated(e);
-            TrySetDisplayAffinity();
-        }
-
-        private void TrySetDisplayAffinity()
-        {
-            try
-            {
-                if (!SetWindowDisplayAffinity(this.Handle, WDA_EXCLUDEFROMCAPTURE))
-                    SetWindowDisplayAffinity(this.Handle, WDA_MONITOR);
-            }
+            try { SetWindowDisplayAffinity(this.Handle, WDA_EXCLUDEFROMCAPTURE); }
             catch { }
         }
 
@@ -61,15 +57,15 @@ namespace SecureDesktop.Forms
             this.Bounds = _screen.Bounds;
             this.Cursor = Cursors.No;
             this.BackColor = Color.Black;
+
+            // 8% czarnego = ledwo widoczne przygaszenie, ale użytkownik
+            // cały czas widzi pulpit. Okno NADAL przechwytuje kliknięcia
+            // (w przeciwieństwie do TransparencyKey).
+            this.Opacity = 0.08;
+            this.AllowTransparency = true;
+
             this.DoubleBuffered = true;
             this.KeyPreview = true;
-
-            if (_sourceScreenshot != null)
-            {
-                _dimmedBackground = Darken(_sourceScreenshot, 120);
-                this.BackgroundImage = _dimmedBackground;
-                this.BackgroundImageLayout = ImageLayout.None;
-            }
 
             _lockIconBitmap = CreateLockIconBitmap(56, Color.White);
 
@@ -94,18 +90,6 @@ namespace SecureDesktop.Forms
                     ShowUnlockDialog();
                 }
             };
-        }
-
-        private static Bitmap Darken(Bitmap source, int alpha)
-        {
-            var bmp = new Bitmap(source.Width, source.Height, PixelFormat.Format24bppRgb);
-            using (var g = Graphics.FromImage(bmp))
-            {
-                g.DrawImageUnscaled(source, 0, 0);
-                using (var brush = new SolidBrush(Color.FromArgb(alpha, 0, 0, 0)))
-                    g.FillRectangle(brush, 0, 0, bmp.Width, bmp.Height);
-            }
-            return bmp;
         }
 
         private static Bitmap CreateLockIconBitmap(int size, Color color)
@@ -217,7 +201,6 @@ namespace SecureDesktop.Forms
 
                 var unlockBtn = new Button { Text = "Odblokuj", Location = new Point(80, 150), Size = new Size(100, 36), BackColor = primaryColor, ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
                 unlockBtn.FlatAppearance.BorderSize = 0;
-
                 var cancelBtn = new Button { Text = "Anuluj", Location = new Point(190, 150), Size = new Size(100, 36), BackColor = Color.White, FlatStyle = FlatStyle.Flat };
 
                 Action unlockAction = () =>
@@ -262,10 +245,6 @@ namespace SecureDesktop.Forms
             {
                 _lockIconBitmap?.Dispose();
                 _lockIconBitmap = null;
-
-                _dimmedBackground?.Dispose();
-                _dimmedBackground = null;
-
                 _sourceScreenshot?.Dispose();
             }
             base.Dispose(disposing);
