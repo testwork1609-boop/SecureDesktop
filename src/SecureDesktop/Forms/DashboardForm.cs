@@ -4,8 +4,8 @@ using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Windows.Forms;
-using Newtonsoft.Json;
 using SecureDesktop.Database;
+using SecureDesktop.Database.Repositories;
 using SecureDesktop.Models;
 using SecureDesktop.Services;
 using SecureDesktop.Utils;
@@ -17,15 +17,20 @@ namespace SecureDesktop.Forms
         private readonly User _currentUser;
         private readonly DatabaseInitializer _db;
         private readonly ScreenLockService _lockService;
+        private readonly int _sessionId;
         private int _totalPatterns = 0;
         private int _activePatterns = 0;
         private int _totalEvents = 0;
 
-        public DashboardForm(User user, DatabaseInitializer db)
+        public DashboardForm(User user, DatabaseInitializer db, int sessionId)
         {
             _currentUser = user;
             _db = db;
-            _lockService = new ScreenLockService();
+            _sessionId = sessionId;
+            _lockService = new ScreenLockService
+            {
+                PasswordVerifier = VerifyCurrentUserPassword
+            };
             LoadStats();
             InitializeComponent();
         }
@@ -46,12 +51,27 @@ namespace SecureDesktop.Forms
         }
 
         /// <summary>
-        /// Buduje PatternRecognitionService na podstawie faktycznie zapisanych
-        /// ustawień (PatternThreshold / SearchInterval). Wcześniej te ustawienia
-        /// były widoczne w konfiguracji i zapisywane, ale nigdy nie wpływały
-        /// na realne działanie usługi (był tam zawsze sztywny próg 0.75 i
-        /// sztywny interwał 200 ms), co czyniło je "martwymi" polami w UI.
+        /// Weryfikuje hasło aktualnie zalogowanego użytkownika. Wykorzystywane
+        /// przez ScreenLockForm przy próbie odblokowania ekranu.
         /// </summary>
+        private bool VerifyCurrentUserPassword(string password)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(password)) return false;
+                var user = _db.GetData()?.Users?.FirstOrDefault(u => u.Id == _currentUser.Id);
+                if (user == null || string.IsNullOrEmpty(user.PasswordHash) || string.IsNullOrEmpty(user.Salt))
+                    return false;
+
+                var hash = SecurityHelper.HashPassword(password, user.Salt);
+                return string.Equals(hash, user.PasswordHash, StringComparison.Ordinal);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         private PatternRecognitionService CreatePatternRecognitionService()
         {
             double defaultThreshold = 0.75;
@@ -64,21 +84,14 @@ namespace SecureDesktop.Forms
                 {
                     if (data.Settings.TryGetValue("PatternThreshold", out var thStr) &&
                         int.TryParse(thStr, out int th) && th >= 1 && th <= 100)
-                    {
                         defaultThreshold = th / 100.0;
-                    }
 
                     if (data.Settings.TryGetValue("SearchInterval", out var ivStr) &&
                         int.TryParse(ivStr, out int iv) && iv > 0)
-                    {
                         intervalMs = iv;
-                    }
                 }
             }
-            catch
-            {
-                // W razie problemu z odczytem ustawień - używamy bezpiecznych domyślnych.
-            }
+            catch { }
 
             return new PatternRecognitionService(defaultThreshold, 0.93, intervalMs);
         }
@@ -92,7 +105,7 @@ namespace SecureDesktop.Forms
             Color textColor = Color.FromArgb(30, 30, 30);
             Color subtitleColor = Color.FromArgb(100, 100, 100);
 
-            this.Text = "SecureDesktop - Panel Glowny";
+            this.Text = "SecureDesktop - Panel Główny";
             this.Size = new Size(850, 600);
             this.StartPosition = FormStartPosition.CenterScreen;
             this.BackColor = bgColor;
@@ -144,8 +157,8 @@ namespace SecureDesktop.Forms
 
             int yPos = 25;
 
-            var lockAllBtn = CreateSidebarButton("Blokuj caly ekran", yPos, primaryColor);
-            lockAllBtn.Click += (s, e) => { try { _lockService.LockAllScreens(); } catch (Exception ex) { MessageBox.Show("Blad: " + ex.Message); } };
+            var lockAllBtn = CreateSidebarButton("Blokuj cały ekran", yPos, primaryColor);
+            lockAllBtn.Click += (s, e) => { try { _lockService.LockAllScreens(); } catch (Exception ex) { MessageBox.Show("Błąd: " + ex.Message); } };
             yPos += 55;
 
             var lockPatternBtn = CreateSidebarButton("Blokuj z Pattern", yPos, primaryColor);
@@ -154,46 +167,28 @@ namespace SecureDesktop.Forms
                 try
                 {
                     var patterns = _db.GetData()?.Patterns?.ToList() ?? new List<Pattern>();
-
-                    // Informujemy jasno ile wzorców faktycznie kwalifikuje się do
-                    // wyszukania (aktywne + posiadające dane obrazu), zamiast po
-                    // cichu tracić część z nich w środku PatternRecognitionService.
                     var usablePatterns = patterns
                         .Where(p => p.IsActive && p.ImageData != null && p.ImageData.Length > 0)
                         .ToList();
 
                     if (usablePatterns.Count == 0)
                     {
-                        var result = MessageBox.Show("Brak uzywalnych wzorcow (aktywnych, z zapisanym obrazem). Chcesz przejsc do konfiguracji?",
+                        var result = MessageBox.Show(
+                            "Brak używalnych wzorców (aktywnych, z zapisanym obrazem). Przejść do konfiguracji?",
                             "Pattern Lock", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
-                        if (result == DialogResult.Yes)
+                        if (result == DialogResult.Yes && _currentUser.IsAdmin)
                         {
-                            if (_currentUser.IsAdmin)
-                            {
-                                using (var cfg = new ConfigurationForm(_db))
-                                {
-                                    cfg.ShowDialog(this);
-                                }
-                                LoadStats();
-                            }
-                            else
-                            {
-                                MessageBox.Show("Tylko administrator moze konfigurowac wzorce.", "Info");
-                            }
+                            using (var cfg = new ConfigurationForm(_db))
+                                cfg.ShowDialog(this);
+                            LoadStats();
                         }
                     }
                     else
                     {
-                        if (usablePatterns.Count < patterns.Count)
-                        {
-                            System.Diagnostics.Debug.WriteLine(
-                                $"Pominieto {patterns.Count - usablePatterns.Count} nieaktywnych/pustych wzorcow.");
-                        }
-
                         _lockService.LockWithPatterns(usablePatterns, CreatePatternRecognitionService());
                     }
                 }
-                catch (Exception ex) { MessageBox.Show("Blad: " + ex.Message); }
+                catch (Exception ex) { MessageBox.Show("Błąd: " + ex.Message); }
             };
             yPos += 55;
 
@@ -203,13 +198,25 @@ namespace SecureDesktop.Forms
                 try
                 {
                     string path = "notepad.exe";
+                    string args = "";
                     var data = _db.GetData();
-                    if (data?.Settings?.ContainsKey("CheckpointPath") == true)
-                        path = data.Settings["CheckpointPath"];
-                    System.Diagnostics.Process.Start(path);
-                    MessageBox.Show("Uruchomiono: " + path, "CheckPoint");
+                    if (data?.Settings != null)
+                    {
+                        if (data.Settings.TryGetValue("CheckpointPath", out var p) && !string.IsNullOrWhiteSpace(p))
+                            path = p;
+                        if (data.Settings.TryGetValue("CheckpointArgs", out var a))
+                            args = a ?? "";
+                    }
+
+                    var psi = new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = path,
+                        Arguments = args,
+                        UseShellExecute = true
+                    };
+                    System.Diagnostics.Process.Start(psi);
                 }
-                catch (Exception ex) { MessageBox.Show("Blad: " + ex.Message); }
+                catch (Exception ex) { MessageBox.Show("Błąd: " + ex.Message); }
             };
             yPos += 55;
 
@@ -221,20 +228,16 @@ namespace SecureDesktop.Forms
                 configBtn.Click += (s, e) =>
                 {
                     using (var cfg = new ConfigurationForm(_db))
-                    {
                         cfg.ShowDialog(this);
-                    }
                     LoadStats();
                 };
                 yPos += 55;
 
-                historyBtn = CreateSidebarButton("Historia zdarzen", yPos, primaryColor);
+                historyBtn = CreateSidebarButton("Historia zdarzeń", yPos, primaryColor);
                 historyBtn.Click += (s, e) =>
                 {
-                    using (var hist = new EventHistoryForm())
-                    {
+                    using (var hist = new EventHistoryForm(_db))
                         hist.ShowDialog(this);
-                    }
                 };
                 yPos += 55;
 
@@ -249,9 +252,9 @@ namespace SecureDesktop.Forms
                             new BackupService().CreateBackup(sourcePath, "Backup");
                             MessageBox.Show("Backup utworzony!", "Sukces");
                         }
-                        else { MessageBox.Show("Brak bazy danych."); }
+                        else MessageBox.Show("Brak bazy danych.");
                     }
-                    catch (Exception ex) { MessageBox.Show("Blad: " + ex.Message); }
+                    catch (Exception ex) { MessageBox.Show("Błąd: " + ex.Message); }
                 };
                 yPos += 55;
             }
@@ -261,13 +264,14 @@ namespace SecureDesktop.Forms
             {
                 try
                 {
-                    new Database.Repositories.EventLogRepository(_db).Create(new EventLog
+                    new EventLogRepository(_db).Create(new EventLog
                     {
                         UserId = _currentUser.Id,
                         IdentificationNumber = _currentUser.IdentificationNumber,
                         OperationName = "Logout",
                         Result = "Success"
                     });
+                    new SessionRepository(_db).EndSession(_sessionId);
                 }
                 catch { }
                 this.Close();
@@ -314,7 +318,6 @@ namespace SecureDesktop.Forms
 
             welcomeCard.Controls.Add(welcomeTitle);
             welcomeCard.Controls.Add(welcomeSubtitle);
-
             mainPanel.Controls.Add(welcomeCard);
 
             if (_currentUser.IsAdmin)
