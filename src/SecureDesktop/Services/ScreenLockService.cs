@@ -18,6 +18,13 @@ namespace SecureDesktop.Services
 
         public bool IsLocked => _isLocked;
 
+        /// <summary>
+        /// Callback weryfikujący hasło użytkownika przy próbie odblokowania.
+        /// Ustawiany raz (w DashboardForm) na podstawie hasha aktualnie
+        /// zalogowanego użytkownika.
+        /// </summary>
+        public Func<string, bool> PasswordVerifier { get; set; }
+
         public ScreenLockService()
         {
             _overlays = new List<Form>();
@@ -29,11 +36,9 @@ namespace SecureDesktop.Services
 
             try
             {
-                var screens = Screen.AllScreens;
-
-                foreach (var screen in screens)
+                foreach (var screen in Screen.AllScreens)
                 {
-                    var overlay = new ScreenLockForm(screen);
+                    var overlay = new ScreenLockForm(screen, PasswordVerifier);
                     overlay.FormClosed += (s, e) =>
                     {
                         _overlays.Remove(overlay);
@@ -67,11 +72,9 @@ namespace SecureDesktop.Services
             {
                 _patternService = patternService ?? new PatternRecognitionService();
 
-                var screens = Screen.AllScreens;
-
-                foreach (var screen in screens)
+                foreach (var screen in Screen.AllScreens)
                 {
-                    var overlay = new ScreenLockForm(screen);
+                    var overlay = new ScreenLockForm(screen, PasswordVerifier);
                     overlay.FormClosed += (s, e) =>
                     {
                         _overlays.Remove(overlay);
@@ -106,12 +109,6 @@ namespace SecureDesktop.Services
         {
             if (e.Pattern == null || e.Location == Rectangle.Empty) return;
 
-            // e.Location jest teraz w bezwzględnych współrzędnych całego układu
-            // monitorów (patrz PatternRecognitionService). Każdy overlay
-            // (ScreenLockForm) ma jednak własny lokalny układ współrzędnych
-            // zaczynający się od (0,0) w lewym górnym rogu SWOJEGO ekranu.
-            // Wcześniej region był przekazywany bez tej translacji, co działało
-            // tylko przypadkiem na monitorze głównym (którego origin to (0,0)).
             var absoluteRegion = new Rectangle(
                 e.Location.X - e.Pattern.MarginLeft,
                 e.Location.Y - e.Pattern.MarginTop,
@@ -129,9 +126,6 @@ namespace SecureDesktop.Services
                 if (overlay is ScreenLockForm lockForm && !lockForm.IsDisposed)
                 {
                     var screenBounds = lockForm.ScreenBounds;
-
-                    // Wzorzec znaleziony poza tym konkretnym monitorem -
-                    // ten overlay nie powinien dostać okna odblokowania.
                     if (!screenBounds.IntersectsWith(absoluteRegion))
                         continue;
 
@@ -142,13 +136,9 @@ namespace SecureDesktop.Services
                         absoluteRegion.Height);
 
                     if (lockForm.InvokeRequired)
-                    {
                         lockForm.BeginInvoke(new Action(() => lockForm.AddUnlockRegion(key, localRegion)));
-                    }
                     else
-                    {
                         lockForm.AddUnlockRegion(key, localRegion);
-                    }
                 }
             }
         }
@@ -162,13 +152,9 @@ namespace SecureDesktop.Services
                 if (overlay is ScreenLockForm lockForm && !lockForm.IsDisposed)
                 {
                     if (lockForm.InvokeRequired)
-                    {
                         lockForm.BeginInvoke(new Action(() => lockForm.RemoveUnlockRegion(key)));
-                    }
                     else
-                    {
                         lockForm.RemoveUnlockRegion(key);
-                    }
                 }
             }
         }
@@ -188,13 +174,7 @@ namespace SecureDesktop.Services
                         try
                         {
                             if (overlay.InvokeRequired)
-                            {
-                                overlay.BeginInvoke(new Action(() =>
-                                {
-                                    overlay.Close();
-                                    overlay.Dispose();
-                                }));
-                            }
+                                overlay.BeginInvoke(new Action(() => { overlay.Close(); overlay.Dispose(); }));
                             else
                             {
                                 overlay.Close();
@@ -227,21 +207,11 @@ namespace SecureDesktop.Services
                     _patternService.Dispose();
                 }
                 catch { }
-                finally
-                {
-                    _patternService = null;
-                }
+                finally { _patternService = null; }
             }
         }
 
-        protected virtual void OnLockActivated()
-        {
-            LockActivated?.Invoke(this, EventArgs.Empty);
-        }
-
-        protected virtual void OnLockDeactivated()
-        {
-            LockDeactivated?.Invoke(this, EventArgs.Empty);
-        }
+        protected virtual void OnLockActivated() => LockActivated?.Invoke(this, EventArgs.Empty);
+        protected virtual void OnLockDeactivated() => LockDeactivated?.Invoke(this, EventArgs.Empty);
     }
 }
