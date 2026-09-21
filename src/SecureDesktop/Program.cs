@@ -23,29 +23,39 @@ namespace SecureDesktop
 
             AppIcon = CreateLockIcon();
 
-            // Inicjalizacja bazy tylko RAZ
-            var dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
-            _globalDb = new DatabaseInitializer(dbPath);
-            _globalDb.Initialize();
+            try
+            {
+                var dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
+                _globalDb = new DatabaseInitializer(dbPath);
+                _globalDb.Initialize();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    "Nie można zainicjalizować bazy danych:\n\n" + ex.Message,
+                    "SecureDesktop - błąd krytyczny",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            foreach (var dir in new[] { "Database", "Backup", "Logs" })
+            {
+                try { if (!Directory.Exists(dir)) Directory.CreateDirectory(dir); } catch { }
+            }
 
             while (true)
             {
-                foreach (var dir in new[] { "Database", "Backup", "Logs" })
-                {
-                    if (!Directory.Exists(dir))
-                        Directory.CreateDirectory(dir);
-                }
-
                 using (var loginForm = new Forms.LoginForm(_globalDb))
                 {
                     loginForm.Icon = AppIcon;
                     var result = loginForm.ShowDialog();
 
-                    if (result == DialogResult.OK)
+                    if (result == DialogResult.OK && loginForm.LoggedInUser != null)
                     {
                         PerformBackupAfterLogin(_globalDb);
 
-                        using (var dashboard = new Forms.DashboardForm(loginForm.LoggedInUser, _globalDb))
+                        using (var dashboard = new Forms.DashboardForm(
+                            loginForm.LoggedInUser, _globalDb, loginForm.LoggedInSessionId))
                         {
                             dashboard.Icon = AppIcon;
                             Application.Run(dashboard);
@@ -66,19 +76,32 @@ namespace SecureDesktop
                 var data = db.GetData();
                 if (data == null || data.Settings == null) return;
 
-                if (!data.Settings.ContainsKey("MonitoredFile") ||
-                    string.IsNullOrWhiteSpace(data.Settings["MonitoredFile"]))
+                if (!data.Settings.TryGetValue("MonitoredFile", out var monitoredFile) ||
+                    string.IsNullOrWhiteSpace(monitoredFile))
                     return;
 
-                string monitoredFile = data.Settings["MonitoredFile"];
                 if (!File.Exists(monitoredFile)) return;
 
-                string backupFolder = data.Settings.ContainsKey("BackupPath")
-                    ? data.Settings["BackupPath"]
+                string backupFolder = data.Settings.TryGetValue("BackupPath", out var bp) && !string.IsNullOrWhiteSpace(bp)
+                    ? bp
                     : "Backup";
 
                 var backupService = new Services.BackupService();
+
+                // Nie rób kopii, jeśli plik nie zmienił się od ostatniego backupu.
+                string baselineKey = "MonitoredFileBaselineHash";
+                if (data.Settings.TryGetValue(baselineKey, out var baselineHash))
+                {
+                    if (!backupService.HasFileChanged(monitoredFile, baselineHash))
+                        return;
+                }
+
                 string backupPath = backupService.CreateBackup(monitoredFile, backupFolder);
+
+                // Zapisz nowy punkt odniesienia.
+                data.Settings[baselineKey] = backupService.ComputeHash(monitoredFile);
+                data.Settings["MonitoredFileLastNotifiedHash"] = data.Settings[baselineKey];
+                db.Save();
 
                 var eventRepo = new Database.Repositories.EventLogRepository(db);
                 eventRepo.Create(new Models.EventLog
@@ -96,13 +119,6 @@ namespace SecureDesktop
 
         private static Icon CreateLockIcon()
         {
-            // Icon.FromHandle(bmp.GetHicon()) tworzy obiekt Icon, który OPAKOWUJE
-            // natywny uchwyt HICON, ale nie przejmuje odpowiedzialności za jego
-            // zwolnienie - zgodnie z dokumentacją .NET wywołujący musi sam wywołać
-            // DestroyIcon na oryginalnym uchwycie. Poprzednio uchwyt nigdy nie był
-            // zwalniany (drobny, jednorazowy wyciek przy starcie aplikacji, ale
-            // wart naprawienia). Dodatkowo bitmapa źródłowa jest teraz poprawnie
-            // opakowana w "using" i zwalniana.
             using (var bmp = new Bitmap(32, 32))
             {
                 using (var g = Graphics.FromImage(bmp))
@@ -110,13 +126,9 @@ namespace SecureDesktop
                     g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
                     g.Clear(Color.FromArgb(45, 165, 90));
                     using (var brush = new SolidBrush(Color.White))
-                    {
                         g.FillRectangle(brush, 7, 14, 18, 14);
-                    }
                     using (var pen = new Pen(Color.White, 3))
-                    {
                         g.DrawArc(pen, 9, 4, 14, 14, 180, 180);
-                    }
                     using (var brush = new SolidBrush(Color.FromArgb(45, 165, 90)))
                     {
                         g.FillEllipse(brush, 13, 18, 6, 5);
@@ -128,11 +140,7 @@ namespace SecureDesktop
                 try
                 {
                     using (var tempIcon = Icon.FromHandle(hIcon))
-                    {
-                        // Klonujemy, aby zwrócić ikonę niezależną od natywnego
-                        // uchwytu, który zaraz zniszczymy przez DestroyIcon.
                         return (Icon)tempIcon.Clone();
-                    }
                 }
                 finally
                 {
