@@ -10,9 +10,6 @@ namespace SecureDesktop.Forms
     public class ScreenLockForm : Form
     {
         [DllImport("user32.dll")]
-        private static extern bool SetWindowDisplayAffinity(IntPtr hWnd, uint dwAffinity);
-
-        [DllImport("user32.dll")]
         private static extern int SetWindowRgn(IntPtr hWnd, IntPtr hRgn, bool bRedraw);
 
         [DllImport("gdi32.dll")]
@@ -24,7 +21,6 @@ namespace SecureDesktop.Forms
         [DllImport("gdi32.dll")]
         private static extern bool DeleteObject(IntPtr hObject);
 
-        private const uint WDA_EXCLUDEFROMCAPTURE = 0x00000011;
         private const int RGN_DIFF = 4;
         private const int FRAME_THICKNESS = 2;
 
@@ -45,16 +41,6 @@ namespace SecureDesktop.Forms
             InitializeComponent();
         }
 
-        protected override void OnHandleCreated(EventArgs e)
-        {
-            base.OnHandleCreated(e);
-            try { SetWindowDisplayAffinity(this.Handle, WDA_EXCLUDEFROMCAPTURE); }
-            catch { }
-
-            // Po utworzeniu uchwytu od razu ustaw region (jeśli już mamy unlocki).
-            UpdateWindowRegion();
-        }
-
         private void InitializeComponent()
         {
             Color primaryColor = Color.FromArgb(45, 165, 90);
@@ -66,8 +52,8 @@ namespace SecureDesktop.Forms
             this.Bounds = _screen.Bounds;
             this.Cursor = Cursors.No;
             this.BackColor = Color.Black;
-            this.Opacity = 0.10;              // lekkie przygaszenie pulpitu
-            this.AllowTransparency = true;    // wymagane dla Opacity
+            this.Opacity = 0.08;
+            this.AllowTransparency = true;
             this.DoubleBuffered = true;
             this.KeyPreview = true;
 
@@ -142,10 +128,10 @@ namespace SecureDesktop.Forms
         }
 
         /// <summary>
-        /// Wycina z okna regiony odblokowane. W tych miejscach forma nie
-        /// istnieje fizycznie — kliknięcia przechodzą do pulpitu, a kursor
-        /// jest normalny (bez Cursors.No). Zachowujemy 2px pierścień
-        /// formy dookoła każdego regionu, żeby narysować szarą ramkę.
+        /// Wycina z okna regiony odblokowania. Okno startuje bez wycięć
+        /// (pełny prostokąt), więc overlay nie koliduje z niczym podczas
+        /// pierwszego skanu patternów. Wycięcia powstają dopiero po
+        /// znalezieniu patternu.
         /// </summary>
         private void UpdateWindowRegion()
         {
@@ -153,6 +139,7 @@ namespace SecureDesktop.Forms
 
             if (_unlockRegions.Count == 0)
             {
+                // Pełne okno (bez wycięć) - reset regionu.
                 SetWindowRgn(this.Handle, IntPtr.Zero, true);
                 return;
             }
@@ -162,14 +149,14 @@ namespace SecureDesktop.Forms
 
             foreach (var region in _unlockRegions.Values)
             {
-                if (region.Width <= FRAME_THICKNESS * 2 || region.Height <= FRAME_THICKNESS * 2)
-                    continue;
-
+                // Zachowujemy 2px pierścień formy, żeby narysować szarą ramkę.
                 var inner = new Rectangle(
                     region.X + FRAME_THICKNESS,
                     region.Y + FRAME_THICKNESS,
                     region.Width - FRAME_THICKNESS * 2,
                     region.Height - FRAME_THICKNESS * 2);
+
+                if (inner.Width <= 0 || inner.Height <= 0) continue;
 
                 IntPtr hole = CreateRectRgn(inner.Left, inner.Top, inner.Right, inner.Bottom);
                 if (hole == IntPtr.Zero) continue;
@@ -186,7 +173,7 @@ namespace SecureDesktop.Forms
             base.OnPaint(e);
             if (_unlockRegions.Count == 0) return;
 
-            using (var brush = new SolidBrush(Color.FromArgb(190, 190, 190)))
+            using (var brush = new SolidBrush(Color.FromArgb(200, 200, 200)))
             {
                 foreach (var region in _unlockRegions.Values)
                 {
@@ -200,30 +187,6 @@ namespace SecureDesktop.Forms
                     e.Graphics.FillRectangle(brush, region.Right - t, region.Y, t, region.Height);
                 }
             }
-        }
-
-        protected override void WndProc(ref Message m)
-        {
-            const int WM_NCHITTEST = 0x0084;
-            const int HTTRANSPARENT = -1;
-
-            if (m.Msg == WM_NCHITTEST)
-            {
-                int sx = unchecked((short)(long)m.LParam);
-                int sy = unchecked((short)((long)m.LParam >> 16));
-                var clientPoint = this.PointToClient(new Point(sx, sy));
-
-                foreach (var region in _unlockRegions.Values)
-                {
-                    if (region.Contains(clientPoint))
-                    {
-                        m.Result = (IntPtr)HTTRANSPARENT;
-                        return;
-                    }
-                }
-            }
-
-            base.WndProc(ref m);
         }
 
         private void ShowUnlockDialog()
