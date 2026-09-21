@@ -17,7 +17,6 @@ namespace SecureDesktop.Forms
         private static readonly Color BgColor = Color.FromArgb(248, 249, 250);
         private static readonly Color SidebarColor = Color.White;
         private static readonly Color TextColor = Color.FromArgb(30, 30, 30);
-        private static readonly Color SubtitleColor = Color.FromArgb(100, 100, 100);
 
         private readonly User _currentUser;
         private readonly DatabaseInitializer _db;
@@ -51,9 +50,9 @@ namespace SecureDesktop.Forms
                 var data = _db.GetData();
                 if (data != null)
                 {
-                    _totalPatterns = data.Patterns?.Count ?? 0;
-                    _activePatterns = data.Patterns?.Count(p => p.IsActive) ?? 0;
-                    _totalEvents = data.EventLogs?.Count ?? 0;
+                    _totalPatterns = data.Patterns == null ? 0 : data.Patterns.Count;
+                    _activePatterns = data.Patterns == null ? 0 : data.Patterns.Count(p => p.IsActive);
+                    _totalEvents = data.EventLogs == null ? 0 : data.EventLogs.Count;
                 }
             }
             catch { }
@@ -64,7 +63,9 @@ namespace SecureDesktop.Forms
             try
             {
                 if (string.IsNullOrEmpty(password)) return false;
-                var user = _db.GetData()?.Users?.FirstOrDefault(u => u.Id == _currentUser.Id);
+                var data = _db.GetData();
+                if (data == null || data.Users == null) return false;
+                var user = data.Users.FirstOrDefault(u => u.Id == _currentUser.Id);
                 if (user == null || string.IsNullOrEmpty(user.PasswordHash) || string.IsNullOrEmpty(user.Salt))
                     return false;
                 var hash = SecurityHelper.HashPassword(password, user.Salt);
@@ -80,15 +81,23 @@ namespace SecureDesktop.Forms
             try
             {
                 var data = _db.GetData();
-                if (data?.Settings != null)
+                if (data != null && data.Settings != null)
                 {
-                    if (data.Settings.TryGetValue("PatternThreshold", out var thStr) &&
-                        int.TryParse(thStr, out int th) && th >= 1 && th <= 100)
-                        defaultThreshold = th / 100.0;
+                    string thStr;
+                    if (data.Settings.TryGetValue("PatternThreshold", out thStr))
+                    {
+                        int th;
+                        if (int.TryParse(thStr, out th) && th >= 1 && th <= 100)
+                            defaultThreshold = th / 100.0;
+                    }
 
-                    if (data.Settings.TryGetValue("SearchInterval", out var ivStr) &&
-                        int.TryParse(ivStr, out int iv) && iv > 0)
-                        intervalMs = iv;
+                    string ivStr;
+                    if (data.Settings.TryGetValue("SearchInterval", out ivStr))
+                    {
+                        int iv;
+                        if (int.TryParse(ivStr, out iv) && iv > 0)
+                            intervalMs = iv;
+                    }
                 }
             }
             catch { }
@@ -106,7 +115,6 @@ namespace SecureDesktop.Forms
             this.BackColor = BgColor;
             this.ForeColor = TextColor;
 
-            // === Nagłówek ===
             var headerPanel = new Panel
             {
                 Dock = DockStyle.Top,
@@ -155,6 +163,7 @@ namespace SecureDesktop.Forms
                 ForeColor = Color.FromArgb(220, 255, 220),
                 Anchor = AnchorStyles.Top | AnchorStyles.Right
             };
+
             headerPanel.Controls.Add(logoLabel);
             headerPanel.Controls.Add(_backButton);
             headerPanel.Controls.Add(_viewTitleLabel);
@@ -162,13 +171,11 @@ namespace SecureDesktop.Forms
             headerPanel.Resize += (s, e) =>
                 _userLabel.Location = new Point(headerPanel.Width - _userLabel.Width - 24, 24);
 
-            // === Sidebar ===
             var sidebarPanel = new Panel
             {
                 Dock = DockStyle.Left,
                 Width = 240,
-                BackColor = SidebarColor,
-                Padding = new Padding(10, 20, 10, 0)
+                BackColor = SidebarColor
             };
 
             int y = 20;
@@ -178,6 +185,7 @@ namespace SecureDesktop.Forms
             y += 48;
 
             var sep1 = new Panel { Location = new Point(20, y), Size = new Size(200, 1), BackColor = Color.FromArgb(230, 230, 230) };
+            sidebarPanel.Controls.Add(sep1);
             y += 16;
 
             var lockAllBtn = CreateSidebarButton("Blokuj cały ekran", y);
@@ -192,7 +200,10 @@ namespace SecureDesktop.Forms
             checkpointBtn.Click += OnCheckpoint;
             y += 48;
 
-            Button configBtn = null, historyBtn = null, backupBtn = null;
+            Button configBtn = null;
+            Button historyBtn = null;
+            Button backupBtn = null;
+
             if (_currentUser.IsAdmin)
             {
                 var sep2 = new Panel { Location = new Point(20, y), Size = new Size(200, 1), BackColor = Color.FromArgb(230, 230, 230) };
@@ -238,7 +249,6 @@ namespace SecureDesktop.Forms
             logoutBtn.Click += OnLogout;
             sidebarPanel.Controls.Add(logoutBtn);
 
-            // === Content host ===
             _contentHost = new Panel
             {
                 Dock = DockStyle.Fill,
@@ -275,7 +285,8 @@ namespace SecureDesktop.Forms
         private void ShowView(UserControl view, string title)
         {
             _contentHost.SuspendLayout();
-            var old = _contentHost.Controls.Count > 0 ? _contentHost.Controls[0] : null;
+
+            Control old = _contentHost.Controls.Count > 0 ? _contentHost.Controls[0] : null;
             _contentHost.Controls.Clear();
             if (old != null) { try { old.Dispose(); } catch { } }
 
@@ -299,7 +310,11 @@ namespace SecureDesktop.Forms
         {
             try
             {
-                var patterns = _db.GetData()?.Patterns?.ToList() ?? new System.Collections.Generic.List<Pattern>();
+                var data = _db.GetData();
+                var patterns = data == null || data.Patterns == null
+                    ? new System.Collections.Generic.List<Pattern>()
+                    : data.Patterns.ToList();
+
                 var usable = patterns.Where(p => p.IsActive && p.ImageData != null && p.ImageData.Length > 0).ToList();
 
                 if (usable.Count == 0)
@@ -320,14 +335,20 @@ namespace SecureDesktop.Forms
                 string path = "notepad.exe";
                 string args = "";
                 var data = _db.GetData();
-                if (data?.Settings != null)
+                if (data != null && data.Settings != null)
                 {
-                    if (data.Settings.TryGetValue("CheckpointPath", out var p) && !string.IsNullOrWhiteSpace(p)) path = p;
-                    if (data.Settings.TryGetValue("CheckpointArgs", out var a)) args = a ?? "";
+                    string p;
+                    if (data.Settings.TryGetValue("CheckpointPath", out p) && !string.IsNullOrWhiteSpace(p))
+                        path = p;
+                    string a;
+                    if (data.Settings.TryGetValue("CheckpointArgs", out a))
+                        args = a == null ? "" : a;
                 }
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
                 {
-                    FileName = path, Arguments = args, UseShellExecute = true
+                    FileName = path,
+                    Arguments = args,
+                    UseShellExecute = true
                 });
             }
             catch (Exception ex) { MessageBox.Show("Błąd: " + ex.Message); }
@@ -366,15 +387,12 @@ namespace SecureDesktop.Forms
         {
             if (disposing)
             {
-                try { _lockService?.UnlockScreens(); } catch { }
+                try { if (_lockService != null) _lockService.UnlockScreens(); } catch { }
             }
             base.Dispose(disposing);
         }
     }
 
-    /// <summary>
-    /// Widok "Panel główny" — welcome + statystyki. Osadzany w contentHost.
-    /// </summary>
     internal class DashboardHomeView : UserControl
     {
         private static readonly Color PrimaryColor = Color.FromArgb(45, 165, 90);
@@ -434,8 +452,8 @@ namespace SecureDesktop.Forms
 
                 var txt = new Label
                 {
-                    Text = $"Wzorców: {totalPatterns} (aktywne: {activePatterns})\n" +
-                           $"Zdarzeń w bazie: {totalEvents}",
+                    Text = "Wzorców: " + totalPatterns + " (aktywne: " + activePatterns + ")\n" +
+                           "Zdarzeń w bazie: " + totalEvents,
                     Font = UiFonts.Segoe11,
                     Location = new Point(24, 60),
                     AutoSize = true,
