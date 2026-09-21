@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
+using SecureDesktop.Utils;
 
 namespace SecureDesktop.Forms
 {
@@ -9,6 +10,15 @@ namespace SecureDesktop.Forms
     {
         private readonly Screen _screen;
         private readonly Dictionary<string, Rectangle> _unlockRegions;
+        private Bitmap _lockIconBitmap;
+
+        /// <summary>
+        /// Granice ekranu, do którego przypisany jest ten overlay, w
+        /// bezwzględnych współrzędnych systemowych. Używane przez
+        /// ScreenLockService do przeliczania współrzędnych znalezionego
+        /// wzorca na lokalny układ współrzędnych tego konkretnego okna.
+        /// </summary>
+        public Rectangle ScreenBounds => _screen.Bounds;
 
         public ScreenLockForm(Screen screen)
         {
@@ -47,8 +57,13 @@ namespace SecureDesktop.Forms
                 Cursor = Cursors.Hand
             };
 
-            var bmp = new Bitmap(50, 50);
-            using (var g = Graphics.FromImage(bmp))
+            // Bitmapa ikony jest teraz trzymana w polu instancji i zwalniana
+            // w Dispose(), zamiast pozostawiania jej bez odwołania po ustawieniu
+            // jako lockIcon.Image (PictureBox nie przejmuje automatycznie
+            // odpowiedzialności za zwolnienie przypisanego obrazu we wszystkich
+            // przypadkach, a to okno jest tworzone od nowa przy każdej blokadzie).
+            _lockIconBitmap = new Bitmap(50, 50);
+            using (var g = Graphics.FromImage(_lockIconBitmap))
             {
                 g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
                 using (var brush = new SolidBrush(primaryColor))
@@ -65,13 +80,13 @@ namespace SecureDesktop.Forms
                     g.FillRectangle(brush, 23, 34, 4, 8);
                 }
             }
-            lockIcon.Image = bmp;
+            lockIcon.Image = _lockIconBitmap;
             lockIcon.Click += (s, e) => ShowUnlockDialog();
 
             var helpLabel = new Label
             {
                 Text = "Kliknij klodke aby odblokowac",
-                Font = new Font("Segoe UI", 10),
+                Font = UiFonts.Segoe10,
                 ForeColor = primaryColor,
                 Location = new Point((this.Width / 2) - 120, 65),
                 AutoSize = true
@@ -122,7 +137,7 @@ namespace SecureDesktop.Forms
             try
             {
                 var fullRegion = new Region(new Rectangle(0, 0, this.Width, this.Height));
-                
+
                 foreach (var rect in _unlockRegions.Values)
                 {
                     if (rect.Width > 0 && rect.Height > 0)
@@ -130,7 +145,7 @@ namespace SecureDesktop.Forms
                         fullRegion.Exclude(rect);
                     }
                 }
-                
+
                 this.Region = fullRegion;
             }
             catch
@@ -158,10 +173,7 @@ namespace SecureDesktop.Forms
                     e.Graphics.DrawRectangle(pen, region);
                 }
 
-                using (var font = new Font("Segoe UI", 9, FontStyle.Bold))
-                {
-                    e.Graphics.DrawString(name, font, Brushes.Green, region.X + 5, region.Y + 5);
-                }
+                e.Graphics.DrawString(name, UiFonts.Segoe9Bold, Brushes.Green, region.X + 5, region.Y + 5);
             }
         }
 
@@ -192,7 +204,7 @@ namespace SecureDesktop.Forms
         {
             Color primaryColor = Color.FromArgb(45, 165, 90);
 
-            var dialog = new Form
+            using (var dialog = new Form
             {
                 Text = "Odblokuj ekran",
                 Size = new Size(350, 200),
@@ -203,51 +215,62 @@ namespace SecureDesktop.Forms
                 TopMost = true,
                 BackColor = Color.White,
                 KeyPreview = true
-            };
-
-            var icon = new Label { Text = "🔒", Font = new Font("Segoe UI", 24), Location = new Point(20, 20), Size = new Size(50, 40) };
-            var title = new Label { Text = "Wprowadz haslo aby odblokowac", Font = new Font("Segoe UI", 11, FontStyle.Bold), Location = new Point(70, 25), AutoSize = true };
-            var passBox = new TextBox { Location = new Point(30, 70), Size = new Size(280, 30), PasswordChar = '*', Font = new Font("Segoe UI", 12) };
-            var errorLabel = new Label { Location = new Point(30, 105), Size = new Size(280, 20), ForeColor = Color.Red, Visible = false };
-
-            var unlockBtn = new Button { Text = "Odblokuj", Location = new Point(80, 130), Size = new Size(90, 35), BackColor = primaryColor, ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
-            unlockBtn.FlatAppearance.BorderSize = 0;
-
-            var cancelBtn = new Button { Text = "Anuluj", Location = new Point(180, 130), Size = new Size(90, 35), BackColor = Color.White, FlatStyle = FlatStyle.Flat };
-
-            Action unlockAction = () =>
+            })
             {
-                if (passBox.Text == "admin")
+                var icon = new Label { Text = "🔒", Font = UiFonts.Segoe24, Location = new Point(20, 20), Size = new Size(50, 40) };
+                var title = new Label { Text = "Wprowadz haslo aby odblokowac", Font = UiFonts.Segoe11Bold, Location = new Point(70, 25), AutoSize = true };
+                var passBox = new TextBox { Location = new Point(30, 70), Size = new Size(280, 30), PasswordChar = '*', Font = UiFonts.Segoe12 };
+                var errorLabel = new Label { Location = new Point(30, 105), Size = new Size(280, 20), ForeColor = Color.Red, Visible = false };
+
+                var unlockBtn = new Button { Text = "Odblokuj", Location = new Point(80, 130), Size = new Size(90, 35), BackColor = primaryColor, ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
+                unlockBtn.FlatAppearance.BorderSize = 0;
+
+                var cancelBtn = new Button { Text = "Anuluj", Location = new Point(180, 130), Size = new Size(90, 35), BackColor = Color.White, FlatStyle = FlatStyle.Flat };
+
+                Action unlockAction = () =>
                 {
-                    dialog.Close();
-                    this.Close();
-                }
-                else
+                    if (passBox.Text == "admin")
+                    {
+                        dialog.Close();
+                        this.Close();
+                    }
+                    else
+                    {
+                        errorLabel.Text = "Nieprawidlowe haslo!";
+                        errorLabel.Visible = true;
+                        passBox.Text = "";
+                        passBox.Focus();
+                    }
+                };
+
+                unlockBtn.Click += (s, args) => unlockAction();
+                cancelBtn.Click += (s, args) => dialog.Close();
+
+                passBox.KeyDown += (s, args) =>
                 {
-                    errorLabel.Text = "Nieprawidlowe haslo!";
-                    errorLabel.Visible = true;
-                    passBox.Text = "";
-                    passBox.Focus();
-                }
-            };
+                    if (args.KeyCode == Keys.Enter) { args.SuppressKeyPress = true; unlockAction(); }
+                };
 
-            unlockBtn.Click += (s, args) => unlockAction();
-            cancelBtn.Click += (s, args) => dialog.Close();
+                dialog.KeyDown += (s, args) =>
+                {
+                    if (args.KeyCode == Keys.Enter) { args.SuppressKeyPress = true; unlockAction(); }
+                    else if (args.KeyCode == Keys.Escape) dialog.Close();
+                };
 
-            passBox.KeyDown += (s, args) =>
+                dialog.Controls.AddRange(new Control[] { icon, title, passBox, errorLabel, unlockBtn, cancelBtn });
+                dialog.Shown += (s, args) => passBox.Focus();
+                dialog.ShowDialog(this);
+            }
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
             {
-                if (args.KeyCode == Keys.Enter) { args.SuppressKeyPress = true; unlockAction(); }
-            };
-
-            dialog.KeyDown += (s, args) =>
-            {
-                if (args.KeyCode == Keys.Enter) { args.SuppressKeyPress = true; unlockAction(); }
-                else if (args.KeyCode == Keys.Escape) dialog.Close();
-            };
-
-            dialog.Controls.AddRange(new Control[] { icon, title, passBox, errorLabel, unlockBtn, cancelBtn });
-            dialog.Shown += (s, args) => passBox.Focus();
-            dialog.ShowDialog(this);
+                _lockIconBitmap?.Dispose();
+                _lockIconBitmap = null;
+            }
+            base.Dispose(disposing);
         }
     }
 }
