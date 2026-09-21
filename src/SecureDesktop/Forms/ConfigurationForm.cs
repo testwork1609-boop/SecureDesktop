@@ -151,10 +151,6 @@ namespace SecureDesktop.Forms
                 var data = _db.GetData();
                 if (data == null || data.Settings == null) return;
 
-                // Pola hasła nie wypełniamy - nie mamy plaintextu (i nie powinniśmy).
-                // Zostaje puste z placeholderem. Wpisanie tam wartości ustawi
-                // NOWE hasło administratora przy zapisie.
-
                 if (data.Settings.TryGetValue("AutoStart", out var autostart) && _autoStartCheck != null)
                     _autoStartCheck.Checked = bool.TryParse(autostart, out var b) && b;
                 if (data.Settings.TryGetValue("MinimizeToTray", out var tray) && _trayCheck != null)
@@ -251,7 +247,7 @@ namespace SecureDesktop.Forms
             _patternListBox = new ListBox
             {
                 Location = new Point(15, 45),
-                Size = new Size(350, 280),
+                Size = new Size(350, 240),
                 BackColor = inputBg,
                 ForeColor = textColor,
                 Font = UiFonts.Consolas9,
@@ -261,7 +257,7 @@ namespace SecureDesktop.Forms
             var addBtn = new Button
             {
                 Text = "Zaznacz Pattern z ekranu",
-                Location = new Point(15, 340),
+                Location = new Point(15, 295),
                 Size = new Size(170, 35),
                 BackColor = primaryColor,
                 ForeColor = Color.White,
@@ -275,7 +271,7 @@ namespace SecureDesktop.Forms
             var deleteBtn = new Button
             {
                 Text = "Usuń zaznaczony",
-                Location = new Point(195, 340),
+                Location = new Point(195, 295),
                 Size = new Size(170, 35),
                 BackColor = Color.White,
                 ForeColor = Color.FromArgb(220, 80, 80),
@@ -286,6 +282,20 @@ namespace SecureDesktop.Forms
             deleteBtn.FlatAppearance.BorderColor = Color.FromArgb(220, 80, 80);
             deleteBtn.FlatAppearance.BorderSize = 1;
             deleteBtn.Click += DeleteSelectedPattern;
+
+            var testBtn = new Button
+            {
+                Text = "🔍 Testuj wzorzec (na ekranie)",
+                Location = new Point(15, 340),
+                Size = new Size(350, 38),
+                BackColor = Color.FromArgb(60, 120, 200),
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat,
+                Cursor = Cursors.Hand,
+                Font = UiFonts.Segoe10Bold
+            };
+            testBtn.FlatAppearance.BorderSize = 0;
+            testBtn.Click += TestSelectedPattern;
 
             var previewLabel = new Label
             {
@@ -341,11 +351,11 @@ namespace SecureDesktop.Forms
                 ForeColor = primaryColor
             };
 
-            var thresholdLabel = new Label { Text = "Próg zgodności (%):", Location = new Point(390, 295), AutoSize = true };
+            var thresholdLabel = new Label { Text = "Próg NCC (%):", Location = new Point(390, 295), AutoSize = true };
             _thresholdBox = new NumericUpDown
             {
                 Location = new Point(530, 292), Size = new Size(70, 25),
-                Minimum = 50, Maximum = 100, Value = 75,
+                Minimum = 50, Maximum = 100, Value = 85,
                 BackColor = inputBg, BorderStyle = BorderStyle.FixedSingle
             };
 
@@ -391,10 +401,114 @@ namespace SecureDesktop.Forms
                 else MessageBox.Show("Zaznacz wzorzec na liście.", "Info");
             };
 
-            tab.Controls.AddRange(new Control[] { listLabel, _patternListBox, addBtn, deleteBtn,
-                                                  previewLabel, _patternPreviewBox, settingsLabel,
-                                                  thresholdLabel, _thresholdBox, intervalLabel, _intervalBox,
-                                                  marginLabel, _marginBox, applySettingsBtn });
+            tab.Controls.AddRange(new Control[] {
+                listLabel, _patternListBox, addBtn, deleteBtn, testBtn,
+                previewLabel, _patternPreviewBox, settingsLabel,
+                thresholdLabel, _thresholdBox, intervalLabel, _intervalBox,
+                marginLabel, _marginBox, applySettingsBtn
+            });
+        }
+
+        private void TestSelectedPattern(object sender, EventArgs e)
+        {
+            if (_patternListBox.SelectedIndex < 0 || _patternListBox.SelectedIndex >= _patterns.Count)
+            {
+                MessageBox.Show("Zaznacz wzorzec do przetestowania.", "Info");
+                return;
+            }
+
+            var pattern = _patterns[_patternListBox.SelectedIndex];
+            if (pattern.ImageData == null || pattern.ImageData.Length == 0)
+            {
+                MessageBox.Show("Ten wzorzec nie ma obrazu.", "Info");
+                return;
+            }
+
+            this.Hide();
+            System.Threading.Thread.Sleep(400);
+
+            Services.PatternTestResult result = null;
+            try
+            {
+                result = Services.PatternRecognitionService.TestPatternAgainstCurrentScreen(pattern);
+            }
+            finally
+            {
+                this.Show();
+                this.Activate();
+            }
+
+            if (result == null || result.Error != null)
+            {
+                MessageBox.Show("Błąd testu: " + (result?.Error ?? "nieznany"), "Błąd");
+                return;
+            }
+
+            string verdict;
+            if (result.Found) verdict = "✅ ZNALEZIONO na ekranie";
+            else if (result.Score >= 0.6) verdict = "⚠️ Prawdopodobnie znajdziesz obniżając próg";
+            else if (result.Score >= 0.35) verdict = "⚠️ Słabe dopasowanie — nagraj lepszy wzorzec";
+            else verdict = "❌ Wzorzec NIE jest widoczny na ekranie";
+
+            string msg =
+                $"Wzorzec: \"{pattern.Name}\"\n" +
+                $"Rozmiar: {result.PatternWidth}x{result.PatternHeight} px\n" +
+                $"Kontrast (StdDev): {result.StdDev:F1}" +
+                (result.StdDev < 5 ? "  ⚠️ bardzo niski!" : "") + "\n\n" +
+                $"Wynik NCC: {result.Score:F3}\n" +
+                $"Próg (threshold): {result.Threshold:F2}\n" +
+                $"Najlepsze dopasowanie @ ({result.Location.X}, {result.Location.Y})\n\n" +
+                verdict;
+
+            if (result.Screenshot != null)
+            {
+                using (var preview = new Form
+                {
+                    Text = "Podgląd dopasowania — " + pattern.Name,
+                    Size = new Size(1000, 750),
+                    StartPosition = FormStartPosition.CenterParent,
+                    BackColor = Color.White
+                })
+                {
+                    var pb = new PictureBox
+                    {
+                        Dock = DockStyle.Fill,
+                        SizeMode = PictureBoxSizeMode.Zoom,
+                        Image = (Bitmap)result.Screenshot.Clone()
+                    };
+
+                    using (var g = Graphics.FromImage(pb.Image))
+                    using (var pen = new Pen(Color.Red, 5))
+                    {
+                        g.DrawRectangle(pen, new Rectangle(
+                            result.Location.X,
+                            result.Location.Y,
+                            result.PatternWidth,
+                            result.PatternHeight));
+                    }
+
+                    var info = new Label
+                    {
+                        Text = msg,
+                        Dock = DockStyle.Top,
+                        Height = 130,
+                        Padding = new Padding(10),
+                        Font = UiFonts.Segoe10,
+                        BackColor = Color.FromArgb(245, 245, 245)
+                    };
+
+                    preview.Controls.Add(pb);
+                    preview.Controls.Add(info);
+                    preview.FormClosed += (s, a) => pb.Image?.Dispose();
+                    preview.ShowDialog(this);
+                }
+            }
+            else
+            {
+                MessageBox.Show(msg, "Wynik testu");
+            }
+
+            result.Screenshot?.Dispose();
         }
 
         private void BuildCheckpointTab(TabPage tab)
@@ -500,8 +614,6 @@ namespace SecureDesktop.Forms
                     if (dlg.ShowDialog() == DialogResult.OK)
                     {
                         _monitorPathBox.Text = dlg.FileName;
-                        // Reset punktu odniesienia - nowy plik nie ma porównywać
-                        // się z hashem starego.
                         try { new Services.FileMonitorService(_db).ResetBaseline(); } catch { }
                     }
                 }
@@ -529,7 +641,6 @@ namespace SecureDesktop.Forms
                 {
                     var backupService = new Services.BackupService();
                     string result = backupService.CreateBackup(sourcePath, _backupPathBox.Text);
-                    // Zapisz punkt odniesienia (baseline).
                     new Services.FileMonitorService(_db).SaveBaseline(sourcePath);
                     MessageBox.Show("Backup utworzony!\n\n" + result, "Sukces");
                 }
@@ -769,8 +880,6 @@ namespace SecureDesktop.Forms
                 if (_db != null)
                 {
                     _db.GetData().Patterns = _patterns;
-                    // Aktualizuj NextPatternId, aby nie kolidowało z ręcznie
-                    // nadawanymi Id.
                     if (_patterns.Count > 0)
                         _db.GetData().NextPatternId = _patterns.Max(p => p.Id) + 1;
                     _db.Save();
@@ -917,8 +1026,6 @@ namespace SecureDesktop.Forms
                 data.Settings["PatternThreshold"] = _thresholdBox.Value.ToString();
                 data.Settings["SearchInterval"] = _intervalBox.Value.ToString();
 
-                // Zmiana hasła administratora - jeśli pole niepuste, aktualizujemy
-                // PasswordHash + Salt konta admin. NIE zapisujemy plaintextu.
                 if (!string.IsNullOrWhiteSpace(_adminPasswordBox.Text))
                 {
                     var admin = data.Users.FirstOrDefault(u => u.IdentificationNumber == "admin");
@@ -956,22 +1063,23 @@ namespace SecureDesktop.Forms
             _screenshot = screenshot;
 
             this.FormBorderStyle = FormBorderStyle.None;
-            this.WindowState = FormWindowState.Maximized;
+            this.StartPosition = FormStartPosition.Manual;
+            this.Bounds = Screen.PrimaryScreen.Bounds;
             this.TopMost = true;
             this.Cursor = Cursors.Cross;
             this.DoubleBuffered = true;
             this.BackgroundImage = screenshot;
-            this.BackgroundImageLayout = ImageLayout.Stretch;
-            this.Opacity = 0.8;
+            this.BackgroundImageLayout = ImageLayout.None;
+            this.Opacity = 0.95;
 
             var infoLabel = new Label
             {
                 Text = "Zaznacz obszar. ENTER = zatwierdź, ESC = anuluj",
                 Font = UiFonts.Segoe14Bold,
                 ForeColor = Color.White,
-                BackColor = Color.FromArgb(180, 0, 0, 0),
+                BackColor = Color.FromArgb(200, 0, 0, 0),
                 Location = new Point(0, 0),
-                Size = new Size(Screen.PrimaryScreen.Bounds.Width, 50),
+                Size = new Size(this.Width, 50),
                 TextAlign = ContentAlignment.MiddleCenter
             };
             this.Controls.Add(infoLabel);
@@ -982,7 +1090,7 @@ namespace SecureDesktop.Forms
 
             this.KeyDown += (s, e) =>
             {
-                if (e.KeyCode == Keys.Enter && _selectedRect.Width > 10 && _selectedRect.Height > 10)
+                if (e.KeyCode == Keys.Enter && _selectedRect.Width > 4 && _selectedRect.Height > 4)
                 {
                     _resultImage = _screenshot.Clone(_selectedRect, _screenshot.PixelFormat);
                     this.DialogResult = DialogResult.OK;
