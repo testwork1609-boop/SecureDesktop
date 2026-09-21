@@ -431,7 +431,7 @@ namespace SecureDesktop.Services
             return result;
         }
 
-        private struct MatchResult
+       internal struct MatchResult
         {
             public bool Found;
             public int X;
