@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
-using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using SecureDesktop.Utils;
@@ -13,20 +12,27 @@ namespace SecureDesktop.Forms
         [DllImport("user32.dll")]
         private static extern bool SetWindowDisplayAffinity(IntPtr hWnd, uint dwAffinity);
 
-        // WDA_EXCLUDEFROMCAPTURE. Jeśli system nie obsługuje (Win10 < 2004),
-        // NIE ustawiamy WDA_MONITOR - ten fallback sprawia, że w zrzucie
-        // ekranu okno pojawia się jako czarny prostokąt, więc NCC nie widzi
-        // niczego. Wolimy warstwowy overlay z lekkim Opacity, który działa
-        // wszędzie i nie psuje NCC (NCC jest niezmienniczy na zmianę jasności).
+        [DllImport("user32.dll")]
+        private static extern int SetWindowRgn(IntPtr hWnd, IntPtr hRgn, bool bRedraw);
+
+        [DllImport("gdi32.dll")]
+        private static extern IntPtr CreateRectRgn(int nLeftRect, int nTopRect, int nRightRect, int nBottomRect);
+
+        [DllImport("gdi32.dll")]
+        private static extern int CombineRgn(IntPtr hrgnDest, IntPtr hrgnSrc1, IntPtr hrgnSrc2, int fnCombineMode);
+
+        [DllImport("gdi32.dll")]
+        private static extern bool DeleteObject(IntPtr hObject);
+
         private const uint WDA_EXCLUDEFROMCAPTURE = 0x00000011;
+        private const int RGN_DIFF = 4;
+        private const int FRAME_THICKNESS = 2;
 
         private readonly Screen _screen;
         private readonly Dictionary<string, Rectangle> _unlockRegions;
         private readonly Func<string, bool> _verifyPassword;
         private readonly Bitmap _sourceScreenshot;
         private Bitmap _lockIconBitmap;
-
-        private static readonly object _logLock = new object();
 
         public Rectangle ScreenBounds => _screen.Bounds;
 
@@ -44,6 +50,9 @@ namespace SecureDesktop.Forms
             base.OnHandleCreated(e);
             try { SetWindowDisplayAffinity(this.Handle, WDA_EXCLUDEFROMCAPTURE); }
             catch { }
+
+            // Po utworzeniu uchwytu od razu ustaw region (jeśli już mamy unlocki).
+            UpdateWindowRegion();
         }
 
         private void InitializeComponent()
@@ -57,13 +66,8 @@ namespace SecureDesktop.Forms
             this.Bounds = _screen.Bounds;
             this.Cursor = Cursors.No;
             this.BackColor = Color.Black;
-
-            // 8% czarnego = ledwo widoczne przygaszenie, ale użytkownik
-            // cały czas widzi pulpit. Okno NADAL przechwytuje kliknięcia
-            // (w przeciwieństwie do TransparencyKey).
-            this.Opacity = 0.08;
-            this.AllowTransparency = true;
-
+            this.Opacity = 0.10;              // lekkie przygaszenie pulpitu
+            this.AllowTransparency = true;    // wymagane dla Opacity
             this.DoubleBuffered = true;
             this.KeyPreview = true;
 
@@ -79,7 +83,6 @@ namespace SecureDesktop.Forms
                 SizeMode = PictureBoxSizeMode.CenterImage
             };
             lockIcon.Click += (s, e) => ShowUnlockDialog();
-
             this.Controls.Add(lockIcon);
 
             this.KeyDown += (s, e) =>
@@ -99,13 +102,10 @@ namespace SecureDesktop.Forms
             {
                 g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
                 g.Clear(Color.Transparent);
-
                 using (var brush = new SolidBrush(color))
                     g.FillRectangle(brush, size / 4, size / 2, size / 2, size / 2 - 2);
-
                 using (var pen = new Pen(color, Math.Max(3, size / 12)))
                     g.DrawArc(pen, size / 4 + 2, size / 8, size / 2 - 4, size / 3, 180, 180);
-
                 using (var brush = new SolidBrush(Color.FromArgb(45, 165, 90)))
                 {
                     g.FillEllipse(brush, size * 5 / 12, size * 7 / 12, size / 6, size / 8);
@@ -118,13 +118,17 @@ namespace SecureDesktop.Forms
         public void AddUnlockRegion(string patternKey, Rectangle region)
         {
             _unlockRegions[patternKey] = region;
+            UpdateWindowRegion();
             this.Invalidate();
         }
 
         public void RemoveUnlockRegion(string patternKey)
         {
             if (_unlockRegions.Remove(patternKey))
+            {
+                UpdateWindowRegion();
                 this.Invalidate();
+            }
         }
 
         public void RemoveAllUnlockRegions()
@@ -132,22 +136,68 @@ namespace SecureDesktop.Forms
             if (_unlockRegions.Count > 0)
             {
                 _unlockRegions.Clear();
+                UpdateWindowRegion();
                 this.Invalidate();
             }
+        }
+
+        /// <summary>
+        /// Wycina z okna regiony odblokowane. W tych miejscach forma nie
+        /// istnieje fizycznie — kliknięcia przechodzą do pulpitu, a kursor
+        /// jest normalny (bez Cursors.No). Zachowujemy 2px pierścień
+        /// formy dookoła każdego regionu, żeby narysować szarą ramkę.
+        /// </summary>
+        private void UpdateWindowRegion()
+        {
+            if (!this.IsHandleCreated) return;
+
+            if (_unlockRegions.Count == 0)
+            {
+                SetWindowRgn(this.Handle, IntPtr.Zero, true);
+                return;
+            }
+
+            IntPtr total = CreateRectRgn(0, 0, this.Width, this.Height);
+            if (total == IntPtr.Zero) return;
+
+            foreach (var region in _unlockRegions.Values)
+            {
+                if (region.Width <= FRAME_THICKNESS * 2 || region.Height <= FRAME_THICKNESS * 2)
+                    continue;
+
+                var inner = new Rectangle(
+                    region.X + FRAME_THICKNESS,
+                    region.Y + FRAME_THICKNESS,
+                    region.Width - FRAME_THICKNESS * 2,
+                    region.Height - FRAME_THICKNESS * 2);
+
+                IntPtr hole = CreateRectRgn(inner.Left, inner.Top, inner.Right, inner.Bottom);
+                if (hole == IntPtr.Zero) continue;
+
+                CombineRgn(total, total, hole, RGN_DIFF);
+                DeleteObject(hole);
+            }
+
+            SetWindowRgn(this.Handle, total, true);
         }
 
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);
-
             if (_unlockRegions.Count == 0) return;
 
-            using (var pen = new Pen(Color.FromArgb(190, 190, 190), 2))
+            using (var brush = new SolidBrush(Color.FromArgb(190, 190, 190)))
             {
                 foreach (var region in _unlockRegions.Values)
                 {
-                    if (region.Width > 0 && region.Height > 0)
-                        e.Graphics.DrawRectangle(pen, region);
+                    if (region.Width <= FRAME_THICKNESS * 2 || region.Height <= FRAME_THICKNESS * 2)
+                        continue;
+
+                    int t = FRAME_THICKNESS;
+                    e.Graphics.FillRectangle(brush, region.X, region.Y, region.Width, t);
+                    e.Graphics.FillRectangle(brush, region.X, region.Bottom - t, region.Width, t);
+                    e.Graphics.FillRectangle(brush, region.X, region.Y, t, region.Height);
+                    e.Graphics.FillRectangle(brush, region.Right - t, region.Y, t, region.Height);
                 }
             }
         }
