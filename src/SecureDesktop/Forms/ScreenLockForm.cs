@@ -55,16 +55,16 @@ namespace SecureDesktop.Forms
             this.TopMost = true;
             this.StartPosition = FormStartPosition.Manual;
             this.Bounds = _screen.Bounds;
-            this.Cursor = Cursors.Default;
-            this.BackColor = Color.FromArgb(15, 15, 15);
-            this.Opacity = 0.85;
-            this.AllowTransparency = true;
+            this.Cursor = Cursors.No;                    // czerwony zakaz ruchu
+            this.BackColor = Color.Fuchsia;              // klucz przezroczystości
+            this.TransparencyKey = Color.Fuchsia;        // cały form widoczny tylko tam,
+            this.AllowTransparency = true;               // gdzie są kontrolki / rysunki
             this.DoubleBuffered = true;
             this.KeyPreview = true;
 
+            // Ikona kłódki - jedyny widoczny element oprócz obramowań.
             _lockIconBitmap = CreateLockIconBitmap(56, Color.White);
 
-            // Kłódka w prawym górnym rogu
             var lockIcon = new PictureBox
             {
                 Size = new Size(56, 56),
@@ -76,23 +76,9 @@ namespace SecureDesktop.Forms
             };
             lockIcon.Click += (s, e) => ShowUnlockDialog();
 
-            var hint = new Label
-            {
-                Text = "Kliknij kłódkę, aby odblokować",
-                Font = UiFonts.Segoe10Bold,
-                ForeColor = Color.White,
-                BackColor = primaryColor,
-                AutoSize = false,
-                Size = new Size(230, 56),
-                Location = new Point(this.Width - 76 - 240, 20),
-                TextAlign = ContentAlignment.MiddleRight,
-                Padding = new Padding(0, 0, 12, 0)
-            };
-
-            this.Controls.Add(hint);
             this.Controls.Add(lockIcon);
 
-            // Tylko skrót klawiszowy - brak kliknięcia gdziekolwiek na ekran.
+            // Ctrl+L jako skrót dla wygody.
             this.KeyDown += (s, e) =>
             {
                 if (e.Control && e.KeyCode == Keys.L)
@@ -126,17 +112,13 @@ namespace SecureDesktop.Forms
         public void AddUnlockRegion(string patternKey, Rectangle region)
         {
             _unlockRegions[patternKey] = region;
-            UpdateFormRegion();
             this.Invalidate();
         }
 
         public void RemoveUnlockRegion(string patternKey)
         {
             if (_unlockRegions.Remove(patternKey))
-            {
-                UpdateFormRegion();
                 this.Invalidate();
-            }
         }
 
         public void RemoveAllUnlockRegions()
@@ -144,43 +126,24 @@ namespace SecureDesktop.Forms
             if (_unlockRegions.Count > 0)
             {
                 _unlockRegions.Clear();
-                this.Region = null;
                 this.Invalidate();
             }
-        }
-
-        private void UpdateFormRegion()
-        {
-            if (_unlockRegions.Count == 0)
-            {
-                this.Region = null;
-                return;
-            }
-
-            try
-            {
-                var fullRegion = new Region(new Rectangle(0, 0, this.Width, this.Height));
-                foreach (var rect in _unlockRegions.Values)
-                    if (rect.Width > 0 && rect.Height > 0)
-                        fullRegion.Exclude(rect);
-                this.Region = fullRegion;
-            }
-            catch { this.Region = null; }
         }
 
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);
 
-            foreach (var kvp in _unlockRegions)
+            if (_unlockRegions.Count == 0) return;
+
+            // Tylko delikatna szara ramka wokół obszaru odblokowania.
+            using (var pen = new Pen(Color.FromArgb(170, 170, 170), 2))
             {
-                var region = kvp.Value;
-                using (var brush = new SolidBrush(Color.FromArgb(1, 255, 255, 255)))
-                    e.Graphics.FillRectangle(brush, region);
-                using (var pen = new Pen(Color.FromArgb(255, 45, 165, 90), 3))
-                    e.Graphics.DrawRectangle(pen, region);
-                e.Graphics.DrawString(kvp.Key, UiFonts.Segoe9Bold, Brushes.LightGreen,
-                    region.X + 5, region.Y + 5);
+                foreach (var region in _unlockRegions.Values)
+                {
+                    if (region.Width > 0 && region.Height > 0)
+                        e.Graphics.DrawRectangle(pen, region);
+                }
             }
         }
 
@@ -191,8 +154,6 @@ namespace SecureDesktop.Forms
 
             if (m.Msg == WM_NCHITTEST)
             {
-                // Poprawne dekodowanie ujemnych współrzędnych (monitory
-                // ułożone na lewo / nad monitorem głównym).
                 int sx = unchecked((short)(long)m.LParam);
                 int sy = unchecked((short)((long)m.LParam >> 16));
                 var clientPoint = this.PointToClient(new Point(sx, sy));
