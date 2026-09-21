@@ -19,6 +19,7 @@ namespace SecureDesktop.Forms
         private Label _errorLabel;
 
         public User LoggedInUser { get; private set; }
+        public int LoggedInSessionId { get; private set; }
 
         public LoginForm(DatabaseInitializer db)
         {
@@ -79,14 +80,14 @@ namespace SecureDesktop.Forms
             y += 25;
             _idBox = new TextBox { Location = new Point(50, y), Size = new Size(320, 35), Font = UiFonts.Segoe12, BackColor = Color.FromArgb(245, 245, 245), BorderStyle = BorderStyle.FixedSingle };
             y += 50;
-            var passLabel = new Label { Text = "Haslo", Location = new Point(50, y), Size = new Size(320, 20), Font = UiFonts.Segoe10 };
+            var passLabel = new Label { Text = "Hasło", Location = new Point(50, y), Size = new Size(320, 20), Font = UiFonts.Segoe10 };
             y += 25;
             _passBox = new TextBox { Location = new Point(50, y), Size = new Size(320, 35), Font = UiFonts.Segoe12, PasswordChar = '●', BackColor = Color.FromArgb(245, 245, 245), BorderStyle = BorderStyle.FixedSingle };
             y += 55;
 
             var loginBtn = new Button
             {
-                Text = "Zaloguj sie",
+                Text = "Zaloguj się",
                 Location = new Point(50, y),
                 Size = new Size(320, 42),
                 Font = UiFonts.Segoe12Bold,
@@ -134,39 +135,43 @@ namespace SecureDesktop.Forms
         {
             try
             {
-                // Pobranie wspólnego hasła z ustawień
-                var adminPassword = "admin"; // domyślne, jeśli brak w ustawieniach
-                var settings = _db.GetData()?.Settings;
-                if (settings != null && settings.ContainsKey("AdminPassword"))
+                if (string.IsNullOrWhiteSpace(_idBox.Text) || string.IsNullOrEmpty(_passBox.Text))
                 {
-                    adminPassword = settings["AdminPassword"];
-                }
-
-                // Weryfikacja hasła
-                if (_passBox.Text != adminPassword)
-                {
-                    ShowError("Nieprawidlowy login lub haslo");
+                    ShowError("Podaj numer identyfikacyjny i hasło");
                     return;
                 }
 
-                // Wyszukanie użytkownika po numerze ID
-                var user = _userRepo.GetByIdentificationNumber(_idBox.Text);
+                var user = _userRepo.GetByIdentificationNumber(_idBox.Text.Trim());
                 if (user == null)
                 {
-                    ShowError("Uzytkownik nie istnieje");
+                    ShowError("Nieprawidłowy login lub hasło");
                     return;
                 }
 
-                // Zalogowano pomyślnie
+                // Weryfikacja przez PasswordHash + Salt (już nie plaintext).
+                if (string.IsNullOrEmpty(user.PasswordHash) || string.IsNullOrEmpty(user.Salt))
+                {
+                    ShowError("Konto nie ma ustawionego hasła");
+                    return;
+                }
+
+                var hash = SecurityHelper.HashPassword(_passBox.Text, user.Salt);
+                if (!string.Equals(hash, user.PasswordHash, StringComparison.Ordinal))
+                {
+                    ShowError("Nieprawidłowy login lub hasło");
+                    return;
+                }
+
                 _userRepo.UpdateLastLogin(user.Id);
 
                 var session = new Session
                 {
                     UserId = user.Id,
                     IdentificationNumber = user.IdentificationNumber,
-                    SessionToken = Utils.SecurityHelper.GenerateSessionToken()
+                    SessionToken = SecurityHelper.GenerateSessionToken()
                 };
                 _sessionRepo.Create(session);
+                LoggedInSessionId = session.Id;
 
                 _eventRepo.Create(new EventLog
                 {
@@ -182,7 +187,7 @@ namespace SecureDesktop.Forms
             }
             catch (Exception ex)
             {
-                ShowError("Blad: " + ex.Message);
+                ShowError("Błąd: " + ex.Message);
             }
         }
 
