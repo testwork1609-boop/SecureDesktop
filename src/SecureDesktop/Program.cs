@@ -1,6 +1,7 @@
 using System;
 using System.Drawing;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using SecureDesktop.Database;
 
@@ -10,6 +11,9 @@ namespace SecureDesktop
     {
         public static Icon AppIcon;
         private static DatabaseInitializer _globalDb;
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool DestroyIcon(IntPtr hIcon);
 
         [STAThread]
         static void Main()
@@ -41,9 +45,11 @@ namespace SecureDesktop
                     {
                         PerformBackupAfterLogin(_globalDb);
 
-                        var dashboard = new Forms.DashboardForm(loginForm.LoggedInUser, _globalDb);
-                        dashboard.Icon = AppIcon;
-                        Application.Run(dashboard);
+                        using (var dashboard = new Forms.DashboardForm(loginForm.LoggedInUser, _globalDb))
+                        {
+                            dashboard.Icon = AppIcon;
+                            Application.Run(dashboard);
+                        }
                     }
                     else
                     {
@@ -74,10 +80,6 @@ namespace SecureDesktop
                 var backupService = new Services.BackupService();
                 string backupPath = backupService.CreateBackup(monitoredFile, backupFolder);
 
-                // Ten backup staje sie nowym punktem odniesienia dla wykrywania zmian
-                // pliku (sprawdzanego przy kolejnej blokadzie/odblokowaniu ekranu).
-                new Services.FileMonitorService(db).SaveBaseline(monitoredFile);
-
                 var eventRepo = new Database.Repositories.EventLogRepository(db);
                 eventRepo.Create(new Models.EventLog
                 {
@@ -94,26 +96,49 @@ namespace SecureDesktop
 
         private static Icon CreateLockIcon()
         {
-            var bmp = new Bitmap(32, 32);
-            using (var g = Graphics.FromImage(bmp))
+            // Icon.FromHandle(bmp.GetHicon()) tworzy obiekt Icon, który OPAKOWUJE
+            // natywny uchwyt HICON, ale nie przejmuje odpowiedzialności za jego
+            // zwolnienie - zgodnie z dokumentacją .NET wywołujący musi sam wywołać
+            // DestroyIcon na oryginalnym uchwycie. Poprzednio uchwyt nigdy nie był
+            // zwalniany (drobny, jednorazowy wyciek przy starcie aplikacji, ale
+            // wart naprawienia). Dodatkowo bitmapa źródłowa jest teraz poprawnie
+            // opakowana w "using" i zwalniana.
+            using (var bmp = new Bitmap(32, 32))
             {
-                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-                g.Clear(Color.FromArgb(45, 165, 90));
-                using (var brush = new SolidBrush(Color.White))
+                using (var g = Graphics.FromImage(bmp))
                 {
-                    g.FillRectangle(brush, 7, 14, 18, 14);
+                    g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                    g.Clear(Color.FromArgb(45, 165, 90));
+                    using (var brush = new SolidBrush(Color.White))
+                    {
+                        g.FillRectangle(brush, 7, 14, 18, 14);
+                    }
+                    using (var pen = new Pen(Color.White, 3))
+                    {
+                        g.DrawArc(pen, 9, 4, 14, 14, 180, 180);
+                    }
+                    using (var brush = new SolidBrush(Color.FromArgb(45, 165, 90)))
+                    {
+                        g.FillEllipse(brush, 13, 18, 6, 5);
+                        g.FillRectangle(brush, 15, 21, 2, 5);
+                    }
                 }
-                using (var pen = new Pen(Color.White, 3))
+
+                IntPtr hIcon = bmp.GetHicon();
+                try
                 {
-                    g.DrawArc(pen, 9, 4, 14, 14, 180, 180);
+                    using (var tempIcon = Icon.FromHandle(hIcon))
+                    {
+                        // Klonujemy, aby zwrócić ikonę niezależną od natywnego
+                        // uchwytu, który zaraz zniszczymy przez DestroyIcon.
+                        return (Icon)tempIcon.Clone();
+                    }
                 }
-                using (var brush = new SolidBrush(Color.FromArgb(45, 165, 90)))
+                finally
                 {
-                    g.FillEllipse(brush, 13, 18, 6, 5);
-                    g.FillRectangle(brush, 15, 21, 2, 5);
+                    DestroyIcon(hIcon);
                 }
             }
-            return Icon.FromHandle(bmp.GetHicon());
         }
     }
 }
