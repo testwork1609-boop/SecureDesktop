@@ -409,7 +409,7 @@ namespace SecureDesktop.Forms
             });
         }
 
-              private void TestSelectedPattern(object sender, EventArgs e)
+                    private void TestSelectedPattern(object sender, EventArgs e)
         {
             if (_patternListBox.SelectedIndex < 0 || _patternListBox.SelectedIndex >= _patterns.Count)
             {
@@ -428,15 +428,8 @@ namespace SecureDesktop.Forms
             System.Threading.Thread.Sleep(400);
 
             Services.PatternTestResult result = null;
-            try
-            {
-                result = Services.PatternRecognitionService.TestPatternAgainstCurrentScreen(pattern);
-            }
-            finally
-            {
-                this.Show();
-                this.Activate();
-            }
+            try { result = Services.PatternRecognitionService.TestPatternAgainstCurrentScreen(pattern); }
+            finally { this.Show(); this.Activate(); }
 
             if (result == null || result.Error != null)
             {
@@ -444,9 +437,6 @@ namespace SecureDesktop.Forms
                 return;
             }
 
-            // Analiza "charakterystyczności" wzorca: jeśli top-1 jest blisko
-            // top-2, to znaczy że wzorzec ma wiele równorzędnych miejsc na
-            // ekranie - słaby (fałszywe trafienia przy blokadzie).
             double gap12 = result.Score - result.SecondScore;
             double gap13 = result.Score - result.ThirdScore;
 
@@ -456,86 +446,122 @@ namespace SecureDesktop.Forms
             else if (result.Found && gap12 >= 0.05)
                 verdict = "⚠️ WZORZEC ŚREDNI — maksimum wyraźne, ale nie mocno";
             else if (result.Found)
-                verdict = "❌ WZORZEC SŁABY — kilka miejsc o podobnym score (fałszywe trafienia)";
+                verdict = "❌ WZORZEC SŁABY — wiele miejsc o podobnym score (fałszywe trafienia)";
             else if (result.Score >= 0.6)
                 verdict = "⚠️ Wzorzec NIE jest widoczny, ale coś podobnego jest";
             else
                 verdict = "❌ Wzorzec NIE jest widoczny na ekranie";
 
             string msg =
-                $"Wzorzec: \"{pattern.Name}\"\n" +
-                $"Rozmiar: {result.PatternWidth}x{result.PatternHeight} px, kontrast: {result.StdDev:F1}" +
-                (result.StdDev < 10 ? "  ⚠️ niski" : "") + "\n\n" +
-                $"Top-1 score:  {result.Score:F3}   (próg: {result.Threshold:F2})\n" +
-                $"Top-2 score:  {result.SecondScore:F3}   (różnica 1-2: {gap12:F3})\n" +
-                $"Top-3 score:  {result.ThirdScore:F3}   (różnica 1-3: {gap13:F3})\n\n" +
-                verdict + "\n\n" +
-                "Czerwony = 1. miejsce, pomarańczowy = 2., żółty = 3.\n" +
-                "Jeśli wszystkie 3 ramki są na jednym obiekcie → wzorzec OK.\n" +
-                "Jeśli rozsiane po całym ekranie → nagraj coś bardziej charakterystycznego.";
+                $"Wzorzec: \"{pattern.Name}\"  ({result.PatternWidth}x{result.PatternHeight} px, kontrast: {result.StdDev:F1})\n" +
+                $"Top-1: {result.Score:F3}   Top-2: {result.SecondScore:F3}   Top-3: {result.ThirdScore:F3}   Próg: {result.Threshold:F2}\n" +
+                verdict;
 
-            if (result.Screenshot != null)
+            using (var preview = new Form
             {
-                using (var preview = new Form
+                Text = "Podgląd dopasowania — " + pattern.Name,
+                Size = new Size(1100, 850),
+                StartPosition = FormStartPosition.CenterParent,
+                BackColor = Color.White
+            })
+            {
+                // Górny pasek: wzorzec + 3 cropy w powiększeniu.
+                var stripPanel = new Panel { Dock = DockStyle.Top, Height = 180, BackColor = Color.FromArgb(240, 240, 240) };
+
+                int xpos = 20;
+                AddCrop(stripPanel, "WZORZEC", pattern.ImageData, xpos, ref xpos);
+                if (result.Crop1 != null) AddCrop(stripPanel, "TOP-1  " + result.Score.ToString("F3"), result.Crop1, xpos, ref xpos);
+                if (result.Crop2 != null) AddCrop(stripPanel, "TOP-2  " + result.SecondScore.ToString("F3"), result.Crop2, xpos, ref xpos);
+                if (result.Crop3 != null) AddCrop(stripPanel, "TOP-3  " + result.ThirdScore.ToString("F3"), result.Crop3, xpos, ref xpos);
+
+                // Screenshot z ramkami.
+                var pb = new PictureBox
                 {
-                    Text = "Podgląd dopasowania — " + pattern.Name,
-                    Size = new Size(1100, 800),
-                    StartPosition = FormStartPosition.CenterParent,
-                    BackColor = Color.White
-                })
+                    Dock = DockStyle.Fill,
+                    SizeMode = PictureBoxSizeMode.Zoom,
+                    Image = (Bitmap)result.Screenshot.Clone()
+                };
+
+                using (var g = Graphics.FromImage(pb.Image))
                 {
-                    var pb = new PictureBox
+                    Color[] colors = { Color.Red, Color.Orange, Color.Gold };
+                    int[] widths = { 6, 5, 4 };
+                    for (int i = 0; i < result.Candidates.Count && i < 3; i++)
                     {
-                        Dock = DockStyle.Fill,
-                        SizeMode = PictureBoxSizeMode.Zoom,
-                        Image = (Bitmap)result.Screenshot.Clone()
-                    };
-
-                    using (var g = Graphics.FromImage(pb.Image))
-                    {
-                        // Rysuj wszystkich kandydatów z result.Candidates
-                        Color[] colors = { Color.Red, Color.Orange, Color.Gold };
-                        int[] widths = { 5, 4, 3 };
-
-                        for (int i = 0; i < result.Candidates.Count && i < 3; i++)
-                        {
-                            var c = result.Candidates[i];
-                            using (var pen = new Pen(colors[i], widths[i]))
-                            {
-                                g.DrawRectangle(pen, new Rectangle(c.X, c.Y, c.Width, c.Height));
-                            }
-
-                            using (var brush = new SolidBrush(colors[i]))
-                            using (var font = new Font("Segoe UI", 12, FontStyle.Bold))
-                            {
-                                g.DrawString($"#{i + 1}  {c.Score:F3}", font, brush,
-                                    c.X, Math.Max(0, c.Y - 22));
-                            }
-                        }
+                        var c = result.Candidates[i];
+                        using (var pen = new Pen(colors[i], widths[i]))
+                            g.DrawRectangle(pen, new Rectangle(c.X, c.Y, c.Width, c.Height));
+                        using (var brush = new SolidBrush(colors[i]))
+                        using (var font = new Font("Segoe UI", 14, FontStyle.Bold))
+                            g.DrawString($"#{i + 1}  {c.Score:F3}", font, brush, c.X, Math.Max(0, c.Y - 26));
                     }
-
-                    var info = new Label
-                    {
-                        Text = msg,
-                        Dock = DockStyle.Top,
-                        Height = 200,
-                        Padding = new Padding(10),
-                        Font = UiFonts.Segoe9,
-                        BackColor = Color.FromArgb(245, 245, 245)
-                    };
-
-                    preview.Controls.Add(pb);
-                    preview.Controls.Add(info);
-                    preview.FormClosed += (s, a) => pb.Image?.Dispose();
-                    preview.ShowDialog(this);
                 }
-            }
-            else
-            {
-                MessageBox.Show(msg, "Wynik testu");
+
+                var info = new Label
+                {
+                    Text = msg,
+                    Dock = DockStyle.Bottom,
+                    Height = 70,
+                    Padding = new Padding(10),
+                    Font = UiFonts.Segoe10,
+                    BackColor = Color.FromArgb(250, 250, 250)
+                };
+
+                preview.Controls.Add(pb);
+                preview.Controls.Add(info);
+                preview.Controls.Add(stripPanel);
+                preview.FormClosed += (s, a) =>
+                {
+                    pb.Image?.Dispose();
+                    result.Crop1?.Dispose();
+                    result.Crop2?.Dispose();
+                    result.Crop3?.Dispose();
+                };
+                preview.ShowDialog(this);
             }
 
             result.Screenshot?.Dispose();
+        }
+
+        private static void AddCrop(Control parent, string label, byte[] imageData, int xpos, ref int nextX)
+        {
+            if (imageData == null || imageData.Length == 0) return;
+            using (var ms = new MemoryStream(imageData))
+            using (var src = new Bitmap(ms))
+            {
+                AddCrop(parent, label, src, xpos, ref nextX);
+            }
+        }
+
+        private static void AddCrop(Control parent, string label, Bitmap src, int xpos, ref int nextX)
+        {
+            const int maxSide = 120;
+            int w = src.Width, h = src.Height;
+            double scale = Math.Min((double)maxSide / w, (double)maxSide / h);
+            if (scale > 1.0 && scale < 2.5) scale = 2.0;
+            int drawW = Math.Max(1, (int)(w * scale));
+            int drawH = Math.Max(1, (int)(h * scale));
+
+            var pic = new PictureBox
+            {
+                Location = new Point(xpos, 30),
+                Size = new Size(drawW, drawH),
+                BorderStyle = BorderStyle.FixedSingle,
+                SizeMode = PictureBoxSizeMode.Zoom,
+                Image = new Bitmap(src, drawW, drawH)
+            };
+
+            var lbl = new Label
+            {
+                Text = label,
+                Location = new Point(xpos, 6),
+                AutoSize = true,
+                Font = UiFonts.Segoe9Bold
+            };
+
+            parent.Controls.Add(lbl);
+            parent.Controls.Add(pic);
+            nextX = xpos + drawW + 20;
         }
 
         private void BuildCheckpointTab(TabPage tab)
