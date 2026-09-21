@@ -4,6 +4,7 @@ using System.Windows.Forms;
 using SecureDesktop.Database;
 using SecureDesktop.Database.Repositories;
 using SecureDesktop.Models;
+using SecureDesktop.Utils;
 
 namespace SecureDesktop.Forms
 {
@@ -25,7 +26,7 @@ namespace SecureDesktop.Forms
             _userRepo = new UserRepository(_db);
             _sessionRepo = new SessionRepository(_db);
             _eventRepo = new EventLogRepository(_db);
-            
+
             InitializeComponent();
         }
 
@@ -53,7 +54,7 @@ namespace SecureDesktop.Forms
             var iconLabel = new Label
             {
                 Text = "🔒",
-                Font = new Font("Segoe UI", 36),
+                Font = UiFonts.Segoe36,
                 Location = new Point(175, 10),
                 Size = new Size(70, 50),
                 TextAlign = ContentAlignment.MiddleCenter,
@@ -63,7 +64,7 @@ namespace SecureDesktop.Forms
             var titleLabel = new Label
             {
                 Text = "SecureDesktop",
-                Font = new Font("Segoe UI", 22, FontStyle.Bold),
+                Font = UiFonts.Segoe22Bold,
                 Location = new Point(80, 60),
                 Size = new Size(260, 40),
                 TextAlign = ContentAlignment.MiddleCenter,
@@ -74,13 +75,13 @@ namespace SecureDesktop.Forms
             headerPanel.Controls.Add(titleLabel);
 
             int y = 150;
-            var idLabel = new Label { Text = "Numer identyfikacyjny", Location = new Point(50, y), Size = new Size(320, 20), Font = new Font("Segoe UI", 10) };
+            var idLabel = new Label { Text = "Numer identyfikacyjny", Location = new Point(50, y), Size = new Size(320, 20), Font = UiFonts.Segoe10 };
             y += 25;
-            _idBox = new TextBox { Location = new Point(50, y), Size = new Size(320, 35), Font = new Font("Segoe UI", 12), BackColor = Color.FromArgb(245, 245, 245), BorderStyle = BorderStyle.FixedSingle };
+            _idBox = new TextBox { Location = new Point(50, y), Size = new Size(320, 35), Font = UiFonts.Segoe12, BackColor = Color.FromArgb(245, 245, 245), BorderStyle = BorderStyle.FixedSingle };
             y += 50;
-            var passLabel = new Label { Text = "Haslo", Location = new Point(50, y), Size = new Size(320, 20), Font = new Font("Segoe UI", 10) };
+            var passLabel = new Label { Text = "Haslo", Location = new Point(50, y), Size = new Size(320, 20), Font = UiFonts.Segoe10 };
             y += 25;
-            _passBox = new TextBox { Location = new Point(50, y), Size = new Size(320, 35), Font = new Font("Segoe UI", 12), PasswordChar = '●', BackColor = Color.FromArgb(245, 245, 245), BorderStyle = BorderStyle.FixedSingle };
+            _passBox = new TextBox { Location = new Point(50, y), Size = new Size(320, 35), Font = UiFonts.Segoe12, PasswordChar = '●', BackColor = Color.FromArgb(245, 245, 245), BorderStyle = BorderStyle.FixedSingle };
             y += 55;
 
             var loginBtn = new Button
@@ -88,7 +89,7 @@ namespace SecureDesktop.Forms
                 Text = "Zaloguj sie",
                 Location = new Point(50, y),
                 Size = new Size(320, 42),
-                Font = new Font("Segoe UI", 12, FontStyle.Bold),
+                Font = UiFonts.Segoe12Bold,
                 BackColor = primaryColor,
                 ForeColor = Color.White,
                 FlatStyle = FlatStyle.Flat,
@@ -103,7 +104,7 @@ namespace SecureDesktop.Forms
                 Text = "Zamknij",
                 Location = new Point(50, y),
                 Size = new Size(320, 35),
-                Font = new Font("Segoe UI", 10),
+                Font = UiFonts.Segoe10,
                 BackColor = Color.White,
                 FlatStyle = FlatStyle.Flat,
                 Cursor = Cursors.Hand
@@ -118,7 +119,7 @@ namespace SecureDesktop.Forms
                 Size = new Size(320, 25),
                 ForeColor = Color.Red,
                 TextAlign = ContentAlignment.MiddleCenter,
-                Font = new Font("Segoe UI", 9),
+                Font = UiFonts.Segoe9,
                 Visible = false
             };
 
