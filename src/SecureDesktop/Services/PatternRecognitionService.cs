@@ -13,14 +13,6 @@ namespace SecureDesktop.Services
     /// <summary>
     /// Rozpoznawanie wzorca oparte na NCC (Normalized Cross-Correlation)
     /// na obrazie w odcieniach szarości.
-    ///
-    /// Zalety NCC w tym zastosowaniu:
-    ///  - Niezmiennicze na zmianę jasności/kontrastu (np. przyciemnienie
-    ///    przez overlay blokady nie psuje dopasowania).
-    ///  - Odporne na drobne różnice antialiasu między klatkami.
-    ///  - Daje wyraźny pik dla prawdziwego dopasowania (>0.95) i wyraźnie
-    ///    niższe wartości dla przypadkowych (<0.7), co ułatwia odrzucanie
-    ///    fałszywych trafień i stabilizację pozycji ramki.
     /// </summary>
     public class PatternRecognitionService : IDisposable
     {
@@ -127,15 +119,14 @@ namespace SecureDesktop.Services
             Rectangle prev;
             bool hasPrev = _lastLocations.TryGetValue(key, out prev);
 
-            // 1) Szukaj najpierw w oknie ±150 px wokół ostatniej pozycji
-            //    (szybko, stabilnie, brak skoków między odległymi rejonami).
+            // 1) Szukaj najpierw w oknie ±150 px wokół ostatniej pozycji.
             Rectangle searchArea = hasPrev
                 ? Inflate(prev, 150, screen.Size)
                 : new Rectangle(0, 0, screen.Width, screen.Height);
 
-            var match = FindBestMatch(screen, pattern, searchArea);
+            MatchResult match = FindBestMatch(screen, pattern, searchArea);
 
-            // 2) Jeśli nie znaleźliśmy w oknie, spróbuj pełny ekran (fallback).
+            // 2) Fallback: pełny skan, jeśli w oknie nie znaleziono.
             if (!match.Found && hasPrev)
             {
                 match = FindBestMatch(screen, pattern,
@@ -156,9 +147,7 @@ namespace SecureDesktop.Services
                     if (dx <= 3 && dy <= 3)
                         shouldReport = false;
 
-                    // Histereza: duży skok (>20 px) akceptujemy tylko jeśli
-                    // nowy wynik jest istotnie lepszy (żeby nie skakać na
-                    // fałszywe dopasowania w innych częściach ekranu).
+                    // Histereza: duży skok akceptujemy tylko gdy wyraźnie lepszy.
                     if (shouldReport && (dx > 20 || dy > 20))
                     {
                         double prevScore;
@@ -235,10 +224,10 @@ namespace SecureDesktop.Services
             catch { return null; }
         }
 
-        private Rectangle FindBestMatch(Bitmap screen, CachedPattern pattern, Rectangle searchArea)
+        private MatchResult FindBestMatch(Bitmap screen, CachedPattern pattern, Rectangle searchArea)
         {
             if (searchArea.Width < pattern.Width || searchArea.Height < pattern.Height)
-                return Rectangle.Empty;
+                return MatchResult.NotFound;
 
             BitmapData data = screen.LockBits(searchArea, ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
             try
@@ -251,7 +240,7 @@ namespace SecureDesktop.Services
             }
         }
 
-        private unsafe Rectangle FindBestMatchLocked(BitmapData data, Rectangle searchArea, CachedPattern pattern)
+        private unsafe MatchResult FindBestMatchLocked(BitmapData data, Rectangle searchArea, CachedPattern pattern)
         {
             byte* ptr = (byte*)data.Scan0;
             int stride = data.Stride;
@@ -259,19 +248,24 @@ namespace SecureDesktop.Services
             int maxX = searchArea.Width - pattern.Width;
             int maxY = searchArea.Height - pattern.Height;
 
-            if (maxX < 0 || maxY < 0) return Rectangle.Empty;
+            if (maxX < 0 || maxY < 0) return MatchResult.NotFound;
 
-            // Jedyna możliwa pozycja - tylko jedna próba.
+            // Jedyna możliwa pozycja.
             if (maxX == 0 && maxY == 0)
             {
                 double s = ComputeNCC(ptr, stride, 0, 0, pattern);
                 pattern.LastScore = s;
                 if (s >= pattern.Threshold)
-                    return new Rectangle(searchArea.X, searchArea.Y, pattern.Width, pattern.Height);
-                return Rectangle.Empty;
+                    return new MatchResult
+                    {
+                        Found = true,
+                        X = searchArea.X,
+                        Y = searchArea.Y,
+                        Score = s
+                    };
+                return MatchResult.NotFound;
             }
 
-            // Krok zgrubny: małe wzorce - 2 px, większe - proporcjonalny.
             int minDim = Math.Min(pattern.Width, pattern.Height);
             int coarseStep = minDim <= 16 ? 2 : Math.Max(4, minDim / 8);
 
@@ -315,7 +309,6 @@ namespace SecureDesktop.Services
                 }
             }
 
-            // Refine: dokładny skan w oknie ±coarseStep wokół najlepszego kandydata.
             int r0x = Math.Max(0, cbX - coarseStep);
             int r1x = Math.Min(maxX, cbX + coarseStep);
             int r0y = Math.Max(0, cbY - coarseStep);
@@ -342,19 +335,20 @@ namespace SecureDesktop.Services
 
             if (bestScore >= pattern.Threshold)
             {
-                return new Rectangle(
-                    searchArea.X + bestX,
-                    searchArea.Y + bestY,
-                    pattern.Width,
-                    pattern.Height);
+                return new MatchResult
+                {
+                    Found = true,
+                    X = searchArea.X + bestX,
+                    Y = searchArea.Y + bestY,
+                    Score = bestScore
+                };
             }
 
-            return Rectangle.Empty;
+            return MatchResult.NotFound;
         }
 
         /// <summary>
-        /// NCC między wzorcem (pattern.PointGray) a regionem ekranu zaczynającym
-        /// się w (offsetX, offsetY) wewnątrz zablokowanego obszaru.
+        /// NCC między wzorcem a regionem ekranu zaczynającym się w (offsetX, offsetY).
         /// Wynik w [0, 1]: 1.0 = idealne dopasowanie strukturalne.
         /// </summary>
         private unsafe double ComputeNCC(byte* ptr, int stride, int offsetX, int offsetY, CachedPattern pattern)
@@ -369,7 +363,6 @@ namespace SecureDesktop.Services
                 int py = offsetY + pattern.PointY[i];
                 byte* pixel = ptr + (long)py * stride + (px * 3);
 
-                // Luminancja BT.601
                 double gv = 0.299 * pixel[2] + 0.587 * pixel[1] + 0.114 * pixel[0];
 
                 sumS += gv;
@@ -379,7 +372,7 @@ namespace SecureDesktop.Services
 
             double meanS = sumS / n;
             double varS = sumSqS / n - meanS * meanS;
-            if (varS <= 1e-4) return 0;   // płaski region - brak dopasowania
+            if (varS <= 1e-4) return 0;
 
             double numerator = sumProd / n - meanS * tMean;
             double denom = Math.Sqrt(varS) * pattern.StdDev;
@@ -395,7 +388,8 @@ namespace SecureDesktop.Services
             int y = Math.Max(0, r.Y - size);
             int right = Math.Min(screen.Width, r.Right + size);
             int bottom = Math.Min(screen.Height, r.Bottom + size);
-            if (right <= x || bottom <= y) return new Rectangle(0, 0, screen.Width, screen.Height);
+            if (right <= x || bottom <= y)
+                return new Rectangle(0, 0, screen.Width, screen.Height);
             return new Rectangle(x, y, right - x, bottom - y);
         }
 
@@ -403,6 +397,18 @@ namespace SecureDesktop.Services
         {
             Stop();
             if (_cts != null) _cts.Dispose();
+        }
+
+        // --- Typy pomocnicze ---
+
+        private struct MatchResult
+        {
+            public bool Found;
+            public int X;
+            public int Y;
+            public double Score;
+
+            public static MatchResult NotFound => new MatchResult { Found = false };
         }
     }
 
@@ -412,12 +418,10 @@ namespace SecureDesktop.Services
         public int Width;
         public int Height;
 
-        // Punktowe próbki wzorca (offsety względem 0,0 wzorca)
         public int[] PointX;
         public int[] PointY;
         public double[] PointGray;
 
-        // Statystyki wzorca (do NCC)
         public double Mean;
         public double StdDev;
 
@@ -446,7 +450,6 @@ namespace SecureDesktop.Services
                 if (Width > 512 || Height > 512)
                     throw new InvalidOperationException($"Wzorzec jest za duży ({Width}x{Height}, max 512x512).");
 
-                // Krok próbkowania - celujemy w ~256 punktów.
                 int totalPixels = Width * Height;
                 const int targetPoints = 256;
                 int step = (int)Math.Round(Math.Sqrt((double)totalPixels / targetPoints));
@@ -505,8 +508,7 @@ namespace SecureDesktop.Services
                 if (StdDev < 3.0)
                 {
                     System.Diagnostics.Debug.WriteLine(
-                        $"Wzorzec '{pattern.Name}' ma bardzo niski kontrast (StdDev={StdDev:F2}). " +
-                        "NCC może być niestabilne - rozważ dodanie wzorca o wyraźniejszych krawędziach.");
+                        $"Wzorzec '{pattern.Name}' ma bardzo niski kontrast (StdDev={StdDev:F2}).");
                 }
             }
         }
