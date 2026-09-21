@@ -8,6 +8,7 @@ using Newtonsoft.Json;
 using SecureDesktop.Database;
 using SecureDesktop.Models;
 using SecureDesktop.Services;
+using SecureDesktop.Utils;
 
 namespace SecureDesktop.Forms
 {
@@ -16,7 +17,6 @@ namespace SecureDesktop.Forms
         private readonly User _currentUser;
         private readonly DatabaseInitializer _db;
         private readonly ScreenLockService _lockService;
-        private readonly FileMonitorService _fileMonitor;
         private int _totalPatterns = 0;
         private int _activePatterns = 0;
         private int _totalEvents = 0;
@@ -26,13 +26,6 @@ namespace SecureDesktop.Forms
             _currentUser = user;
             _db = db;
             _lockService = new ScreenLockService();
-            _fileMonitor = new FileMonitorService(_db);
-
-            // Sprawdzaj monitorowany plik dokladnie w momencie zablokowania i
-            // odblokowania ekranu (a nie ciagle w tle), zgodnie z ustaleniami.
-            _lockService.LockActivated += (s, e) => _fileMonitor.CheckNow("blokada ekranu");
-            _lockService.LockDeactivated += (s, e) => _fileMonitor.CheckNow("odblokowanie ekranu");
-
             LoadStats();
             InitializeComponent();
         }
@@ -50,6 +43,44 @@ namespace SecureDesktop.Forms
                 }
             }
             catch { }
+        }
+
+        /// <summary>
+        /// Buduje PatternRecognitionService na podstawie faktycznie zapisanych
+        /// ustawień (PatternThreshold / SearchInterval). Wcześniej te ustawienia
+        /// były widoczne w konfiguracji i zapisywane, ale nigdy nie wpływały
+        /// na realne działanie usługi (był tam zawsze sztywny próg 0.75 i
+        /// sztywny interwał 200 ms), co czyniło je "martwymi" polami w UI.
+        /// </summary>
+        private PatternRecognitionService CreatePatternRecognitionService()
+        {
+            double defaultThreshold = 0.75;
+            int intervalMs = 200;
+
+            try
+            {
+                var data = _db.GetData();
+                if (data?.Settings != null)
+                {
+                    if (data.Settings.TryGetValue("PatternThreshold", out var thStr) &&
+                        int.TryParse(thStr, out int th) && th >= 1 && th <= 100)
+                    {
+                        defaultThreshold = th / 100.0;
+                    }
+
+                    if (data.Settings.TryGetValue("SearchInterval", out var ivStr) &&
+                        int.TryParse(ivStr, out int iv) && iv > 0)
+                    {
+                        intervalMs = iv;
+                    }
+                }
+            }
+            catch
+            {
+                // W razie problemu z odczytem ustawień - używamy bezpiecznych domyślnych.
+            }
+
+            return new PatternRecognitionService(defaultThreshold, 0.93, intervalMs);
         }
 
         private void InitializeComponent()
@@ -79,7 +110,7 @@ namespace SecureDesktop.Forms
             var logoLabel = new Label
             {
                 Text = "SecureDesktop",
-                Font = new Font("Segoe UI", 16, FontStyle.Bold),
+                Font = UiFonts.Segoe16Bold,
                 Location = new Point(20, 15),
                 AutoSize = true,
                 ForeColor = Color.White
@@ -88,7 +119,7 @@ namespace SecureDesktop.Forms
             var userLabel = new Label
             {
                 Text = _currentUser.IdentificationNumber + (_currentUser.IsAdmin ? " (Admin)" : " (User)"),
-                Font = new Font("Segoe UI", 10),
+                Font = UiFonts.Segoe10,
                 Location = new Point(620, 22),
                 AutoSize = true,
                 ForeColor = Color.FromArgb(220, 255, 220)
@@ -123,15 +154,26 @@ namespace SecureDesktop.Forms
                 try
                 {
                     var patterns = _db.GetData()?.Patterns?.ToList() ?? new List<Pattern>();
-                    if (patterns.Count == 0)
+
+                    // Informujemy jasno ile wzorców faktycznie kwalifikuje się do
+                    // wyszukania (aktywne + posiadające dane obrazu), zamiast po
+                    // cichu tracić część z nich w środku PatternRecognitionService.
+                    var usablePatterns = patterns
+                        .Where(p => p.IsActive && p.ImageData != null && p.ImageData.Length > 0)
+                        .ToList();
+
+                    if (usablePatterns.Count == 0)
                     {
-                        var result = MessageBox.Show("Brak wzorcow. Chcesz przejsc do konfiguracji?",
+                        var result = MessageBox.Show("Brak uzywalnych wzorcow (aktywnych, z zapisanym obrazem). Chcesz przejsc do konfiguracji?",
                             "Pattern Lock", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
                         if (result == DialogResult.Yes)
                         {
                             if (_currentUser.IsAdmin)
                             {
-                                new ConfigurationForm(_db).ShowDialog(this);
+                                using (var cfg = new ConfigurationForm(_db))
+                                {
+                                    cfg.ShowDialog(this);
+                                }
                                 LoadStats();
                             }
                             else
@@ -142,7 +184,13 @@ namespace SecureDesktop.Forms
                     }
                     else
                     {
-                        _lockService.LockWithPatterns(patterns, new PatternRecognitionService(0.75));
+                        if (usablePatterns.Count < patterns.Count)
+                        {
+                            System.Diagnostics.Debug.WriteLine(
+                                $"Pominieto {patterns.Count - usablePatterns.Count} nieaktywnych/pustych wzorcow.");
+                        }
+
+                        _lockService.LockWithPatterns(usablePatterns, CreatePatternRecognitionService());
                     }
                 }
                 catch (Exception ex) { MessageBox.Show("Blad: " + ex.Message); }
@@ -172,13 +220,22 @@ namespace SecureDesktop.Forms
                 configBtn = CreateSidebarButton("Konfiguracja", yPos, primaryColor);
                 configBtn.Click += (s, e) =>
                 {
-                    new ConfigurationForm(_db).ShowDialog(this);
+                    using (var cfg = new ConfigurationForm(_db))
+                    {
+                        cfg.ShowDialog(this);
+                    }
                     LoadStats();
                 };
                 yPos += 55;
 
                 historyBtn = CreateSidebarButton("Historia zdarzen", yPos, primaryColor);
-                historyBtn.Click += (s, e) => new EventHistoryForm(_db).ShowDialog(this);
+                historyBtn.Click += (s, e) =>
+                {
+                    using (var hist = new EventHistoryForm())
+                    {
+                        hist.ShowDialog(this);
+                    }
+                };
                 yPos += 55;
 
                 backupBtn = CreateSidebarButton("Wykonaj backup", yPos, primaryColor);
@@ -240,7 +297,7 @@ namespace SecureDesktop.Forms
             var welcomeTitle = new Label
             {
                 Text = "Witaj, " + _currentUser.IdentificationNumber + "!",
-                Font = new Font("Segoe UI", 18, FontStyle.Bold),
+                Font = UiFonts.Segoe18Bold,
                 Location = new Point(20, 20),
                 AutoSize = true,
                 ForeColor = primaryColor
@@ -249,7 +306,7 @@ namespace SecureDesktop.Forms
             var welcomeSubtitle = new Label
             {
                 Text = "Zalogowano: " + DateTime.Now.ToString("yyyy-MM-dd HH:mm"),
-                Font = new Font("Segoe UI", 10),
+                Font = UiFonts.Segoe10,
                 Location = new Point(20, 55),
                 AutoSize = true,
                 ForeColor = subtitleColor
@@ -272,7 +329,7 @@ namespace SecureDesktop.Forms
                 var statsTitle = new Label
                 {
                     Text = "Statystyki",
-                    Font = new Font("Segoe UI", 14, FontStyle.Bold),
+                    Font = UiFonts.Segoe14Bold,
                     Location = new Point(20, 15),
                     AutoSize = true
                 };
@@ -280,7 +337,7 @@ namespace SecureDesktop.Forms
                 var statsText = new Label
                 {
                     Text = "Patterny: " + _totalPatterns + " (aktywne: " + _activePatterns + ")\nZdarzenia: " + _totalEvents,
-                    Font = new Font("Segoe UI", 10),
+                    Font = UiFonts.Segoe10,
                     Location = new Point(20, 50),
                     AutoSize = true,
                     ForeColor = subtitleColor
@@ -304,7 +361,7 @@ namespace SecureDesktop.Forms
                 Text = text,
                 Location = new Point(15, yPos),
                 Size = new Size(250, 42),
-                Font = new Font("Segoe UI", 11),
+                Font = UiFonts.Segoe11,
                 BackColor = Color.White,
                 ForeColor = Color.FromArgb(50, 50, 50),
                 FlatStyle = FlatStyle.Flat,
@@ -316,6 +373,15 @@ namespace SecureDesktop.Forms
             btn.MouseEnter += (s, e) => { btn.BackColor = Color.FromArgb(240, 255, 245); btn.ForeColor = color; };
             btn.MouseLeave += (s, e) => { btn.BackColor = Color.White; btn.ForeColor = Color.FromArgb(50, 50, 50); };
             return btn;
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                try { _lockService?.UnlockScreens(); } catch { }
+            }
+            base.Dispose(disposing);
         }
     }
 }
