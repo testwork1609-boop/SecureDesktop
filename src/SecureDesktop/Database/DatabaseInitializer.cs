@@ -8,6 +8,14 @@ namespace SecureDesktop.Database
 {
     public class DatabaseInitializer
     {
+        // Bez tych limitów listy EventLogs/Sessions rosną bez ograniczeń,
+        // a każde Save() serializuje CAŁĄ bazę do jednego pliku JSON,
+        // synchronicznie, na wątku wywołującym. W dłuższej perspektywie
+        // (miesiące działania, częste logowania) prowadziło to do coraz
+        // wolniejszych zapisów i coraz większego pliku bazy.
+        private const int MaxEventLogs = 5000;
+        private const int MaxSessions = 1000;
+
         private readonly string _dbPath;
         private DatabaseData _data;
 
@@ -80,8 +88,32 @@ namespace SecureDesktop.Database
 
         public void Save()
         {
+            TrimData();
             var json = JsonConvert.SerializeObject(_data, Formatting.Indented);
             File.WriteAllText(_dbPath, json);
+        }
+
+        /// <summary>
+        /// Przycina najstarsze wpisy EventLogs/Sessions ponad ustalony limit,
+        /// żeby rozmiar bazy i czas zapisu nie rosły bez końca w czasie.
+        /// Listy są uzupełniane w kolejności chronologicznej, więc usuwamy
+        /// zakres od początku (najstarsze wpisy).
+        /// </summary>
+        private void TrimData()
+        {
+            if (_data == null) return;
+
+            if (_data.EventLogs != null && _data.EventLogs.Count > MaxEventLogs)
+            {
+                int removeCount = _data.EventLogs.Count - MaxEventLogs;
+                _data.EventLogs.RemoveRange(0, removeCount);
+            }
+
+            if (_data.Sessions != null && _data.Sessions.Count > MaxSessions)
+            {
+                int removeCount = _data.Sessions.Count - MaxSessions;
+                _data.Sessions.RemoveRange(0, removeCount);
+            }
         }
 
         public DatabaseData GetData() => _data;
