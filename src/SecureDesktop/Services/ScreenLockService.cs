@@ -102,42 +102,52 @@ namespace SecureDesktop.Services
             }
         }
 
-        // Klucz regionu MUSI byc oparty o Id patternu, a nie o Name. Nazwa moze byc
-        // pusta lub przypadkowo powielona przez uzytkownika w Konfiguracji - w takim
-        // wypadku dwa rozne wzorce nadpisywalyby ten sam wpis w slowniku regionow
-        // odblokowania w kazdym ScreenLockForm, przez co tylko jeden z nich realnie
-        // odblokowywal ekran, a drugi wygladal na "niedzialajacy".
-        private static string KeyFor(Pattern pattern) => "pattern_" + pattern.Id;
-
         private void OnPatternFound(object sender, PatternFoundEventArgs e)
         {
             if (e.Pattern == null || e.Location == Rectangle.Empty) return;
 
-            var region = new Rectangle(
+            // e.Location jest teraz w bezwzględnych współrzędnych całego układu
+            // monitorów (patrz PatternRecognitionService). Każdy overlay
+            // (ScreenLockForm) ma jednak własny lokalny układ współrzędnych
+            // zaczynający się od (0,0) w lewym górnym rogu SWOJEGO ekranu.
+            // Wcześniej region był przekazywany bez tej translacji, co działało
+            // tylko przypadkiem na monitorze głównym (którego origin to (0,0)).
+            var absoluteRegion = new Rectangle(
                 e.Location.X - e.Pattern.MarginLeft,
                 e.Location.Y - e.Pattern.MarginTop,
                 e.Location.Width + e.Pattern.MarginLeft + e.Pattern.MarginRight,
                 e.Location.Height + e.Pattern.MarginTop + e.Pattern.MarginBottom
             );
 
-            if (region.X < 0) region.X = 0;
-            if (region.Y < 0) region.Y = 0;
-            if (region.Width <= 0) region.Width = e.Location.Width;
-            if (region.Height <= 0) region.Height = e.Location.Height;
+            if (absoluteRegion.Width <= 0) absoluteRegion.Width = e.Location.Width;
+            if (absoluteRegion.Height <= 0) absoluteRegion.Height = e.Location.Height;
 
-            string key = KeyFor(e.Pattern);
+            string key = e.Pattern.Name ?? ("pattern_" + e.Pattern.Id);
 
             foreach (var overlay in _overlays)
             {
                 if (overlay is ScreenLockForm lockForm && !lockForm.IsDisposed)
                 {
+                    var screenBounds = lockForm.ScreenBounds;
+
+                    // Wzorzec znaleziony poza tym konkretnym monitorem -
+                    // ten overlay nie powinien dostać okna odblokowania.
+                    if (!screenBounds.IntersectsWith(absoluteRegion))
+                        continue;
+
+                    var localRegion = new Rectangle(
+                        absoluteRegion.X - screenBounds.X,
+                        absoluteRegion.Y - screenBounds.Y,
+                        absoluteRegion.Width,
+                        absoluteRegion.Height);
+
                     if (lockForm.InvokeRequired)
                     {
-                        lockForm.BeginInvoke(new Action(() => lockForm.AddUnlockRegion(key, region)));
+                        lockForm.BeginInvoke(new Action(() => lockForm.AddUnlockRegion(key, localRegion)));
                     }
                     else
                     {
-                        lockForm.AddUnlockRegion(key, region);
+                        lockForm.AddUnlockRegion(key, localRegion);
                     }
                 }
             }
@@ -145,7 +155,7 @@ namespace SecureDesktop.Services
 
         private void OnPatternLost(object sender, PatternLostEventArgs e)
         {
-            string key = KeyFor(e.Pattern);
+            string key = e.Pattern.Name ?? ("pattern_" + e.Pattern.Id);
 
             foreach (var overlay in _overlays)
             {
