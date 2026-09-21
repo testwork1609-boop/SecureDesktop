@@ -71,7 +71,7 @@ namespace SecureDesktop.Forms
             };
             backBtn.FlatAppearance.BorderColor = Color.FromArgb(220, 220, 220);
             backBtn.FlatAppearance.BorderSize = 1;
-            backBtn.Click += (s, e) => CloseRequested?.Invoke();
+            backBtn.Click += (s, e) => { var h = CloseRequested; if (h != null) h(); };
 
             bottomPanel.Controls.Add(refreshBtn);
             bottomPanel.Controls.Add(clearBtn);
@@ -108,7 +108,7 @@ namespace SecureDesktop.Forms
                     return;
                 }
 
-                _eventList.Items.Add($"═══ HISTORIA ZDARZEŃ  ({events.Count} wpisów) ═══");
+                _eventList.Items.Add("═══ HISTORIA ZDARZEŃ  (" + events.Count + " wpisów) ═══");
                 _eventList.Items.Add("");
                 foreach (var e in events)
                     _eventList.Items.Add(FormatEvent(e));
@@ -134,7 +134,7 @@ namespace SecureDesktop.Forms
             string result = e.Result ?? "—";
             string desc = string.IsNullOrWhiteSpace(e.Description) ? "" : "  |  " + e.Description;
 
-            return $"[{time}] {icon} {op,-15} | {result,-10} | {user}{desc}";
+            return "[" + time + "] " + icon + " " + op + " | " + result + " | " + user + desc;
         }
 
         private void EventList_DrawItem(object sender, DrawItemEventArgs e)
@@ -165,7 +165,7 @@ namespace SecureDesktop.Forms
             try
             {
                 var data = _db.GetData();
-                if (data?.EventLogs != null)
+                if (data != null && data.EventLogs != null)
                 {
                     data.EventLogs.Clear();
                     data.NextEventId = 1;
