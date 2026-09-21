@@ -15,9 +15,14 @@ namespace SecureDesktop
         [DllImport("user32.dll", SetLastError = true)]
         private static extern bool DestroyIcon(IntPtr hIcon);
 
+        [DllImport("user32.dll")]
+        private static extern bool SetProcessDPIAware();
+
         [STAThread]
         static void Main()
         {
+            try { SetProcessDPIAware(); } catch { }
+
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
@@ -61,10 +66,7 @@ namespace SecureDesktop
                             Application.Run(dashboard);
                         }
                     }
-                    else
-                    {
-                        break;
-                    }
+                    else break;
                 }
             }
         }
@@ -88,19 +90,14 @@ namespace SecureDesktop
 
                 var backupService = new Services.BackupService();
 
-                // Nie rób kopii, jeśli plik nie zmienił się od ostatniego backupu.
-                string baselineKey = "MonitoredFileBaselineHash";
-                if (data.Settings.TryGetValue(baselineKey, out var baselineHash))
-                {
-                    if (!backupService.HasFileChanged(monitoredFile, baselineHash))
-                        return;
-                }
+                if (data.Settings.TryGetValue("MonitoredFileBaselineHash", out var baselineHash) &&
+                    !backupService.HasFileChanged(monitoredFile, baselineHash))
+                    return;
 
                 string backupPath = backupService.CreateBackup(monitoredFile, backupFolder);
 
-                // Zapisz nowy punkt odniesienia.
-                data.Settings[baselineKey] = backupService.ComputeHash(monitoredFile);
-                data.Settings["MonitoredFileLastNotifiedHash"] = data.Settings[baselineKey];
+                data.Settings["MonitoredFileBaselineHash"] = backupService.ComputeHash(monitoredFile);
+                data.Settings["MonitoredFileLastNotifiedHash"] = data.Settings["MonitoredFileBaselineHash"];
                 db.Save();
 
                 var eventRepo = new Database.Repositories.EventLogRepository(db);
@@ -142,10 +139,7 @@ namespace SecureDesktop
                     using (var tempIcon = Icon.FromHandle(hIcon))
                         return (Icon)tempIcon.Clone();
                 }
-                finally
-                {
-                    DestroyIcon(hIcon);
-                }
+                finally { DestroyIcon(hIcon); }
             }
         }
     }
