@@ -10,10 +10,6 @@ using SecureDesktop.Models;
 
 namespace SecureDesktop.Services
 {
-    /// <summary>
-    /// Rozpoznawanie wzorca oparte na NCC (Normalized Cross-Correlation)
-    /// na obrazie w odcieniach szarości.
-    /// </summary>
     public class PatternRecognitionService : IDisposable
     {
         private readonly double _defaultMatchThreshold;
@@ -24,8 +20,11 @@ namespace SecureDesktop.Services
         private List<CachedPattern> _patterns;
         private readonly Dictionary<string, Rectangle> _lastLocations = new Dictionary<string, Rectangle>();
         private readonly Dictionary<string, double> _lastScores = new Dictionary<string, double>();
+        private readonly Dictionary<string, bool> _lastReportedState = new Dictionary<string, bool>();
         private readonly object _sync = new object();
         private Point _captureOrigin = Point.Empty;
+
+        private static readonly object _logLock = new object();
 
         public event EventHandler<PatternFoundEventArgs> PatternFound;
         public event EventHandler<PatternLostEventArgs> PatternLost;
@@ -38,6 +37,20 @@ namespace SecureDesktop.Services
             _intervalMs = Math.Max(50, intervalMs);
         }
 
+        private static void Log(string msg)
+        {
+            try
+            {
+                var path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Logs", "pattern.log");
+                Directory.CreateDirectory(Path.GetDirectoryName(path));
+                lock (_logLock)
+                {
+                    File.AppendAllText(path, $"[{DateTime.Now:HH:mm:ss.fff}] {msg}\r\n");
+                }
+            }
+            catch { }
+        }
+
         public void Start(List<Pattern> patterns)
         {
             lock (_sync)
@@ -45,23 +58,33 @@ namespace SecureDesktop.Services
                 if (_isRunning) return;
 
                 _patterns = new List<CachedPattern>();
+                Log("=== START PatternRecognitionService ===");
 
                 if (patterns != null)
                 {
                     foreach (var p in patterns)
                     {
                         if (p == null) continue;
-                        if (!p.IsActive) continue;
-                        if (p.ImageData == null || p.ImageData.Length == 0) continue;
+                        if (!p.IsActive) { Log($"Pomijam nieaktywny '{p.Name}'"); continue; }
+                        if (p.ImageData == null || p.ImageData.Length == 0)
+                        {
+                            Log($"Pomijam '{p.Name}' - brak ImageData");
+                            continue;
+                        }
 
-                        try { _patterns.Add(new CachedPattern(p, _defaultMatchThreshold)); }
+                        try
+                        {
+                            _patterns.Add(new CachedPattern(p, _defaultMatchThreshold));
+                            Log($"Załadowano '{p.Name}' Id={p.Id}");
+                        }
                         catch (Exception ex)
                         {
-                            System.Diagnostics.Debug.WriteLine(
-                                $"PatternRecognitionService: pomijam '{p.Name}' (Id={p.Id}) - {ex.Message}");
+                            Log($"Błąd '{p.Name}': {ex.Message}");
                         }
                     }
                 }
+
+                Log($"Wzorców do śledzenia: {_patterns.Count}");
 
                 _cts = new CancellationTokenSource();
                 _isRunning = true;
@@ -91,25 +114,19 @@ namespace SecureDesktop.Services
                                 {
                                     if (token.IsCancellationRequested) break;
                                     try { ProcessPattern(screen, pattern); }
-                                    catch (Exception ex)
-                                    {
-                                        System.Diagnostics.Debug.WriteLine(
-                                            $"ProcessPattern '{pattern?.Source?.Name}': {ex.Message}");
-                                    }
+                                    catch (Exception ex) { Log($"ProcessPattern: {ex.Message}"); }
                                 }
                             }
                         }
                         finally { screen.Dispose(); }
                     }
                 }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine("PatternRecognition error: " + ex);
-                }
+                catch (Exception ex) { Log("Loop: " + ex.Message); }
 
                 try { await Task.Delay(_intervalMs, token); }
                 catch (TaskCanceledException) { break; }
             }
+            Log("=== STOP PatternRecognitionService ===");
         }
 
         private void ProcessPattern(Bitmap screen, CachedPattern pattern)
@@ -119,18 +136,31 @@ namespace SecureDesktop.Services
             Rectangle prev;
             bool hasPrev = _lastLocations.TryGetValue(key, out prev);
 
-            // 1) Szukaj najpierw w oknie ±150 px wokół ostatniej pozycji.
             Rectangle searchArea = hasPrev
                 ? Inflate(prev, 150, screen.Size)
                 : new Rectangle(0, 0, screen.Width, screen.Height);
 
             MatchResult match = FindBestMatch(screen, pattern, searchArea);
 
-            // 2) Fallback: pełny skan, jeśli w oknie nie znaleziono.
             if (!match.Found && hasPrev)
             {
+                Log($"'{key}': nie znaleziono w oknie (best={pattern.LastScore:F3}), pełny skan");
                 match = FindBestMatch(screen, pattern,
                     new Rectangle(0, 0, screen.Width, screen.Height));
+            }
+
+            bool wasFound;
+            bool prevReported = _lastReportedState.TryGetValue(key, out wasFound) && wasFound;
+            bool nowFound = match.Found;
+
+            // Logujemy tylko przy zmianie stanu.
+            if (prevReported != nowFound)
+            {
+                if (nowFound)
+                    Log($"'{key}': ZNALEZIONO score={match.Score:F3} @ ({match.X},{match.Y}) threshold={pattern.Threshold:F2}");
+                else
+                    Log($"'{key}': ZGUBIONO (best={pattern.LastScore:F3}) threshold={pattern.Threshold:F2}");
+                _lastReportedState[key] = nowFound;
             }
 
             if (match.Found)
@@ -143,11 +173,9 @@ namespace SecureDesktop.Services
                     int dx = Math.Abs(prev.X - match.X);
                     int dy = Math.Abs(prev.Y - match.Y);
 
-                    // Anti-jitter: mikro-ruch < 3 px w obu osiach - ignoruj.
                     if (dx <= 3 && dy <= 3)
                         shouldReport = false;
 
-                    // Histereza: duży skok akceptujemy tylko gdy wyraźnie lepszy.
                     if (shouldReport && (dx > 20 || dy > 20))
                     {
                         double prevScore;
@@ -206,6 +234,7 @@ namespace SecureDesktop.Services
 
             _lastLocations.Clear();
             _lastScores.Clear();
+            _lastReportedState.Clear();
         }
 
         private Bitmap CaptureScreen()
@@ -221,7 +250,7 @@ namespace SecureDesktop.Services
                 _captureOrigin = bounds.Location;
                 return bmp;
             }
-            catch { return null; }
+            catch (Exception ex) { Log("CaptureScreen: " + ex.Message); return null; }
         }
 
         private MatchResult FindBestMatch(Bitmap screen, CachedPattern pattern, Rectangle searchArea)
@@ -250,19 +279,12 @@ namespace SecureDesktop.Services
 
             if (maxX < 0 || maxY < 0) return MatchResult.NotFound;
 
-            // Jedyna możliwa pozycja.
             if (maxX == 0 && maxY == 0)
             {
                 double s = ComputeNCC(ptr, stride, 0, 0, pattern);
                 pattern.LastScore = s;
                 if (s >= pattern.Threshold)
-                    return new MatchResult
-                    {
-                        Found = true,
-                        X = searchArea.X,
-                        Y = searchArea.Y,
-                        Score = s
-                    };
+                    return new MatchResult { Found = true, X = searchArea.X, Y = searchArea.Y, Score = s };
                 return MatchResult.NotFound;
             }
 
@@ -285,11 +307,7 @@ namespace SecureDesktop.Services
                 for (int x = 0; x <= maxX; x += coarseStep)
                 {
                     double s = ComputeNCC(ptr, stride, x, y, pattern);
-                    if (s > localBest)
-                    {
-                        localBest = s;
-                        localX = x;
-                    }
+                    if (s > localBest) { localBest = s; localX = x; }
                 }
 
                 rowScore[ri] = localBest;
@@ -322,35 +340,18 @@ namespace SecureDesktop.Services
                 for (int x = r0x; x <= r1x; x++)
                 {
                     double s = ComputeNCC(ptr, stride, x, y, pattern);
-                    if (s > bestScore)
-                    {
-                        bestScore = s;
-                        bestX = x;
-                        bestY = y;
-                    }
+                    if (s > bestScore) { bestScore = s; bestX = x; bestY = y; }
                 }
             }
 
             pattern.LastScore = bestScore;
 
             if (bestScore >= pattern.Threshold)
-            {
-                return new MatchResult
-                {
-                    Found = true,
-                    X = searchArea.X + bestX,
-                    Y = searchArea.Y + bestY,
-                    Score = bestScore
-                };
-            }
+                return new MatchResult { Found = true, X = searchArea.X + bestX, Y = searchArea.Y + bestY, Score = bestScore };
 
             return MatchResult.NotFound;
         }
 
-        /// <summary>
-        /// NCC między wzorcem a regionem ekranu zaczynającym się w (offsetX, offsetY).
-        /// Wynik w [0, 1]: 1.0 = idealne dopasowanie strukturalne.
-        /// </summary>
         private unsafe double ComputeNCC(byte* ptr, int stride, int offsetX, int offsetY, CachedPattern pattern)
         {
             int n = pattern.PointX.Length;
@@ -399,8 +400,6 @@ namespace SecureDesktop.Services
             if (_cts != null) _cts.Dispose();
         }
 
-        // --- Typy pomocnicze ---
-
         private struct MatchResult
         {
             public bool Found;
@@ -446,9 +445,9 @@ namespace SecureDesktop.Services
                 Height = bmp.Height;
 
                 if (Width < 4 || Height < 4)
-                    throw new InvalidOperationException($"Wzorzec jest za mały ({Width}x{Height}, min 4x4).");
+                    throw new InvalidOperationException($"Wzorzec za mały ({Width}x{Height}, min 4x4).");
                 if (Width > 512 || Height > 512)
-                    throw new InvalidOperationException($"Wzorzec jest za duży ({Width}x{Height}, max 512x512).");
+                    throw new InvalidOperationException($"Wzorzec za duży ({Width}x{Height}, max 512x512).");
 
                 int totalPixels = Width * Height;
                 const int targetPoints = 256;
@@ -505,11 +504,8 @@ namespace SecureDesktop.Services
                 double variance = sumSq / n - Mean * Mean;
                 StdDev = Math.Sqrt(Math.Max(0.01, variance));
 
-                if (StdDev < 3.0)
-                {
-                    System.Diagnostics.Debug.WriteLine(
-                        $"Wzorzec '{pattern.Name}' ma bardzo niski kontrast (StdDev={StdDev:F2}).");
-                }
+                System.Diagnostics.Debug.WriteLine(
+                    $"[CachedPattern] '{pattern.Name}' {Width}x{Height} punkty={n} mean={Mean:F1} std={StdDev:F2} threshold={Threshold:F2}");
             }
         }
 
