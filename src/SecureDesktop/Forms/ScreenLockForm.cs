@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using SecureDesktop.Utils;
 
@@ -8,23 +9,41 @@ namespace SecureDesktop.Forms
 {
     public class ScreenLockForm : Form
     {
+        private const uint WDA_MONITOR = 0x00000001;
+        private const uint WDA_EXCLUDEFROMCAPTURE = 0x00000011;
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool SetWindowDisplayAffinity(IntPtr hWnd, uint dwAffinity);
+
         private readonly Screen _screen;
         private readonly Dictionary<string, Rectangle> _unlockRegions;
+        private readonly Func<string, bool> _verifyPassword;
         private Bitmap _lockIconBitmap;
 
-        /// <summary>
-        /// Granice ekranu, do którego przypisany jest ten overlay, w
-        /// bezwzględnych współrzędnych systemowych. Używane przez
-        /// ScreenLockService do przeliczania współrzędnych znalezionego
-        /// wzorca na lokalny układ współrzędnych tego konkretnego okna.
-        /// </summary>
         public Rectangle ScreenBounds => _screen.Bounds;
 
-        public ScreenLockForm(Screen screen)
+        public ScreenLockForm(Screen screen, Func<string, bool> verifyPassword = null)
         {
             _screen = screen;
             _unlockRegions = new Dictionary<string, Rectangle>();
+            _verifyPassword = verifyPassword ?? (pwd => false);
             InitializeComponent();
+        }
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            TrySetDisplayAffinity();
+        }
+
+        private void TrySetDisplayAffinity()
+        {
+            try
+            {
+                if (!SetWindowDisplayAffinity(this.Handle, WDA_EXCLUDEFROMCAPTURE))
+                    SetWindowDisplayAffinity(this.Handle, WDA_MONITOR);
+            }
+            catch { }
         }
 
         private void InitializeComponent()
@@ -36,68 +55,72 @@ namespace SecureDesktop.Forms
             this.TopMost = true;
             this.StartPosition = FormStartPosition.Manual;
             this.Bounds = _screen.Bounds;
-            this.Cursor = Cursors.No;
-            this.BackColor = Color.White;
-            this.Opacity = 0.10;
+            this.Cursor = Cursors.Default;
+            this.BackColor = Color.FromArgb(15, 15, 15);
+            this.Opacity = 0.85;
             this.AllowTransparency = true;
             this.DoubleBuffered = true;
+            this.KeyPreview = true;
 
-            var bottomPanel = new Panel
-            {
-                Location = new Point(0, this.Height - 80),
-                Size = new Size(this.Width, 80),
-                BackColor = Color.FromArgb(240, 255, 245)
-            };
+            _lockIconBitmap = CreateLockIconBitmap(56, Color.White);
 
+            // Kłódka w prawym górnym rogu
             var lockIcon = new PictureBox
             {
-                Size = new Size(50, 50),
-                Location = new Point((this.Width / 2) - 25, 15),
-                BackColor = Color.Transparent,
-                Cursor = Cursors.Hand
+                Size = new Size(56, 56),
+                Location = new Point(this.Width - 76, 20),
+                BackColor = primaryColor,
+                Cursor = Cursors.Hand,
+                Image = _lockIconBitmap,
+                SizeMode = PictureBoxSizeMode.CenterImage
             };
-
-            // Bitmapa ikony jest teraz trzymana w polu instancji i zwalniana
-            // w Dispose(), zamiast pozostawiania jej bez odwołania po ustawieniu
-            // jako lockIcon.Image (PictureBox nie przejmuje automatycznie
-            // odpowiedzialności za zwolnienie przypisanego obrazu we wszystkich
-            // przypadkach, a to okno jest tworzone od nowa przy każdej blokadzie).
-            _lockIconBitmap = new Bitmap(50, 50);
-            using (var g = Graphics.FromImage(_lockIconBitmap))
-            {
-                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-                using (var brush = new SolidBrush(primaryColor))
-                {
-                    g.FillRectangle(brush, 12, 22, 26, 24);
-                }
-                using (var pen = new Pen(primaryColor, 4))
-                {
-                    g.DrawArc(pen, 15, 7, 20, 18, 180, 180);
-                }
-                using (var brush = new SolidBrush(Color.White))
-                {
-                    g.FillEllipse(brush, 20, 30, 10, 6);
-                    g.FillRectangle(brush, 23, 34, 4, 8);
-                }
-            }
-            lockIcon.Image = _lockIconBitmap;
             lockIcon.Click += (s, e) => ShowUnlockDialog();
 
-            var helpLabel = new Label
+            var hint = new Label
             {
-                Text = "Kliknij klodke aby odblokowac",
-                Font = UiFonts.Segoe10,
-                ForeColor = primaryColor,
-                Location = new Point((this.Width / 2) - 120, 65),
-                AutoSize = true
+                Text = "Kliknij kłódkę, aby odblokować",
+                Font = UiFonts.Segoe10Bold,
+                ForeColor = Color.White,
+                BackColor = primaryColor,
+                AutoSize = false,
+                Size = new Size(230, 56),
+                Location = new Point(this.Width - 76 - 240, 20),
+                TextAlign = ContentAlignment.MiddleRight,
+                Padding = new Padding(0, 0, 12, 0)
             };
 
-            bottomPanel.Controls.Add(lockIcon);
-            bottomPanel.Controls.Add(helpLabel);
+            this.Controls.Add(hint);
+            this.Controls.Add(lockIcon);
 
-            this.Controls.Add(bottomPanel);
-            this.Click += (s, e) => ShowUnlockDialog();
-            this.KeyDown += (s, e) => { if (e.KeyCode == Keys.Escape) ShowUnlockDialog(); };
+            // Tylko skrót klawiszowy - brak kliknięcia gdziekolwiek na ekran.
+            this.KeyDown += (s, e) =>
+            {
+                if (e.Control && e.KeyCode == Keys.L)
+                {
+                    e.SuppressKeyPress = true;
+                    ShowUnlockDialog();
+                }
+            };
+        }
+
+        private static Bitmap CreateLockIconBitmap(int size, Color color)
+        {
+            var bmp = new Bitmap(size, size);
+            using (var g = Graphics.FromImage(bmp))
+            {
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                g.Clear(Color.Transparent);
+                using (var brush = new SolidBrush(color))
+                    g.FillRectangle(brush, size / 4, size / 2, size / 2, size / 2 - 2);
+                using (var pen = new Pen(color, Math.Max(3, size / 12)))
+                    g.DrawArc(pen, size / 4 + 2, size / 8, size / 2 - 4, size / 3, 180, 180);
+                using (var brush = new SolidBrush(Color.FromArgb(45, 165, 90)))
+                {
+                    g.FillEllipse(brush, size * 5 / 12, size * 7 / 12, size / 6, size / 8);
+                    g.FillRectangle(brush, size * 11 / 24, size * 8 / 12, size / 12, size / 6);
+                }
+            }
+            return bmp;
         }
 
         public void AddUnlockRegion(string patternKey, Rectangle region)
@@ -137,21 +160,12 @@ namespace SecureDesktop.Forms
             try
             {
                 var fullRegion = new Region(new Rectangle(0, 0, this.Width, this.Height));
-
                 foreach (var rect in _unlockRegions.Values)
-                {
                     if (rect.Width > 0 && rect.Height > 0)
-                    {
                         fullRegion.Exclude(rect);
-                    }
-                }
-
                 this.Region = fullRegion;
             }
-            catch
-            {
-                this.Region = null;
-            }
+            catch { this.Region = null; }
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -161,19 +175,12 @@ namespace SecureDesktop.Forms
             foreach (var kvp in _unlockRegions)
             {
                 var region = kvp.Value;
-                var name = kvp.Key;
-
                 using (var brush = new SolidBrush(Color.FromArgb(1, 255, 255, 255)))
-                {
                     e.Graphics.FillRectangle(brush, region);
-                }
-
                 using (var pen = new Pen(Color.FromArgb(255, 45, 165, 90), 3))
-                {
                     e.Graphics.DrawRectangle(pen, region);
-                }
-
-                e.Graphics.DrawString(name, UiFonts.Segoe9Bold, Brushes.Green, region.X + 5, region.Y + 5);
+                e.Graphics.DrawString(kvp.Key, UiFonts.Segoe9Bold, Brushes.LightGreen,
+                    region.X + 5, region.Y + 5);
             }
         }
 
@@ -184,8 +191,11 @@ namespace SecureDesktop.Forms
 
             if (m.Msg == WM_NCHITTEST)
             {
-                var screenPoint = new Point(m.LParam.ToInt32() & 0xffff, m.LParam.ToInt32() >> 16);
-                var clientPoint = this.PointToClient(screenPoint);
+                // Poprawne dekodowanie ujemnych współrzędnych (monitory
+                // ułożone na lewo / nad monitorem głównym).
+                int sx = unchecked((short)(long)m.LParam);
+                int sy = unchecked((short)((long)m.LParam >> 16));
+                var clientPoint = this.PointToClient(new Point(sx, sy));
 
                 foreach (var region in _unlockRegions.Values)
                 {
@@ -207,36 +217,36 @@ namespace SecureDesktop.Forms
             using (var dialog = new Form
             {
                 Text = "Odblokuj ekran",
-                Size = new Size(350, 200),
+                Size = new Size(360, 240),
                 StartPosition = FormStartPosition.CenterScreen,
                 FormBorderStyle = FormBorderStyle.FixedDialog,
                 MaximizeBox = false,
                 MinimizeBox = false,
                 TopMost = true,
                 BackColor = Color.White,
-                KeyPreview = true
+                KeyPreview = true,
+                ShowInTaskbar = false
             })
             {
-                var icon = new Label { Text = "🔒", Font = UiFonts.Segoe24, Location = new Point(20, 20), Size = new Size(50, 40) };
-                var title = new Label { Text = "Wprowadz haslo aby odblokowac", Font = UiFonts.Segoe11Bold, Location = new Point(70, 25), AutoSize = true };
-                var passBox = new TextBox { Location = new Point(30, 70), Size = new Size(280, 30), PasswordChar = '*', Font = UiFonts.Segoe12 };
-                var errorLabel = new Label { Location = new Point(30, 105), Size = new Size(280, 20), ForeColor = Color.Red, Visible = false };
+                var icon = new Label { Text = "🔒", Font = UiFonts.Segoe24, Location = new Point(20, 15), Size = new Size(60, 40) };
+                var title = new Label { Text = "Wprowadź hasło, aby odblokować", Font = UiFonts.Segoe11Bold, Location = new Point(75, 22), AutoSize = true };
+                var passBox = new TextBox { Location = new Point(30, 80), Size = new Size(290, 30), PasswordChar = '●', Font = UiFonts.Segoe12 };
+                var errorLabel = new Label { Location = new Point(30, 118), Size = new Size(290, 20), ForeColor = Color.Red, Visible = false };
 
-                var unlockBtn = new Button { Text = "Odblokuj", Location = new Point(80, 130), Size = new Size(90, 35), BackColor = primaryColor, ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
+                var unlockBtn = new Button { Text = "Odblokuj", Location = new Point(80, 150), Size = new Size(100, 36), BackColor = primaryColor, ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
                 unlockBtn.FlatAppearance.BorderSize = 0;
-
-                var cancelBtn = new Button { Text = "Anuluj", Location = new Point(180, 130), Size = new Size(90, 35), BackColor = Color.White, FlatStyle = FlatStyle.Flat };
+                var cancelBtn = new Button { Text = "Anuluj", Location = new Point(190, 150), Size = new Size(100, 36), BackColor = Color.White, FlatStyle = FlatStyle.Flat };
 
                 Action unlockAction = () =>
                 {
-                    if (passBox.Text == "admin")
+                    if (_verifyPassword(passBox.Text))
                     {
                         dialog.Close();
                         this.Close();
                     }
                     else
                     {
-                        errorLabel.Text = "Nieprawidlowe haslo!";
+                        errorLabel.Text = "Nieprawidłowe hasło!";
                         errorLabel.Visible = true;
                         passBox.Text = "";
                         passBox.Focus();
@@ -245,12 +255,10 @@ namespace SecureDesktop.Forms
 
                 unlockBtn.Click += (s, args) => unlockAction();
                 cancelBtn.Click += (s, args) => dialog.Close();
-
                 passBox.KeyDown += (s, args) =>
                 {
                     if (args.KeyCode == Keys.Enter) { args.SuppressKeyPress = true; unlockAction(); }
                 };
-
                 dialog.KeyDown += (s, args) =>
                 {
                     if (args.KeyCode == Keys.Enter) { args.SuppressKeyPress = true; unlockAction(); }
