@@ -328,8 +328,9 @@ namespace SecureDesktop.Forms
 
             // Nie da się ukryć całego okna (bo ukrylibyśmy cały Dashboard z tym widokiem).
             // Zamiast tego minimalizujemy tymczasowo tylko okno główne na ułamek sekundy.
-            var parentForm = this.FindForm();
-            parentForm?.WindowState = FormWindowState.Minimized;
+             var parentForm = this.FindForm();
+            if (parentForm != null)
+                parentForm.WindowState = FormWindowState.Minimized;
             System.Threading.Thread.Sleep(400);
 
             Services.PatternTestResult result = null;
@@ -339,8 +340,13 @@ namespace SecureDesktop.Forms
             }
             finally
             {
-                if (parentForm != null) { parentForm.WindowState = FormWindowState.Normal; parentForm.Activate(); }
+                if (parentForm != null)
+                {
+                    parentForm.WindowState = FormWindowState.Normal;
+                    parentForm.Activate();
+                }
             }
+           }
 
             if (result == null || result.Error != null)
             {
