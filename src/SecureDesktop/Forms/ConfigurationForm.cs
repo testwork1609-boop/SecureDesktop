@@ -12,7 +12,7 @@ using SecureDesktop.Utils;
 
 namespace SecureDesktop.Forms
 {
-    public class ConfigurationForm : Form
+    public class ConfigurationView : UserControl
     {
         private readonly Color primaryColor = Color.FromArgb(45, 165, 90);
         private readonly Color bgColor = Color.White;
@@ -34,17 +34,23 @@ namespace SecureDesktop.Forms
         private CheckBox _trayCheck;
         private PictureBox _patternPreviewBox;
         private List<Pattern> _patterns;
-        private DatabaseInitializer _db;
-        private UserRepository _userRepo;
-
+        private readonly DatabaseInitializer _db;
+        private readonly UserRepository _userRepo;
         private ListView _userListView;
 
-        public ConfigurationForm(DatabaseInitializer db)
+        public event Action CloseRequested;
+        public event Action DataSaved;
+
+        public ConfigurationView(DatabaseInitializer db)
         {
             _db = db;
             _userRepo = new UserRepository(_db);
             _patterns = new List<Pattern>();
-            this.Icon = Program.AppIcon;
+            this.BackColor = bgColor;
+            this.ForeColor = textColor;
+            this.Font = UiFonts.Segoe9;
+            this.Dock = DockStyle.Fill;
+
             InitializeComponent();
             LoadPatternsFromDatabase();
             LoadSettingsIntoControls();
@@ -52,45 +58,11 @@ namespace SecureDesktop.Forms
 
         private void InitializeComponent()
         {
-            this.Text = "Konfiguracja SecureDesktop";
-            this.Size = new Size(820, 650);
-            this.StartPosition = FormStartPosition.CenterParent;
-            this.BackColor = bgColor;
-            this.ForeColor = textColor;
-            this.FormBorderStyle = FormBorderStyle.FixedDialog;
-            this.MaximizeBox = false;
-            this.MinimizeBox = false;
-            this.Font = UiFonts.Segoe9;
-            this.KeyPreview = true;
-
-            this.KeyDown += (s, e) =>
-            {
-                if (e.KeyCode == Keys.Escape) this.Close();
-            };
-
-            var headerPanel = new Panel
-            {
-                Location = new Point(0, 0),
-                Size = new Size(820, 55),
-                BackColor = primaryColor
-            };
-
-            var headerTitle = new Label
-            {
-                Text = "Konfiguracja SecureDesktop",
-                Font = UiFonts.Segoe16Bold,
-                Location = new Point(20, 12),
-                AutoSize = true,
-                ForeColor = Color.White
-            };
-
-            headerPanel.Controls.Add(headerTitle);
-
             var tabControl = new TabControl
             {
-                Location = new Point(10, 65),
-                Size = new Size(785, 490),
-                Appearance = TabAppearance.FlatButtons
+                Dock = DockStyle.Fill,
+                Appearance = TabAppearance.FlatButtons,
+                Font = UiFonts.Segoe10
             };
 
             var tabGeneral = new TabPage("  Ogólne  ") { BackColor = bgColor };
@@ -111,11 +83,13 @@ namespace SecureDesktop.Forms
             BuildBackupTab(tabBackup);
             BuildUsersTab(tabUsers);
 
+            var bottomPanel = new Panel { Dock = DockStyle.Bottom, Height = 60, BackColor = Color.FromArgb(245, 245, 245) };
+
             var saveBtn = new Button
             {
-                Text = "Zapisz wszystkie ustawienia",
-                Location = new Point(250, 565),
-                Size = new Size(220, 38),
+                Text = "💾  Zapisz wszystkie ustawienia",
+                Location = new Point(20, 12),
+                Size = new Size(240, 38),
                 BackColor = primaryColor,
                 ForeColor = Color.White,
                 FlatStyle = FlatStyle.Flat,
@@ -127,9 +101,9 @@ namespace SecureDesktop.Forms
 
             var cancelBtn = new Button
             {
-                Text = "Zamknij",
-                Location = new Point(490, 565),
-                Size = new Size(100, 38),
+                Text = "Powrót do panelu",
+                Location = new Point(280, 12),
+                Size = new Size(160, 38),
                 BackColor = Color.White,
                 ForeColor = subtitleColor,
                 FlatStyle = FlatStyle.Flat,
@@ -138,9 +112,13 @@ namespace SecureDesktop.Forms
             };
             cancelBtn.FlatAppearance.BorderColor = borderColor;
             cancelBtn.FlatAppearance.BorderSize = 1;
-            cancelBtn.Click += (s, e) => this.Close();
+            cancelBtn.Click += (s, e) => CloseRequested?.Invoke();
 
-            this.Controls.AddRange(new Control[] { headerPanel, tabControl, saveBtn, cancelBtn });
+            bottomPanel.Controls.Add(saveBtn);
+            bottomPanel.Controls.Add(cancelBtn);
+
+            this.Controls.Add(tabControl);
+            this.Controls.Add(bottomPanel);
         }
 
         private void LoadSettingsIntoControls()
@@ -174,110 +152,57 @@ namespace SecureDesktop.Forms
                     int.TryParse(si, out int siv))
                     _intervalBox.Value = Math.Max(_intervalBox.Minimum, Math.Min(_intervalBox.Maximum, siv));
             }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine("LoadSettingsIntoControls error: " + ex.Message);
-            }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine("LoadSettings: " + ex.Message); }
         }
 
         private void BuildGeneralTab(TabPage tab)
         {
-            int y = 15;
+            int y = 20;
 
-            var passLabel = new Label
-            {
-                Text = "Nowe hasło administratora:",
-                Location = new Point(20, y),
-                AutoSize = true,
-                Font = UiFonts.Segoe10
-            };
-
+            var passLabel = new Label { Text = "Nowe hasło administratora:", Location = new Point(20, y), AutoSize = true, Font = UiFonts.Segoe10 };
             _adminPasswordBox = new TextBox
             {
-                Location = new Point(240, y - 3),
-                Size = new Size(220, 25),
-                PasswordChar = '●',
-                BackColor = inputBg,
-                BorderStyle = BorderStyle.FixedSingle
+                Location = new Point(240, y - 3), Size = new Size(220, 25),
+                PasswordChar = '●', BackColor = inputBg, BorderStyle = BorderStyle.FixedSingle
             };
             y += 25;
-
-            var passHint = new Label
-            {
-                Text = "(pozostaw puste, aby nie zmieniać hasła)",
-                Location = new Point(240, y),
-                AutoSize = true,
-                Font = UiFonts.Segoe9,
-                ForeColor = subtitleColor
-            };
+            var passHint = new Label { Text = "(pozostaw puste, aby nie zmieniać hasła)", Location = new Point(240, y), AutoSize = true, Font = UiFonts.Segoe9, ForeColor = subtitleColor };
             y += 40;
 
-            _autoStartCheck = new CheckBox
-            {
-                Text = "Uruchamiaj przy starcie Windows",
-                Location = new Point(20, y),
-                AutoSize = true,
-                FlatStyle = FlatStyle.Flat
-            };
+            _autoStartCheck = new CheckBox { Text = "Uruchamiaj przy starcie Windows", Location = new Point(20, y), AutoSize = true, FlatStyle = FlatStyle.Flat };
             y += 30;
 
-            _trayCheck = new CheckBox
-            {
-                Text = "Minimalizuj do zasobnika",
-                Location = new Point(20, y),
-                AutoSize = true,
-                Checked = true,
-                FlatStyle = FlatStyle.Flat
-            };
+            _trayCheck = new CheckBox { Text = "Minimalizuj do zasobnika", Location = new Point(20, y), AutoSize = true, Checked = true, FlatStyle = FlatStyle.Flat };
 
             tab.Controls.AddRange(new Control[] { passLabel, _adminPasswordBox, passHint, _autoStartCheck, _trayCheck });
         }
 
         private void BuildPatternsTab(TabPage tab)
         {
-            var listLabel = new Label
-            {
-                Text = "Lista wzorców:",
-                Location = new Point(15, 15),
-                Font = UiFonts.Segoe11Bold,
-                AutoSize = true,
-                ForeColor = primaryColor
-            };
+            var listLabel = new Label { Text = "Lista wzorców:", Location = new Point(15, 15), Font = UiFonts.Segoe11Bold, AutoSize = true, ForeColor = primaryColor };
 
             _patternListBox = new ListBox
             {
-                Location = new Point(15, 45),
-                Size = new Size(350, 240),
-                BackColor = inputBg,
-                ForeColor = textColor,
-                Font = UiFonts.Consolas9,
-                BorderStyle = BorderStyle.FixedSingle
+                Location = new Point(15, 45), Size = new Size(350, 240),
+                BackColor = inputBg, ForeColor = textColor, Font = UiFonts.Consolas9, BorderStyle = BorderStyle.FixedSingle
             };
 
             var addBtn = new Button
             {
-                Text = "Zaznacz Pattern z ekranu",
-                Location = new Point(15, 295),
-                Size = new Size(170, 35),
-                BackColor = primaryColor,
-                ForeColor = Color.White,
-                FlatStyle = FlatStyle.Flat,
-                Cursor = Cursors.Hand,
-                Font = UiFonts.Segoe9Bold
+                Text = "➕  Zaznacz Pattern z ekranu",
+                Location = new Point(15, 295), Size = new Size(170, 35),
+                BackColor = primaryColor, ForeColor = Color.White, FlatStyle = FlatStyle.Flat,
+                Cursor = Cursors.Hand, Font = UiFonts.Segoe9Bold
             };
             addBtn.FlatAppearance.BorderSize = 0;
             addBtn.Click += AddPatternFromScreen;
 
             var deleteBtn = new Button
             {
-                Text = "Usuń zaznaczony",
-                Location = new Point(195, 295),
-                Size = new Size(170, 35),
-                BackColor = Color.White,
-                ForeColor = Color.FromArgb(220, 80, 80),
-                FlatStyle = FlatStyle.Flat,
-                Cursor = Cursors.Hand,
-                Font = UiFonts.Segoe9
+                Text = "🗑  Usuń zaznaczony",
+                Location = new Point(195, 295), Size = new Size(170, 35),
+                BackColor = Color.White, ForeColor = Color.FromArgb(220, 80, 80),
+                FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand, Font = UiFonts.Segoe9
             };
             deleteBtn.FlatAppearance.BorderColor = Color.FromArgb(220, 80, 80);
             deleteBtn.FlatAppearance.BorderSize = 1;
@@ -285,34 +210,20 @@ namespace SecureDesktop.Forms
 
             var testBtn = new Button
             {
-                Text = "🔍 Testuj wzorzec (na ekranie)",
-                Location = new Point(15, 340),
-                Size = new Size(350, 38),
-                BackColor = Color.FromArgb(60, 120, 200),
-                ForeColor = Color.White,
-                FlatStyle = FlatStyle.Flat,
-                Cursor = Cursors.Hand,
-                Font = UiFonts.Segoe10Bold
+                Text = "🔍  Testuj wzorzec (na ekranie)",
+                Location = new Point(15, 340), Size = new Size(350, 38),
+                BackColor = Color.FromArgb(60, 120, 200), ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand, Font = UiFonts.Segoe10Bold
             };
             testBtn.FlatAppearance.BorderSize = 0;
             testBtn.Click += TestSelectedPattern;
 
-            var previewLabel = new Label
-            {
-                Text = "Podgląd:",
-                Location = new Point(390, 15),
-                Font = UiFonts.Segoe11Bold,
-                AutoSize = true,
-                ForeColor = primaryColor
-            };
+            var previewLabel = new Label { Text = "Podgląd:", Location = new Point(390, 15), Font = UiFonts.Segoe11Bold, AutoSize = true, ForeColor = primaryColor };
 
             _patternPreviewBox = new PictureBox
             {
-                Location = new Point(390, 45),
-                Size = new Size(350, 200),
-                BackColor = inputBg,
-                BorderStyle = BorderStyle.FixedSingle,
-                SizeMode = PictureBoxSizeMode.Zoom
+                Location = new Point(390, 45), Size = new Size(350, 200),
+                BackColor = inputBg, BorderStyle = BorderStyle.FixedSingle, SizeMode = PictureBoxSizeMode.Zoom
             };
 
             _patternListBox.SelectedIndexChanged += (s, e) =>
@@ -335,21 +246,13 @@ namespace SecureDesktop.Forms
                     else _patternPreviewBox.Image = null;
 
                     _marginBox.Value = pattern.MarginTop;
-
                     int thresholdPercent = (int)Math.Round(pattern.MatchThreshold * 100.0);
                     thresholdPercent = Math.Max((int)_thresholdBox.Minimum, Math.Min((int)_thresholdBox.Maximum, thresholdPercent));
                     _thresholdBox.Value = thresholdPercent;
                 }
             };
 
-            var settingsLabel = new Label
-            {
-                Text = "Ustawienia wykrywania (dla zaznaczonego wzorca):",
-                Location = new Point(390, 260),
-                Font = UiFonts.Segoe11Bold,
-                AutoSize = true,
-                ForeColor = primaryColor
-            };
+            var settingsLabel = new Label { Text = "Ustawienia wykrywania (dla zaznaczonego):", Location = new Point(390, 260), Font = UiFonts.Segoe11Bold, AutoSize = true, ForeColor = primaryColor };
 
             var thresholdLabel = new Label { Text = "Próg NCC (%):", Location = new Point(390, 295), AutoSize = true };
             _thresholdBox = new NumericUpDown
@@ -379,8 +282,7 @@ namespace SecureDesktop.Forms
             {
                 Text = "Zastosuj do zaznaczonego",
                 Location = new Point(390, 390), Size = new Size(210, 30),
-                BackColor = primaryColor, ForeColor = Color.White,
-                FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand
+                BackColor = primaryColor, ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand
             };
             applySettingsBtn.FlatAppearance.BorderSize = 0;
             applySettingsBtn.Click += (s, e) =>
@@ -409,7 +311,7 @@ namespace SecureDesktop.Forms
             });
         }
 
-                    private void TestSelectedPattern(object sender, EventArgs e)
+        private void TestSelectedPattern(object sender, EventArgs e)
         {
             if (_patternListBox.SelectedIndex < 0 || _patternListBox.SelectedIndex >= _patterns.Count)
             {
@@ -424,12 +326,21 @@ namespace SecureDesktop.Forms
                 return;
             }
 
-            this.Hide();
+            // Nie da się ukryć całego okna (bo ukrylibyśmy cały Dashboard z tym widokiem).
+            // Zamiast tego minimalizujemy tymczasowo tylko okno główne na ułamek sekundy.
+            var parentForm = this.FindForm();
+            parentForm?.WindowState = FormWindowState.Minimized;
             System.Threading.Thread.Sleep(400);
 
             Services.PatternTestResult result = null;
-            try { result = Services.PatternRecognitionService.TestPatternAgainstCurrentScreen(pattern); }
-            finally { this.Show(); this.Activate(); }
+            try
+            {
+                result = Services.PatternRecognitionService.TestPatternAgainstCurrentScreen(pattern);
+            }
+            finally
+            {
+                if (parentForm != null) { parentForm.WindowState = FormWindowState.Normal; parentForm.Activate(); }
+            }
 
             if (result == null || result.Error != null)
             {
@@ -438,19 +349,12 @@ namespace SecureDesktop.Forms
             }
 
             double gap12 = result.Score - result.SecondScore;
-            double gap13 = result.Score - result.ThirdScore;
-
             string verdict;
-            if (result.Found && gap12 >= 0.15)
-                verdict = "✅ WZORZEC DOBRY — jedno wyraźne maksimum";
-            else if (result.Found && gap12 >= 0.05)
-                verdict = "⚠️ WZORZEC ŚREDNI — maksimum wyraźne, ale nie mocno";
-            else if (result.Found)
-                verdict = "❌ WZORZEC SŁABY — wiele miejsc o podobnym score (fałszywe trafienia)";
-            else if (result.Score >= 0.6)
-                verdict = "⚠️ Wzorzec NIE jest widoczny, ale coś podobnego jest";
-            else
-                verdict = "❌ Wzorzec NIE jest widoczny na ekranie";
+            if (result.Found && gap12 >= 0.15) verdict = "✅ WZORZEC DOBRY";
+            else if (result.Found && gap12 >= 0.05) verdict = "⚠️ WZORZEC ŚREDNI";
+            else if (result.Found) verdict = "❌ WZORZEC SŁABY (wiele miejsc)";
+            else if (result.Score >= 0.6) verdict = "⚠️ NIE widoczny, coś podobnego jest";
+            else verdict = "❌ Wzorzec NIE jest widoczny na ekranie";
 
             string msg =
                 $"Wzorzec: \"{pattern.Name}\"  ({result.PatternWidth}x{result.PatternHeight} px, kontrast: {result.StdDev:F1})\n" +
@@ -465,23 +369,14 @@ namespace SecureDesktop.Forms
                 BackColor = Color.White
             })
             {
-                // Górny pasek: wzorzec + 3 cropy w powiększeniu.
                 var stripPanel = new Panel { Dock = DockStyle.Top, Height = 180, BackColor = Color.FromArgb(240, 240, 240) };
-
                 int xpos = 20;
                 AddCrop(stripPanel, "WZORZEC", pattern.ImageData, xpos, ref xpos);
                 if (result.Crop1 != null) AddCrop(stripPanel, "TOP-1  " + result.Score.ToString("F3"), result.Crop1, xpos, ref xpos);
                 if (result.Crop2 != null) AddCrop(stripPanel, "TOP-2  " + result.SecondScore.ToString("F3"), result.Crop2, xpos, ref xpos);
                 if (result.Crop3 != null) AddCrop(stripPanel, "TOP-3  " + result.ThirdScore.ToString("F3"), result.Crop3, xpos, ref xpos);
 
-                // Screenshot z ramkami.
-                var pb = new PictureBox
-                {
-                    Dock = DockStyle.Fill,
-                    SizeMode = PictureBoxSizeMode.Zoom,
-                    Image = (Bitmap)result.Screenshot.Clone()
-                };
-
+                var pb = new PictureBox { Dock = DockStyle.Fill, SizeMode = PictureBoxSizeMode.Zoom, Image = (Bitmap)result.Screenshot.Clone() };
                 using (var g = Graphics.FromImage(pb.Image))
                 {
                     Color[] colors = { Color.Red, Color.Orange, Color.Gold };
@@ -499,24 +394,14 @@ namespace SecureDesktop.Forms
 
                 var info = new Label
                 {
-                    Text = msg,
-                    Dock = DockStyle.Bottom,
-                    Height = 70,
-                    Padding = new Padding(10),
-                    Font = UiFonts.Segoe10,
-                    BackColor = Color.FromArgb(250, 250, 250)
+                    Text = msg, Dock = DockStyle.Bottom, Height = 70, Padding = new Padding(10),
+                    Font = UiFonts.Segoe10, BackColor = Color.FromArgb(250, 250, 250)
                 };
 
                 preview.Controls.Add(pb);
                 preview.Controls.Add(info);
                 preview.Controls.Add(stripPanel);
-                preview.FormClosed += (s, a) =>
-                {
-                    pb.Image?.Dispose();
-                    result.Crop1?.Dispose();
-                    result.Crop2?.Dispose();
-                    result.Crop3?.Dispose();
-                };
+                preview.FormClosed += (s, a) => { pb.Image?.Dispose(); result.Crop1?.Dispose(); result.Crop2?.Dispose(); result.Crop3?.Dispose(); };
                 preview.ShowDialog(this);
             }
 
@@ -528,9 +413,7 @@ namespace SecureDesktop.Forms
             if (imageData == null || imageData.Length == 0) return;
             using (var ms = new MemoryStream(imageData))
             using (var src = new Bitmap(ms))
-            {
                 AddCrop(parent, label, src, xpos, ref nextX);
-            }
         }
 
         private static void AddCrop(Control parent, string label, Bitmap src, int xpos, ref int nextX)
@@ -544,21 +427,11 @@ namespace SecureDesktop.Forms
 
             var pic = new PictureBox
             {
-                Location = new Point(xpos, 30),
-                Size = new Size(drawW, drawH),
-                BorderStyle = BorderStyle.FixedSingle,
-                SizeMode = PictureBoxSizeMode.Zoom,
+                Location = new Point(xpos, 30), Size = new Size(drawW, drawH),
+                BorderStyle = BorderStyle.FixedSingle, SizeMode = PictureBoxSizeMode.Zoom,
                 Image = new Bitmap(src, drawW, drawH)
             };
-
-            var lbl = new Label
-            {
-                Text = label,
-                Location = new Point(xpos, 6),
-                AutoSize = true,
-                Font = UiFonts.Segoe9Bold
-            };
-
+            var lbl = new Label { Text = label, Location = new Point(xpos, 6), AutoSize = true, Font = UiFonts.Segoe9Bold };
             parent.Controls.Add(lbl);
             parent.Controls.Add(pic);
             nextX = xpos + drawW + 20;
@@ -567,15 +440,9 @@ namespace SecureDesktop.Forms
         private void BuildCheckpointTab(TabPage tab)
         {
             int y = 20;
-
             var pathLabel = new Label { Text = "Ścieżka do pliku EXE:", Location = new Point(20, y), AutoSize = true, Font = UiFonts.Segoe10 };
             y += 25;
-
-            _checkpointPathBox = new TextBox
-            {
-                Location = new Point(20, y), Size = new Size(450, 25),
-                BackColor = inputBg, BorderStyle = BorderStyle.FixedSingle, Text = "notepad.exe"
-            };
+            _checkpointPathBox = new TextBox { Location = new Point(20, y), Size = new Size(450, 25), BackColor = inputBg, BorderStyle = BorderStyle.FixedSingle, Text = "notepad.exe" };
             var pathBtn = new Button
             {
                 Text = "Przeglądaj", Location = new Point(480, y), Size = new Size(90, 25),
@@ -592,8 +459,7 @@ namespace SecureDesktop.Forms
 
             var testBtn = new Button
             {
-                Text = "Testuj uruchomienie",
-                Location = new Point(150, y), Size = new Size(200, 40),
+                Text = "Testuj uruchomienie", Location = new Point(150, y), Size = new Size(200, 40),
                 BackColor = primaryColor, ForeColor = Color.White, FlatStyle = FlatStyle.Flat,
                 Font = UiFonts.Segoe10Bold, Cursor = Cursors.Hand
             };
@@ -602,13 +468,11 @@ namespace SecureDesktop.Forms
             {
                 try
                 {
-                    var psi = new System.Diagnostics.ProcessStartInfo
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
                     {
-                        FileName = _checkpointPathBox.Text,
-                        Arguments = _checkpointArgsBox.Text ?? "",
+                        FileName = _checkpointPathBox.Text, Arguments = _checkpointArgsBox.Text ?? "",
                         UseShellExecute = true
-                    };
-                    System.Diagnostics.Process.Start(psi);
+                    });
                 }
                 catch (Exception ex) { MessageBox.Show("Błąd: " + ex.Message); }
             };
@@ -619,40 +483,21 @@ namespace SecureDesktop.Forms
         private void BuildBackupTab(TabPage tab)
         {
             int y = 20;
-
             var backupLabel = new Label { Text = "Folder docelowy backupu:", Location = new Point(20, y), AutoSize = true, Font = UiFonts.Segoe10 };
             y += 25;
-
-            _backupPathBox = new TextBox
-            {
-                Location = new Point(20, y), Size = new Size(350, 25),
-                BackColor = inputBg, BorderStyle = BorderStyle.FixedSingle, Text = ".\\Backup"
-            };
+            _backupPathBox = new TextBox { Location = new Point(20, y), Size = new Size(350, 25), BackColor = inputBg, BorderStyle = BorderStyle.FixedSingle, Text = ".\\Backup" };
             var backupBrowseBtn = new Button
             {
                 Text = "Przeglądaj", Location = new Point(380, y), Size = new Size(90, 25),
                 BackColor = primaryColor, ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand
             };
             backupBrowseBtn.FlatAppearance.BorderSize = 0;
-            backupBrowseBtn.Click += (s, ev) =>
-            {
-                using (var dlg = new FolderBrowserDialog())
-                    if (dlg.ShowDialog() == DialogResult.OK) _backupPathBox.Text = dlg.SelectedPath;
-            };
+            backupBrowseBtn.Click += (s, ev) => { using (var dlg = new FolderBrowserDialog()) if (dlg.ShowDialog() == DialogResult.OK) _backupPathBox.Text = dlg.SelectedPath; };
             y += 45;
 
-            var monitorLabel = new Label
-            {
-                Text = "Plik do monitorowania (backup przy logowaniu):",
-                Location = new Point(20, y), AutoSize = true, Font = UiFonts.Segoe10
-            };
+            var monitorLabel = new Label { Text = "Plik do monitorowania (backup przy logowaniu):", Location = new Point(20, y), AutoSize = true, Font = UiFonts.Segoe10 };
             y += 25;
-
-            _monitorPathBox = new TextBox
-            {
-                Location = new Point(20, y), Size = new Size(350, 25),
-                BackColor = inputBg, BorderStyle = BorderStyle.FixedSingle
-            };
+            _monitorPathBox = new TextBox { Location = new Point(20, y), Size = new Size(350, 25), BackColor = inputBg, BorderStyle = BorderStyle.FixedSingle };
             var monitorBrowseBtn = new Button
             {
                 Text = "Przeglądaj", Location = new Point(380, y), Size = new Size(90, 25),
@@ -675,8 +520,7 @@ namespace SecureDesktop.Forms
 
             var backupNowBtn = new Button
             {
-                Text = "Wykonaj backup teraz",
-                Location = new Point(100, y), Size = new Size(250, 40),
+                Text = "Wykonaj backup teraz", Location = new Point(100, y), Size = new Size(250, 40),
                 BackColor = primaryColor, ForeColor = Color.White, FlatStyle = FlatStyle.Flat,
                 Font = UiFonts.Segoe10Bold, Cursor = Cursors.Hand
             };
@@ -689,7 +533,6 @@ namespace SecureDesktop.Forms
                     MessageBox.Show("Wybierz plik do backupu.", "Info");
                     return;
                 }
-
                 try
                 {
                     var backupService = new Services.BackupService();
@@ -700,53 +543,36 @@ namespace SecureDesktop.Forms
                 catch (Exception ex) { MessageBox.Show("Błąd: " + ex.Message, "Błąd"); }
             };
 
-            tab.Controls.AddRange(new Control[]
-            {
-                backupLabel, _backupPathBox, backupBrowseBtn,
-                monitorLabel, _monitorPathBox, monitorBrowseBtn,
-                backupNowBtn
-            });
+            tab.Controls.AddRange(new Control[] { backupLabel, _backupPathBox, backupBrowseBtn, monitorLabel, _monitorPathBox, monitorBrowseBtn, backupNowBtn });
         }
 
         private void BuildUsersTab(TabPage tab)
         {
-            var titleLabel = new Label
-            {
-                Text = "Zarządzanie użytkownikami",
-                Location = new Point(15, 10),
-                Font = UiFonts.Segoe12Bold,
-                AutoSize = true,
-                ForeColor = primaryColor
-            };
+            var titleLabel = new Label { Text = "Zarządzanie użytkownikami", Location = new Point(15, 10), Font = UiFonts.Segoe12Bold, AutoSize = true, ForeColor = primaryColor };
 
             _userListView = new ListView
             {
-                Location = new Point(15, 40), Size = new Size(550, 320),
-                View = View.Details, FullRowSelect = true, GridLines = true,
-                BackColor = inputBg, ForeColor = textColor,
-                BorderStyle = BorderStyle.FixedSingle
+                Location = new Point(15, 40), Size = new Size(550, 320), View = View.Details,
+                FullRowSelect = true, GridLines = true, BackColor = inputBg, ForeColor = textColor, BorderStyle = BorderStyle.FixedSingle
             };
             _userListView.Columns.Add("ID", 50);
             _userListView.Columns.Add("Numer identyfikacyjny", 200);
             _userListView.Columns.Add("Rola", 100);
             _userListView.Columns.Add("Aktywny", 80);
-
             RefreshUserList();
 
             var addBtn = new Button
             {
-                Text = "Dodaj użytkownika",
-                Location = new Point(580, 40), Size = new Size(150, 35),
-                BackColor = primaryColor, ForeColor = Color.White,
-                FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand, Font = UiFonts.Segoe9Bold
+                Text = "Dodaj użytkownika", Location = new Point(580, 40), Size = new Size(150, 35),
+                BackColor = primaryColor, ForeColor = Color.White, FlatStyle = FlatStyle.Flat,
+                Cursor = Cursors.Hand, Font = UiFonts.Segoe9Bold
             };
             addBtn.FlatAppearance.BorderSize = 0;
             addBtn.Click += AddUser;
 
             var deleteBtn = new Button
             {
-                Text = "Usuń (dezaktywuj)",
-                Location = new Point(580, 85), Size = new Size(150, 35),
+                Text = "Usuń (dezaktywuj)", Location = new Point(580, 85), Size = new Size(150, 35),
                 BackColor = Color.White, ForeColor = Color.FromArgb(220, 80, 80),
                 FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand
             };
@@ -756,10 +582,8 @@ namespace SecureDesktop.Forms
 
             var toggleAdminBtn = new Button
             {
-                Text = "Zmień rolę (Admin/User)",
-                Location = new Point(580, 130), Size = new Size(150, 35),
-                BackColor = Color.White, ForeColor = primaryColor,
-                FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand
+                Text = "Zmień rolę (Admin/User)", Location = new Point(580, 130), Size = new Size(150, 35),
+                BackColor = Color.White, ForeColor = primaryColor, FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand
             };
             toggleAdminBtn.FlatAppearance.BorderColor = primaryColor;
             toggleAdminBtn.FlatAppearance.BorderSize = 1;
@@ -786,21 +610,15 @@ namespace SecureDesktop.Forms
         {
             using (var dialog = new Form
             {
-                Text = "Dodaj użytkownika",
-                Size = new Size(350, 280),
-                StartPosition = FormStartPosition.CenterParent,
-                BackColor = bgColor,
-                FormBorderStyle = FormBorderStyle.FixedDialog,
-                MaximizeBox = false,
-                MinimizeBox = false
+                Text = "Dodaj użytkownika", Size = new Size(350, 280),
+                StartPosition = FormStartPosition.CenterParent, BackColor = bgColor,
+                FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false, MinimizeBox = false
             })
             {
                 var idLabel = new Label { Text = "Numer identyfikacyjny:", Location = new Point(20, 20), AutoSize = true };
                 var idBox = new TextBox { Location = new Point(20, 45), Size = new Size(280, 25), BackColor = inputBg, BorderStyle = BorderStyle.FixedSingle };
-
                 var passLabel = new Label { Text = "Hasło:", Location = new Point(20, 80), AutoSize = true };
                 var passBox = new TextBox { Location = new Point(20, 105), Size = new Size(280, 25), PasswordChar = '●', BackColor = inputBg, BorderStyle = BorderStyle.FixedSingle };
-
                 var adminCheck = new CheckBox { Text = "Uprawnienia administratora", Location = new Point(20, 145), AutoSize = true };
 
                 var okBtn = new Button { Text = "Dodaj", Location = new Point(100, 185), Size = new Size(100, 35), BackColor = primaryColor, ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
@@ -814,17 +632,15 @@ namespace SecureDesktop.Forms
                         MessageBox.Show("Użytkownik o takim numerze już istnieje.", "Błąd");
                         return;
                     }
-
                     var salt = SecurityHelper.GenerateSalt();
-                    var newUser = new User
+                    _userRepo.AddUser(new User
                     {
                         IdentificationNumber = idBox.Text.Trim(),
                         Salt = salt,
                         PasswordHash = SecurityHelper.HashPassword(passBox.Text, salt),
                         IsAdmin = adminCheck.Checked,
                         IsActive = true
-                    };
-                    _userRepo.AddUser(newUser);
+                    });
                     RefreshUserList();
                     dialog.Close();
                 };
@@ -839,25 +655,14 @@ namespace SecureDesktop.Forms
 
         private void DeleteUser(object sender, EventArgs e)
         {
-            if (_userListView.SelectedItems.Count == 0)
-            {
-                MessageBox.Show("Zaznacz użytkownika do usunięcia.", "Info");
-                return;
-            }
+            if (_userListView.SelectedItems.Count == 0) { MessageBox.Show("Zaznacz użytkownika do usunięcia.", "Info"); return; }
             var userId = int.Parse(_userListView.SelectedItems[0].Text);
             var user = _userRepo.GetAllUsers().FirstOrDefault(u => u.Id == userId);
             if (user == null) return;
+            if (user.IdentificationNumber == "admin") { MessageBox.Show("Nie można usunąć domyślnego administratora.", "Błąd"); return; }
 
-            if (user.IdentificationNumber == "admin")
-            {
-                MessageBox.Show("Nie można usunąć domyślnego administratora.", "Błąd");
-                return;
-            }
-
-            var result = MessageBox.Show(
-                $"Czy na pewno dezaktywować użytkownika {user.IdentificationNumber}?",
-                "Potwierdzenie", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
-            if (result == DialogResult.Yes)
+            if (MessageBox.Show($"Czy na pewno dezaktywować użytkownika {user.IdentificationNumber}?",
+                "Potwierdzenie", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
             {
                 _userRepo.DeleteUser(userId);
                 RefreshUserList();
@@ -866,20 +671,11 @@ namespace SecureDesktop.Forms
 
         private void ToggleUserRole(object sender, EventArgs e)
         {
-            if (_userListView.SelectedItems.Count == 0)
-            {
-                MessageBox.Show("Zaznacz użytkownika.", "Info");
-                return;
-            }
+            if (_userListView.SelectedItems.Count == 0) { MessageBox.Show("Zaznacz użytkownika.", "Info"); return; }
             var userId = int.Parse(_userListView.SelectedItems[0].Text);
             var user = _userRepo.GetAllUsers().FirstOrDefault(u => u.Id == userId);
             if (user == null) return;
-
-            if (user.IdentificationNumber == "admin")
-            {
-                MessageBox.Show("Nie można zmienić roli domyślnego administratora.", "Błąd");
-                return;
-            }
+            if (user.IdentificationNumber == "admin") { MessageBox.Show("Nie można zmienić roli domyślnego administratora.", "Błąd"); return; }
 
             user.IsAdmin = !user.IsAdmin;
             _userRepo.UpdateUser(user);
@@ -893,28 +689,20 @@ namespace SecureDesktop.Forms
             {
                 var data = _db.GetData();
                 if (data != null && data.Patterns != null && data.Patterns.Count > 0)
-                {
                     _patterns = data.Patterns;
-                }
                 else
                 {
                     _patterns = new List<Pattern>
                     {
                         new Pattern
                         {
-                            Id = 1,
-                            Name = "Przykładowy wzorzec",
+                            Id = 1, Name = "Przykładowy wzorzec",
                             Description = "Kliknij 'Zaznacz Pattern z ekranu' aby dodać własny",
-                            IsActive = false,
-                            CreatedAt = DateTime.Now,
+                            IsActive = false, CreatedAt = DateTime.Now,
                             MarginTop = 10, MarginBottom = 10, MarginLeft = 10, MarginRight = 10
                         }
                     };
-                    if (_db != null)
-                    {
-                        _db.GetData().Patterns = _patterns;
-                        _db.Save();
-                    }
+                    if (_db != null) { _db.GetData().Patterns = _patterns; _db.Save(); }
                 }
             }
             catch (Exception ex)
@@ -922,7 +710,6 @@ namespace SecureDesktop.Forms
                 _patterns = new List<Pattern>();
                 System.Diagnostics.Debug.WriteLine("Load patterns error: " + ex.Message);
             }
-
             RefreshPatternList();
         }
 
@@ -938,16 +725,12 @@ namespace SecureDesktop.Forms
                     _db.Save();
                 }
             }
-            catch (Exception ex)
-            {
-                MessageBox.Show("Błąd zapisu patternów: " + ex.Message, "Błąd");
-            }
+            catch (Exception ex) { MessageBox.Show("Błąd zapisu patternów: " + ex.Message, "Błąd"); }
         }
 
         private void RefreshPatternList()
         {
             if (_patternListBox == null) return;
-
             _patternListBox.Items.Clear();
             foreach (var p in _patterns)
             {
@@ -961,88 +744,89 @@ namespace SecureDesktop.Forms
 
         private void AddPatternFromScreen(object sender, EventArgs e)
         {
-            this.Hide();
-            System.Threading.Thread.Sleep(300);
+            // Zmniejszamy całe okno Dashboard na czas zaznaczania.
+            var parentForm = this.FindForm();
+            if (parentForm != null) parentForm.WindowState = FormWindowState.Minimized;
+            System.Threading.Thread.Sleep(400);
 
-            var screenBounds = Screen.PrimaryScreen.Bounds;
-            using (var screenshot = new Bitmap(screenBounds.Width, screenBounds.Height))
+            try
             {
-                using (var g = Graphics.FromImage(screenshot))
-                    g.CopyFromScreen(screenBounds.X, screenBounds.Y, 0, 0, screenBounds.Size);
-
-                using (var selectionForm = new ScreenSelectionForm(screenshot))
+                var screenBounds = Screen.PrimaryScreen.Bounds;
+                using (var screenshot = new Bitmap(screenBounds.Width, screenBounds.Height))
                 {
-                    if (selectionForm.ShowDialog() == DialogResult.OK)
+                    using (var g = Graphics.FromImage(screenshot))
+                        g.CopyFromScreen(screenBounds.X, screenBounds.Y, 0, 0, screenBounds.Size);
+
+                    using (var selectionForm = new ScreenSelectionForm(screenshot))
                     {
-                        var selectedImage = selectionForm.SelectedImage;
-                        if (selectedImage != null)
+                        if (selectionForm.ShowDialog() == DialogResult.OK)
                         {
-                            using (var nameDialog = new Form
-                            {
-                                Text = "Nazwa wzorca",
-                                Size = new Size(350, 180),
-                                StartPosition = FormStartPosition.CenterScreen,
-                                BackColor = Color.White,
-                                FormBorderStyle = FormBorderStyle.FixedDialog,
-                                TopMost = true
-                            })
-                            {
-                                var nameLabel = new Label { Text = "Podaj nazwę wzorca:", Location = new Point(20, 20), AutoSize = true, Font = UiFonts.Segoe10 };
-                                var nameBox = new TextBox { Location = new Point(20, 50), Size = new Size(290, 25), Font = UiFonts.Segoe10, BackColor = inputBg, BorderStyle = BorderStyle.FixedSingle };
-                                var okBtn = new Button { Text = "Zapisz", Location = new Point(100, 90), Size = new Size(120, 35), BackColor = primaryColor, ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
-                                okBtn.FlatAppearance.BorderSize = 0;
-                                okBtn.Click += (s2, args) =>
-                                {
-                                    if (!string.IsNullOrWhiteSpace(nameBox.Text))
-                                    {
-                                        byte[] imageData;
-                                        using (var ms = new MemoryStream())
-                                        {
-                                            selectedImage.Save(ms, ImageFormat.Png);
-                                            imageData = ms.ToArray();
-                                        }
-
-                                        var newPattern = new Pattern
-                                        {
-                                            Id = _patterns.Count > 0 ? _patterns.Max(p => p.Id) + 1 : 1,
-                                            Name = nameBox.Text.Trim(),
-                                            Description = "Wzorzec dodany " + DateTime.Now.ToString("yyyy-MM-dd HH:mm"),
-                                            ImageData = imageData,
-                                            MarginTop = (int)_marginBox.Value,
-                                            MarginBottom = (int)_marginBox.Value,
-                                            MarginLeft = (int)_marginBox.Value,
-                                            MarginRight = (int)_marginBox.Value,
-                                            MatchThreshold = (double)_thresholdBox.Value / 100.0,
-                                            IsActive = true,
-                                            CreatedAt = DateTime.Now
-                                        };
-
-                                        _patterns.Add(newPattern);
-                                        SavePatternsToDatabase();
-                                        RefreshPatternList();
-                                        nameDialog.Close();
-                                    }
-                                    else MessageBox.Show("Podaj nazwę wzorca.", "Info");
-                                };
-
-                                nameDialog.Controls.AddRange(new Control[] { nameLabel, nameBox, okBtn });
-                                nameDialog.ShowDialog();
-                            }
+                            var selectedImage = selectionForm.SelectedImage;
+                            if (selectedImage != null)
+                                PromptAndSavePattern(selectedImage);
                         }
                     }
                 }
             }
+            finally
+            {
+                if (parentForm != null) { parentForm.WindowState = FormWindowState.Normal; parentForm.Activate(); }
+            }
+        }
 
-            this.Show();
+        private void PromptAndSavePattern(Image selectedImage)
+        {
+            using (var nameDialog = new Form
+            {
+                Text = "Nazwa wzorca", Size = new Size(360, 180),
+                StartPosition = FormStartPosition.CenterScreen, BackColor = Color.White,
+                FormBorderStyle = FormBorderStyle.FixedDialog, TopMost = true
+            })
+            {
+                var nameLabel = new Label { Text = "Podaj nazwę wzorca:", Location = new Point(20, 20), AutoSize = true, Font = UiFonts.Segoe10 };
+                var nameBox = new TextBox { Location = new Point(20, 50), Size = new Size(300, 25), Font = UiFonts.Segoe10, BackColor = inputBg, BorderStyle = BorderStyle.FixedSingle };
+                var okBtn = new Button { Text = "Zapisz", Location = new Point(110, 90), Size = new Size(120, 35), BackColor = primaryColor, ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
+                okBtn.FlatAppearance.BorderSize = 0;
+                okBtn.Click += (s2, args) =>
+                {
+                    if (string.IsNullOrWhiteSpace(nameBox.Text)) { MessageBox.Show("Podaj nazwę wzorca.", "Info"); return; }
+
+                    byte[] imageData;
+                    using (var ms = new MemoryStream())
+                    {
+                        selectedImage.Save(ms, ImageFormat.Png);
+                        imageData = ms.ToArray();
+                    }
+
+                    _patterns.Add(new Pattern
+                    {
+                        Id = _patterns.Count > 0 ? _patterns.Max(p => p.Id) + 1 : 1,
+                        Name = nameBox.Text.Trim(),
+                        Description = "Dodany " + DateTime.Now.ToString("yyyy-MM-dd HH:mm"),
+                        ImageData = imageData,
+                        MarginTop = (int)_marginBox.Value,
+                        MarginBottom = (int)_marginBox.Value,
+                        MarginLeft = (int)_marginBox.Value,
+                        MarginRight = (int)_marginBox.Value,
+                        MatchThreshold = (double)_thresholdBox.Value / 100.0,
+                        IsActive = true,
+                        CreatedAt = DateTime.Now
+                    });
+                    SavePatternsToDatabase();
+                    RefreshPatternList();
+                    nameDialog.Close();
+                };
+                nameDialog.Controls.AddRange(new Control[] { nameLabel, nameBox, okBtn });
+                nameDialog.ShowDialog();
+            }
         }
 
         private void DeleteSelectedPattern(object sender, EventArgs e)
         {
             if (_patternListBox.SelectedIndex >= 0)
             {
-                var result = MessageBox.Show("Czy na pewno usunąć zaznaczony wzorzec?", "Potwierdzenie",
-                    MessageBoxButtons.YesNo, MessageBoxIcon.Question);
-                if (result == DialogResult.Yes)
+                if (MessageBox.Show("Czy na pewno usunąć zaznaczony wzorzec?", "Potwierdzenie",
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
                 {
                     _patterns.RemoveAt(_patternListBox.SelectedIndex);
                     _patternPreviewBox.Image?.Dispose();
@@ -1058,12 +842,7 @@ namespace SecureDesktop.Forms
         {
             try
             {
-                if (_db == null)
-                {
-                    MessageBox.Show("Błąd: brak połączenia z bazą danych.", "Błąd", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    return;
-                }
-
+                if (_db == null) { MessageBox.Show("Brak bazy.", "Błąd"); return; }
                 var data = _db.GetData();
                 data.Patterns = _patterns;
                 if (_patterns.Count > 0)
@@ -1072,8 +851,7 @@ namespace SecureDesktop.Forms
                 data.Settings["AutoStart"] = (_autoStartCheck?.Checked ?? false).ToString();
                 data.Settings["MinimizeToTray"] = (_trayCheck?.Checked ?? true).ToString();
                 data.Settings["BackupPath"] = _backupPathBox.Text;
-                if (_monitorPathBox != null)
-                    data.Settings["MonitoredFile"] = _monitorPathBox.Text;
+                if (_monitorPathBox != null) data.Settings["MonitoredFile"] = _monitorPathBox.Text;
                 data.Settings["CheckpointPath"] = _checkpointPathBox.Text;
                 data.Settings["CheckpointArgs"] = _checkpointArgsBox.Text;
                 data.Settings["PatternThreshold"] = _thresholdBox.Value.ToString();
@@ -1091,12 +869,10 @@ namespace SecureDesktop.Forms
                 }
 
                 _db.Save();
+                DataSaved?.Invoke();
                 MessageBox.Show("Ustawienia zapisane!", "Sukces", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
-            catch (Exception ex)
-            {
-                MessageBox.Show("Błąd zapisu: " + ex.Message, "Błąd", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
+            catch (Exception ex) { MessageBox.Show("Błąd zapisu: " + ex.Message, "Błąd"); }
         }
     }
 
@@ -1114,7 +890,6 @@ namespace SecureDesktop.Forms
         public ScreenSelectionForm(Bitmap screenshot)
         {
             _screenshot = screenshot;
-
             this.FormBorderStyle = FormBorderStyle.None;
             this.StartPosition = FormStartPosition.Manual;
             this.Bounds = Screen.PrimaryScreen.Bounds;
@@ -1128,11 +903,9 @@ namespace SecureDesktop.Forms
             var infoLabel = new Label
             {
                 Text = "Zaznacz obszar. ENTER = zatwierdź, ESC = anuluj",
-                Font = UiFonts.Segoe14Bold,
-                ForeColor = Color.White,
+                Font = UiFonts.Segoe14Bold, ForeColor = Color.White,
                 BackColor = Color.FromArgb(200, 0, 0, 0),
-                Location = new Point(0, 0),
-                Size = new Size(this.Width, 50),
+                Location = new Point(0, 0), Size = new Size(this.Width, 50),
                 TextAlign = ContentAlignment.MiddleCenter
             };
             this.Controls.Add(infoLabel);
@@ -1160,7 +933,6 @@ namespace SecureDesktop.Forms
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);
-
             if (_startPoint != Point.Empty && _endPoint != Point.Empty)
             {
                 int x = Math.Min(_startPoint.X, _endPoint.X);
@@ -1181,13 +953,10 @@ namespace SecureDesktop.Forms
                 using (var pen = new Pen(Color.FromArgb(45, 165, 90), 3))
                     e.Graphics.DrawRectangle(pen, _selectedRect);
 
-                var font = UiFonts.Segoe12Bold;
                 var sizeText = w + " x " + h + " px";
-                var textSize = e.Graphics.MeasureString(sizeText, font);
-                var textX = x + (w - (int)textSize.Width) / 2;
-                var textY = y - 25;
-                if (textY < 0) textY = y + h + 5;
-                e.Graphics.DrawString(sizeText, font, Brushes.White, textX, textY);
+                var textSize = e.Graphics.MeasureString(sizeText, UiFonts.Segoe12Bold);
+                e.Graphics.DrawString(sizeText, UiFonts.Segoe12Bold, Brushes.White,
+                    x + (w - (int)textSize.Width) / 2, y < 25 ? y + h + 5 : y - 25);
             }
         }
     }
