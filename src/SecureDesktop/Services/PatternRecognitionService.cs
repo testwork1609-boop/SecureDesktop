@@ -22,32 +22,11 @@ namespace SecureDesktop.Services
         private List<CachedPattern> _patterns;
         private readonly Dictionary<string, Rectangle> _lastLocations = new Dictionary<string, Rectangle>();
         private readonly object _sync = new object();
-
-        // Punkt (0,0) przechwyconej bitmapy odpowiada temu punktowi na "wirtualnym"
-        // ekranie (obejmującym wszystkie monitory). Potrzebne, aby poprawnie
-        // przenieść znalezione współrzędne na konkretne monitory w konfiguracjach
-        // wielo-ekranowych (na monitorze innym niż główny origin bywa ujemny).
         private Point _captureOrigin = Point.Empty;
 
         public event EventHandler<PatternFoundEventArgs> PatternFound;
         public event EventHandler<PatternLostEventArgs> PatternLost;
 
-        /// <param name="defaultMatchThreshold">
-        /// Próg zgodności używany dla wzorców, które nie mają ustawionego
-        /// własnego progu (Pattern.MatchThreshold &lt;= 0). W praktyce każdy
-        /// wzorzec ma domyślnie ustawiony własny próg 0.75, więc ta wartość
-        /// pełni rolę zabezpieczenia.
-        /// </param>
-        /// <param name="earlyAcceptThreshold">
-        /// Próg, po którego przekroczeniu przeszukiwanie okolicy danego
-        /// punktu może zakończyć się wcześniej (optymalizacja wydajności,
-        /// nie wpływa na to, czy wzorzec zostanie uznany za znaleziony).
-        /// </param>
-        /// <param name="intervalMs">
-        /// Odstęp między kolejnymi próbami wykrycia wzorców na ekranie.
-        /// Wcześniej był zaszyty na sztywno (200 ms) i ignorował ustawienie
-        /// "Interwał (ms)" z konfiguracji.
-        /// </param>
         public PatternRecognitionService(double defaultMatchThreshold = 0.75, double earlyAcceptThreshold = 0.93, int intervalMs = 200)
         {
             _defaultMatchThreshold = defaultMatchThreshold;
@@ -67,54 +46,17 @@ namespace SecureDesktop.Services
                 {
                     foreach (var p in patterns)
                     {
-                        if (p == null)
-                            continue;
+                        if (p == null) continue;
+                        if (!p.IsActive) continue;
+                        if (p.ImageData == null || p.ImageData.Length == 0) continue;
 
-                        // Pomijamy wzorce oznaczone jako nieaktywne - poprzednio
-                        // były one i tak wczytywane, co mogło niepotrzebnie
-                        // obciążać wyszukiwanie i maskować to, które wzorce
-                        // faktycznie są brane pod uwagę.
-                        if (!p.IsActive)
-                        {
-                            System.Diagnostics.Debug.WriteLine(
-                                $"PatternRecognitionService: pomijam nieaktywny wzorzec '{p.Name}' (Id={p.Id}).");
-                            continue;
-                        }
-
-                        // Wzorzec bez danych obrazu (np. domyślny placeholder
-                        // "Przykladowy wzorzec" tworzony przy pierwszym uruchomieniu
-                        // konfiguracji) wcześniej powodował wyjątek już w konstruktorze
-                        // CachedPattern. Ponieważ cała lista była budowana jednym
-                        // wywołaniem .Select(...).ToList(), pojedynczy wadliwy wzorzec
-                        // przerywał całą operację i Start() rzucał wyjątek dalej -
-                        // w efekcie ŻADEN wzorzec (także poprawnie dodane) nie był
-                        // wyszukiwany. To był najbardziej prawdopodobny powód, dla
-                        // którego dodanie drugiego wzorca "psuło" działanie blokady.
-                        if (p.ImageData == null || p.ImageData.Length == 0)
-                        {
-                            System.Diagnostics.Debug.WriteLine(
-                                $"PatternRecognitionService: pomijam wzorzec '{p.Name}' (Id={p.Id}) - brak danych obrazu.");
-                            continue;
-                        }
-
-                        try
-                        {
-                            _patterns.Add(new CachedPattern(p, _defaultMatchThreshold));
-                        }
+                        try { _patterns.Add(new CachedPattern(p, _defaultMatchThreshold)); }
                         catch (Exception ex)
                         {
-                            // Izolacja błędu per-wzorzec: jeśli jeden wzorzec ma
-                            // uszkodzone/nieprawidłowe dane obrazu, pomijamy go,
-                            // ale reszta poprawnych wzorców nadal działa.
                             System.Diagnostics.Debug.WriteLine(
-                                $"PatternRecognitionService: pomijam wzorzec '{p.Name}' (Id={p.Id}) - błąd wczytywania: {ex.Message}");
+                                $"PatternRecognitionService: pomijam '{p.Name}' (Id={p.Id}) - {ex.Message}");
                         }
                     }
-                }
-
-                if (_patterns.Count == 0)
-                {
-                    System.Diagnostics.Debug.WriteLine("PatternRecognitionService: brak poprawnych wzorców do wyszukania.");
                 }
 
                 _cts = new CancellationTokenSource();
@@ -136,33 +78,24 @@ namespace SecureDesktop.Services
                     {
                         try
                         {
-                            List<CachedPattern> patternsSnapshot;
-                            lock (_sync) { patternsSnapshot = _patterns; }
+                            List<CachedPattern> snapshot;
+                            lock (_sync) { snapshot = _patterns; }
 
-                            if (patternsSnapshot != null)
+                            if (snapshot != null)
                             {
-                                foreach (var pattern in patternsSnapshot)
+                                foreach (var pattern in snapshot)
                                 {
                                     if (token.IsCancellationRequested) break;
-
-                                    try
+                                    try { ProcessPattern(screen, pattern); }
+                                    catch (Exception ex)
                                     {
-                                        ProcessPattern(screen, pattern);
-                                    }
-                                    catch (Exception exPattern)
-                                    {
-                                        // Błąd przy jednym wzorcu nie może przerywać
-                                        // przetwarzania pozostałych wzorców w tej klatce.
                                         System.Diagnostics.Debug.WriteLine(
-                                            $"ProcessPattern error for '{pattern?.Source?.Name}': {exPattern.Message}");
+                                            $"ProcessPattern error '{pattern?.Source?.Name}': {ex.Message}");
                                     }
                                 }
                             }
                         }
-                        finally
-                        {
-                            screen.Dispose();
-                        }
+                        finally { screen.Dispose(); }
                     }
                 }
                 catch (Exception ex)
@@ -182,13 +115,7 @@ namespace SecureDesktop.Services
             Rectangle result = FindPattern(screen, pattern, false);
 
             if (result == Rectangle.Empty && _lastLocations.ContainsKey(key))
-            {
                 result = FindPattern(screen, pattern, true);
-            }
-
-            System.Diagnostics.Debug.WriteLine(
-                $"ProcessPattern: '{key}' -> Found={result != Rectangle.Empty}, " +
-                $"Threshold={pattern.Threshold:F2}, Score={pattern.LastScore:F2}, Location={result}");
 
             if (result != Rectangle.Empty)
             {
@@ -200,40 +127,17 @@ namespace SecureDesktop.Services
                 {
                     int dx = Math.Abs(prev.X - result.X);
                     int dy = Math.Abs(prev.Y - result.Y);
-
-                    // Aktualizuj tylko jeśli zmiana jest większa niż 3 piksele
-                    if (dx > 3 || dy > 3)
-                    {
-                        // Płynne wygładzanie - średnia ważona (70% stara, 30% nowa)
-                        int smoothX = (prev.X * 7 + result.X * 3) / 10;
-                        int smoothY = (prev.Y * 7 + result.Y * 3) / 10;
-                        result = new Rectangle(smoothX, smoothY, result.Width, result.Height);
-                        changed = true;
-                    }
-                    else
-                    {
-                        // Za mała zmiana - ignoruj
-                        changed = false;
-                    }
+                    // Próg 3 px eliminuje mikro-jitter, ale NIE wygładzamy
+                    // pozycji (poprzednie "smoothing" powodowało, że duże
+                    // wzorce pływały po ekranie).
+                    changed = dx > 3 || dy > 3;
                 }
-                else
-                {
-                    // Pierwsze wykrycie - zawsze aktualizuj
-                    changed = true;
-                }
+                else changed = true;
 
                 if (changed)
                 {
-                    // _lastLocations trzymamy w lokalnych współrzędnych bitmapy
-                    // (0-based względem punktu _captureOrigin), żeby wyszukiwanie
-                    // okolicznościowe (ExpandRectangle) działało spójnie niezależnie
-                    // od tego, na którym monitorze faktycznie leży wzorzec.
                     _lastLocations[key] = result;
 
-                    // Na zewnątrz (do UI/overlayów) wystawiamy już współrzędne
-                    // bezwzględne (względem całego układu monitorów), bo to one
-                    // są potrzebne do poprawnego umieszczenia "okienka" odblokowania
-                    // na właściwym monitorze.
                     var absoluteLocation = new Rectangle(
                         result.X + _captureOrigin.X,
                         result.Y + _captureOrigin.Y,
@@ -271,9 +175,7 @@ namespace SecureDesktop.Services
             try { if (_worker != null) _worker.Wait(1000); } catch { }
 
             if (toDispose != null)
-            {
                 foreach (var p in toDispose) p.Dispose();
-            }
 
             _lastLocations.Clear();
         }
@@ -282,25 +184,16 @@ namespace SecureDesktop.Services
         {
             try
             {
-                // Poprzednio używano wyłącznie Screen.PrimaryScreen.Bounds, co
-                // oznaczało, że wzorce znajdujące się na dodatkowym monitorze
-                // (w konfiguracji wielo-ekranowej) nigdy nie mogły zostać znalezione.
-                // SystemInformation.VirtualScreen obejmuje wszystkie monitory.
                 Rectangle bounds = SystemInformation.VirtualScreen;
                 Bitmap bmp = new Bitmap(bounds.Width, bounds.Height, PixelFormat.Format24bppRgb);
 
                 using (Graphics g = Graphics.FromImage(bmp))
-                {
                     g.CopyFromScreen(bounds.Location, Point.Empty, bounds.Size);
-                }
 
                 _captureOrigin = bounds.Location;
                 return bmp;
             }
-            catch
-            {
-                return null;
-            }
+            catch { return null; }
         }
 
         private Rectangle FindPattern(Bitmap screen, CachedPattern pattern, bool forceFullScreen)
@@ -312,16 +205,13 @@ namespace SecureDesktop.Services
             {
                 Rectangle last;
                 if (_lastLocations.TryGetValue(key, out last))
-                {
                     searchArea = ExpandRectangle(last, 250, screen.Size);
-                }
             }
 
             if (searchArea.Width <= pattern.Width || searchArea.Height <= pattern.Height)
                 return Rectangle.Empty;
 
             BitmapData screenData = screen.LockBits(searchArea, ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
-
             try
             {
                 return FindPatternInLockedData(screenData, searchArea, pattern);
@@ -341,9 +231,11 @@ namespace SecureDesktop.Services
             int maxY = searchArea.Height - pattern.Height;
             if (maxX <= 0 || maxY <= 0) return Rectangle.Empty;
 
-            int coarseStep = Math.Max(4, Math.Min(pattern.Width, pattern.Height) / 6);
-            int rows = (maxY / coarseStep) + 1;
+            // Drobniejszy krok coarse dla małych wzorców, grubszy dla dużych.
+            int minDim = Math.Min(pattern.Width, pattern.Height);
+            int coarseStep = minDim <= 48 ? 2 : Math.Max(4, minDim / 6);
 
+            int rows = (maxY / coarseStep) + 1;
             var bestPerRow = new RowResult[rows];
 
             Parallel.For(0, rows, ri =>
@@ -368,22 +260,17 @@ namespace SecureDesktop.Services
 
             RowResult candidate = new RowResult { Score = -1 };
             for (int i = 0; i < bestPerRow.Length; i++)
-            {
                 if (bestPerRow[i].Score > candidate.Score)
                     candidate = bestPerRow[i];
-            }
 
-            // Używamy progu WŁAŚCIWEGO DLA TEGO WZORCA, a nie jednego globalnego -
-            // to kluczowa poprawka błędu, w którym drugi (i kolejne) wzorce mogły
-            // nigdy nie osiągnąć wspólnego, sztywnego progu 0.75/0.93.
-            if (candidate.Score < pattern.Threshold * 0.6)
+            if (candidate.Score < pattern.Threshold * 0.35)
                 return Rectangle.Empty;
 
             double bestScore = 0;
             int bestX = candidate.X;
             int bestY = candidate.Y;
 
-            int refineRadius = coarseStep;
+            int refineRadius = Math.Max(coarseStep, 8);
             int rx0 = Math.Max(0, candidate.X - refineRadius);
             int rx1 = Math.Min(maxX, candidate.X + refineRadius);
             int ry0 = Math.Max(0, candidate.Y - refineRadius);
@@ -440,7 +327,9 @@ namespace SecureDesktop.Services
                 int dr = r - p.R;
                 int dg = g - p.G;
                 int db = b - p.B;
-                if ((dr * dr + dg * dg + db * db) < 1200)
+                // Tolerancja 1600 (~40 na kanał). Poprzednie 1200 bywało
+                // za ostre dla małych, zantyaliasowanych ikon pulpitu.
+                if ((dr * dr + dg * dg + db * db) < 1600)
                     good++;
             }
 
@@ -479,11 +368,6 @@ namespace SecureDesktop.Services
         public PatternPoint[] Points;
         public PatternPoint[] CoarsePoints;
         public double LastScore;
-
-        /// <summary>
-        /// Efektywny próg zgodności dla tego wzorca: własny (Pattern.MatchThreshold),
-        /// a jeśli nie ustawiono poprawnej wartości - domyślny przekazany do serwisu.
-        /// </summary>
         public double Threshold;
 
         public CachedPattern(Pattern pattern, double defaultThreshold)
@@ -506,7 +390,9 @@ namespace SecureDesktop.Services
                 if (Width <= 0 || Height <= 0)
                     throw new InvalidOperationException("Wzorzec ma nieprawidłowe wymiary.");
 
-                int targetPoints = Clamp((Width * Height) / 40, 64, 600);
+                // Więcej punktów dla małych wzorców - gęstość próbkowania
+                // dostosowana tak, żeby nawet 16x16 miało pełne pokrycie.
+                int targetPoints = Clamp((Width * Height) / 16, 150, 900);
                 int gridSize = (int)Math.Sqrt(targetPoints);
                 int stepX = Math.Max(1, Width / gridSize);
                 int stepY = Math.Max(1, Height / gridSize);
@@ -570,10 +456,7 @@ namespace SecureDesktop.Services
             return Color.FromArgb(p[2], p[1], p[0]);
         }
 
-        public void Dispose()
-        {
-            _bmp.UnlockBits(_data);
-        }
+        public void Dispose() { _bmp.UnlockBits(_data); }
     }
 
     internal struct PatternPoint
