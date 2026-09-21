@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using SecureDesktop.Utils;
@@ -18,13 +19,16 @@ namespace SecureDesktop.Forms
         private readonly Screen _screen;
         private readonly Dictionary<string, Rectangle> _unlockRegions;
         private readonly Func<string, bool> _verifyPassword;
+        private readonly Bitmap _sourceScreenshot;
+        private Bitmap _dimmedBackground;
         private Bitmap _lockIconBitmap;
 
         public Rectangle ScreenBounds => _screen.Bounds;
 
-        public ScreenLockForm(Screen screen, Func<string, bool> verifyPassword = null)
+        public ScreenLockForm(Screen screen, Bitmap sourceScreenshot, Func<string, bool> verifyPassword = null)
         {
             _screen = screen;
+            _sourceScreenshot = sourceScreenshot;
             _unlockRegions = new Dictionary<string, Rectangle>();
             _verifyPassword = verifyPassword ?? (pwd => false);
             InitializeComponent();
@@ -55,20 +59,24 @@ namespace SecureDesktop.Forms
             this.TopMost = true;
             this.StartPosition = FormStartPosition.Manual;
             this.Bounds = _screen.Bounds;
-            this.Cursor = Cursors.No;                    // czerwony zakaz ruchu
-            this.BackColor = Color.Fuchsia;              // klucz przezroczystości
-            this.TransparencyKey = Color.Fuchsia;        // cały form widoczny tylko tam,
-            this.AllowTransparency = true;               // gdzie są kontrolki / rysunki
+            this.Cursor = Cursors.No;
+            this.BackColor = Color.Black;
             this.DoubleBuffered = true;
             this.KeyPreview = true;
 
-            // Ikona kłódki - jedyny widoczny element oprócz obramowań.
+            if (_sourceScreenshot != null)
+            {
+                _dimmedBackground = Darken(_sourceScreenshot, 120);
+                this.BackgroundImage = _dimmedBackground;
+                this.BackgroundImageLayout = ImageLayout.None;
+            }
+
             _lockIconBitmap = CreateLockIconBitmap(56, Color.White);
 
             var lockIcon = new PictureBox
             {
-                Size = new Size(56, 56),
-                Location = new Point(this.Width - 76, 20),
+                Size = new Size(72, 72),
+                Location = new Point(this.Width - 96, 20),
                 BackColor = primaryColor,
                 Cursor = Cursors.Hand,
                 Image = _lockIconBitmap,
@@ -78,7 +86,6 @@ namespace SecureDesktop.Forms
 
             this.Controls.Add(lockIcon);
 
-            // Ctrl+L jako skrót dla wygody.
             this.KeyDown += (s, e) =>
             {
                 if (e.Control && e.KeyCode == Keys.L)
@@ -89,6 +96,18 @@ namespace SecureDesktop.Forms
             };
         }
 
+        private static Bitmap Darken(Bitmap source, int alpha)
+        {
+            var bmp = new Bitmap(source.Width, source.Height, PixelFormat.Format24bppRgb);
+            using (var g = Graphics.FromImage(bmp))
+            {
+                g.DrawImageUnscaled(source, 0, 0);
+                using (var brush = new SolidBrush(Color.FromArgb(alpha, 0, 0, 0)))
+                    g.FillRectangle(brush, 0, 0, bmp.Width, bmp.Height);
+            }
+            return bmp;
+        }
+
         private static Bitmap CreateLockIconBitmap(int size, Color color)
         {
             var bmp = new Bitmap(size, size);
@@ -96,10 +115,13 @@ namespace SecureDesktop.Forms
             {
                 g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
                 g.Clear(Color.Transparent);
+
                 using (var brush = new SolidBrush(color))
                     g.FillRectangle(brush, size / 4, size / 2, size / 2, size / 2 - 2);
+
                 using (var pen = new Pen(color, Math.Max(3, size / 12)))
                     g.DrawArc(pen, size / 4 + 2, size / 8, size / 2 - 4, size / 3, 180, 180);
+
                 using (var brush = new SolidBrush(Color.FromArgb(45, 165, 90)))
                 {
                     g.FillEllipse(brush, size * 5 / 12, size * 7 / 12, size / 6, size / 8);
@@ -136,8 +158,7 @@ namespace SecureDesktop.Forms
 
             if (_unlockRegions.Count == 0) return;
 
-            // Tylko delikatna szara ramka wokół obszaru odblokowania.
-            using (var pen = new Pen(Color.FromArgb(170, 170, 170), 2))
+            using (var pen = new Pen(Color.FromArgb(190, 190, 190), 2))
             {
                 foreach (var region in _unlockRegions.Values)
                 {
@@ -196,6 +217,7 @@ namespace SecureDesktop.Forms
 
                 var unlockBtn = new Button { Text = "Odblokuj", Location = new Point(80, 150), Size = new Size(100, 36), BackColor = primaryColor, ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
                 unlockBtn.FlatAppearance.BorderSize = 0;
+
                 var cancelBtn = new Button { Text = "Anuluj", Location = new Point(190, 150), Size = new Size(100, 36), BackColor = Color.White, FlatStyle = FlatStyle.Flat };
 
                 Action unlockAction = () =>
@@ -216,10 +238,12 @@ namespace SecureDesktop.Forms
 
                 unlockBtn.Click += (s, args) => unlockAction();
                 cancelBtn.Click += (s, args) => dialog.Close();
+
                 passBox.KeyDown += (s, args) =>
                 {
                     if (args.KeyCode == Keys.Enter) { args.SuppressKeyPress = true; unlockAction(); }
                 };
+
                 dialog.KeyDown += (s, args) =>
                 {
                     if (args.KeyCode == Keys.Enter) { args.SuppressKeyPress = true; unlockAction(); }
@@ -238,6 +262,11 @@ namespace SecureDesktop.Forms
             {
                 _lockIconBitmap?.Dispose();
                 _lockIconBitmap = null;
+
+                _dimmedBackground?.Dispose();
+                _dimmedBackground = null;
+
+                _sourceScreenshot?.Dispose();
             }
             base.Dispose(disposing);
         }
