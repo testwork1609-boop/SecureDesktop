@@ -18,11 +18,6 @@ namespace SecureDesktop.Services
 
         public bool IsLocked => _isLocked;
 
-        /// <summary>
-        /// Callback weryfikujący hasło użytkownika przy próbie odblokowania.
-        /// Ustawiany raz (w DashboardForm) na podstawie hasha aktualnie
-        /// zalogowanego użytkownika.
-        /// </summary>
         public Func<string, bool> PasswordVerifier { get; set; }
 
         public ScreenLockService()
@@ -36,9 +31,14 @@ namespace SecureDesktop.Services
 
             try
             {
+                var screenshots = CaptureAllScreens();
+
                 foreach (var screen in Screen.AllScreens)
                 {
-                    var overlay = new ScreenLockForm(screen, PasswordVerifier);
+                    Bitmap shot;
+                    screenshots.TryGetValue(screen, out shot);
+
+                    var overlay = new ScreenLockForm(screen, shot, PasswordVerifier);
                     overlay.FormClosed += (s, e) =>
                     {
                         _overlays.Remove(overlay);
@@ -72,9 +72,14 @@ namespace SecureDesktop.Services
             {
                 _patternService = patternService ?? new PatternRecognitionService();
 
+                var screenshots = CaptureAllScreens();
+
                 foreach (var screen in Screen.AllScreens)
                 {
-                    var overlay = new ScreenLockForm(screen, PasswordVerifier);
+                    Bitmap shot;
+                    screenshots.TryGetValue(screen, out shot);
+
+                    var overlay = new ScreenLockForm(screen, shot, PasswordVerifier);
                     overlay.FormClosed += (s, e) =>
                     {
                         _overlays.Remove(overlay);
@@ -105,19 +110,41 @@ namespace SecureDesktop.Services
             }
         }
 
+        /// <summary>
+        /// Wykonuje zrzut każdego monitora PRZED pokazaniem jakiegokolwiek
+        /// overlaya. Każdy ScreenLockForm użyje go jako tła, przyciemnionego
+        /// lokalnie - dzięki temu nie potrzebujemy WS_EX_LAYERED, a
+        /// SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE) działa poprawnie,
+        /// więc PatternRecognitionService widzi żywy (nieprzygaszony) ekran.
+        /// </summary>
+        private Dictionary<Screen, Bitmap> CaptureAllScreens()
+        {
+            var result = new Dictionary<Screen, Bitmap>();
+            foreach (var screen in Screen.AllScreens)
+            {
+                try
+                {
+                    var bounds = screen.Bounds;
+                    var bmp = new Bitmap(bounds.Width, bounds.Height, System.Drawing.Imaging.PixelFormat.Format24bppRgb);
+                    using (var g = Graphics.FromImage(bmp))
+                        g.CopyFromScreen(bounds.Location, Point.Empty, bounds.Size);
+                    result[screen] = bmp;
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine("Capture error: " + ex.Message);
+                }
+            }
+            return result;
+        }
+
         private void OnPatternFound(object sender, PatternFoundEventArgs e)
         {
             if (e.Pattern == null || e.Location == Rectangle.Empty) return;
 
-            var absoluteRegion = new Rectangle(
-                e.Location.X - e.Pattern.MarginLeft,
-                e.Location.Y - e.Pattern.MarginTop,
-                e.Location.Width + e.Pattern.MarginLeft + e.Pattern.MarginRight,
-                e.Location.Height + e.Pattern.MarginTop + e.Pattern.MarginBottom
-            );
-
-            if (absoluteRegion.Width <= 0) absoluteRegion.Width = e.Location.Width;
-            if (absoluteRegion.Height <= 0) absoluteRegion.Height = e.Location.Height;
+            // Brak marginesów - ramka ma być dokładnie w miejscu, gdzie
+            // znaleziono wzorzec, nie powiększona.
+            Rectangle absoluteRegion = e.Location;
 
             string key = e.Pattern.Name ?? ("pattern_" + e.Pattern.Id);
 
@@ -126,6 +153,7 @@ namespace SecureDesktop.Services
                 if (overlay is ScreenLockForm lockForm && !lockForm.IsDisposed)
                 {
                     var screenBounds = lockForm.ScreenBounds;
+
                     if (!screenBounds.IntersectsWith(absoluteRegion))
                         continue;
 
