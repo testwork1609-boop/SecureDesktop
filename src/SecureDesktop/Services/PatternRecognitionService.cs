@@ -161,11 +161,9 @@ namespace SecureDesktop.Services
 
             MatchResult match = FindBestMatch(screen, pattern, searchArea);
 
-            // Zapisz max-ever dla diagnostyki.
             if (!_bestEver.ContainsKey(key) || pattern.LastScore > _bestEver[key])
                 _bestEver[key] = pattern.LastScore;
 
-            // Log diagnostyczny co 1 sekundę.
             DateTime lastLog;
             if (!_lastDiagLog.TryGetValue(key, out lastLog) ||
                 (DateTime.Now - lastLog).TotalSeconds >= 1.0)
@@ -173,7 +171,6 @@ namespace SecureDesktop.Services
                 Log($"DIAG '{key}': best={pattern.LastScore:F3} max_ever={_bestEver[key]:F3} " +
                     $"threshold={pattern.Threshold:F2} found={match.Found}");
 
-                // Loguj pierwsze trafienie i zmianę stanu.
                 if (match.Found)
                     Log($"  -> ZNALEZIONO @ ({match.X},{match.Y}) score={match.Score:F3}");
 
@@ -264,11 +261,11 @@ namespace SecureDesktop.Services
                 return MatchResult.NotFound;
 
             BitmapData data = screen.LockBits(searchArea, ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
-            try { return FindBestMatchLocked(data, searchArea, pattern); }
+            try { return FindBestMatchInArea(data, searchArea, pattern); }
             finally { screen.UnlockBits(data); }
         }
 
-        private unsafe MatchResult FindBestMatchLocked(BitmapData data, Rectangle searchArea, CachedPattern pattern)
+        internal unsafe MatchResult FindBestMatchInArea(BitmapData data, Rectangle searchArea, CachedPattern pattern)
         {
             byte* ptr = (byte*)data.Scan0;
             int stride = data.Stride;
@@ -390,6 +387,50 @@ namespace SecureDesktop.Services
             if (_cts != null) _cts.Dispose();
         }
 
+        /// <summary>
+        /// Jednorazowy test wzorca względem aktualnego ekranu. Zwraca score
+        /// najlepszego dopasowania, pozycję i screenshot z możliwością
+        /// podejrzenia, gdzie algorytm "widzi" wzorzec.
+        /// </summary>
+        public static PatternTestResult TestPatternAgainstCurrentScreen(Pattern pattern, double defaultThreshold = 0.75)
+        {
+            var result = new PatternTestResult();
+            try
+            {
+                var cached = new CachedPattern(pattern, defaultThreshold);
+                result.Threshold = cached.Threshold;
+                result.PatternWidth = cached.Width;
+                result.PatternHeight = cached.Height;
+                result.StdDev = cached.StdDev;
+
+                Rectangle bounds = SystemInformation.VirtualScreen;
+                var bmp = new Bitmap(bounds.Width, bounds.Height, PixelFormat.Format24bppRgb);
+                using (var g = Graphics.FromImage(bmp))
+                    g.CopyFromScreen(bounds.Location, Point.Empty, bounds.Size);
+
+                result.Screenshot = bmp;
+
+                BitmapData data = bmp.LockBits(
+                    new Rectangle(0, 0, bmp.Width, bmp.Height),
+                    ImageLockMode.ReadOnly,
+                    PixelFormat.Format24bppRgb);
+
+                try
+                {
+                    var svc = new PatternRecognitionService();
+                    var match = svc.FindBestMatchInArea(data,
+                        new Rectangle(0, 0, bmp.Width, bmp.Height), cached);
+
+                    result.Score = match.Score;
+                    result.Found = match.Found;
+                    result.Location = new Point(match.X, match.Y);
+                }
+                finally { bmp.UnlockBits(data); }
+            }
+            catch (Exception ex) { result.Error = ex.Message; }
+            return result;
+        }
+
         private struct MatchResult
         {
             public bool Found;
@@ -498,5 +539,18 @@ namespace SecureDesktop.Services
     public class PatternLostEventArgs : EventArgs
     {
         public Pattern Pattern { get; set; }
+    }
+
+    public class PatternTestResult
+    {
+        public bool Found;
+        public double Score;
+        public double Threshold;
+        public double StdDev;
+        public Point Location;
+        public int PatternWidth;
+        public int PatternHeight;
+        public string Error;
+        public Bitmap Screenshot;
     }
 }
