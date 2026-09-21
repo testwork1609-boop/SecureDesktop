@@ -8,15 +8,11 @@ namespace SecureDesktop.Database
 {
     public class DatabaseInitializer
     {
-        // Bez tych limitów listy EventLogs/Sessions rosną bez ograniczeń,
-        // a każde Save() serializuje CAŁĄ bazę do jednego pliku JSON,
-        // synchronicznie, na wątku wywołującym. W dłuższej perspektywie
-        // (miesiące działania, częste logowania) prowadziło to do coraz
-        // wolniejszych zapisów i coraz większego pliku bazy.
         private const int MaxEventLogs = 5000;
         private const int MaxSessions = 1000;
 
         private readonly string _dbPath;
+        private readonly object _ioLock = new object();
         private DatabaseData _data;
 
         public DatabaseInitializer(string dbPath)
@@ -26,35 +22,68 @@ namespace SecureDesktop.Database
 
         public void Initialize()
         {
-            try
+            lock (_ioLock)
             {
-                var dbDirectory = Path.GetDirectoryName(_dbPath);
-                if (!Directory.Exists(dbDirectory))
-                    Directory.CreateDirectory(dbDirectory);
-
-                if (File.Exists(_dbPath))
+                try
                 {
-                    var json = File.ReadAllText(_dbPath);
-                    _data = JsonConvert.DeserializeObject<DatabaseData>(json);
+                    var dbDirectory = Path.GetDirectoryName(_dbPath);
+                    if (!string.IsNullOrEmpty(dbDirectory) && !Directory.Exists(dbDirectory))
+                        Directory.CreateDirectory(dbDirectory);
 
-                    if (_data == null)
+                    if (File.Exists(_dbPath))
                     {
-                        string backupPath = _dbPath + ".backup_" + DateTime.Now.ToString("yyyyMMddHHmmss");
-                        File.Copy(_dbPath, backupPath);
-                        _data = new DatabaseData();
+                        var json = File.ReadAllText(_dbPath);
+                        _data = JsonConvert.DeserializeObject<DatabaseData>(json);
+
+                        if (_data == null)
+                        {
+                            string backupPath = _dbPath + ".backup_" + DateTime.Now.ToString("yyyyMMddHHmmss");
+                            File.Copy(_dbPath, backupPath, overwrite: true);
+                            _data = new DatabaseData();
+                        }
                     }
+                    else
+                    {
+                        _data = new DatabaseData();
+                        InsertDefaultData();
+                        SaveInternal();
+                        return;
+                    }
+
+                    MigrateLegacyPasswordSetting();
                 }
-                else
+                catch (Exception ex)
                 {
-                    _data = new DatabaseData();
-                    InsertDefaultData();
-                    Save();
+                    throw new Exception("Database init failed: " + ex.Message, ex);
                 }
             }
-            catch (Exception ex)
+        }
+
+        /// <summary>
+        /// Jednorazowa migracja: jeśli w Settings istnieje stare pole
+        /// "AdminPassword" (plaintext), przenosimy je do User.PasswordHash
+        /// (z nową solą) i usuwamy z Settings. Dzięki temu hasło przestaje
+        /// leżeć jawnym tekstem w database.json.
+        /// </summary>
+        private void MigrateLegacyPasswordSetting()
+        {
+            if (_data?.Settings == null) return;
+            if (!_data.Settings.TryGetValue("AdminPassword", out var legacy)) return;
+
+            if (!string.IsNullOrEmpty(legacy) && _data.Users != null)
             {
-                throw new Exception("Database init failed: " + ex.Message, ex);
+                var admin = _data.Users.FirstOrDefault(u => u.IdentificationNumber == "admin");
+                if (admin != null)
+                {
+                    admin.Salt = Convert.ToBase64String(Guid.NewGuid().ToByteArray());
+                    admin.PasswordHash = Convert.ToBase64String(
+                        System.Security.Cryptography.SHA256.Create().ComputeHash(
+                            System.Text.Encoding.UTF8.GetBytes(legacy + admin.Salt)));
+                }
             }
+
+            _data.Settings.Remove("AdminPassword");
+            SaveInternal();
         }
 
         private void InsertDefaultData()
@@ -82,42 +111,54 @@ namespace SecureDesktop.Database
             _data.Settings["AutoStart"] = "false";
             _data.Settings["MinimizeToTray"] = "true";
             _data.Settings["Theme"] = "Dark";
-            _data.Settings["AdminPassword"] = "admin";
             _data.Settings["BackupPath"] = ".\\Backup";
         }
 
         public void Save()
         {
-            TrimData();
-            var json = JsonConvert.SerializeObject(_data, Formatting.Indented);
-            File.WriteAllText(_dbPath, json);
+            lock (_ioLock) SaveInternal();
         }
 
-        /// <summary>
-        /// Przycina najstarsze wpisy EventLogs/Sessions ponad ustalony limit,
-        /// żeby rozmiar bazy i czas zapisu nie rosły bez końca w czasie.
-        /// Listy są uzupełniane w kolejności chronologicznej, więc usuwamy
-        /// zakres od początku (najstarsze wpisy).
-        /// </summary>
+        private void SaveInternal()
+        {
+            TrimData();
+            var json = JsonConvert.SerializeObject(_data, Formatting.Indented);
+
+            // Atomowy zapis: najpierw tmp, potem File.Replace. Zapobiega
+            // uszkodzeniu database.json, gdyby aplikacja padła w połowie zapisu.
+            var tmp = _dbPath + ".tmp";
+            File.WriteAllText(tmp, json);
+
+            if (File.Exists(_dbPath))
+            {
+                try
+                {
+                    File.Replace(tmp, _dbPath, _dbPath + ".bak", ignoreMetadataErrors: true);
+                }
+                catch
+                {
+                    File.Copy(tmp, _dbPath, overwrite: true);
+                    try { File.Delete(tmp); } catch { }
+                }
+            }
+            else
+            {
+                File.Move(tmp, _dbPath);
+            }
+        }
+
         private void TrimData()
         {
             if (_data == null) return;
 
             if (_data.EventLogs != null && _data.EventLogs.Count > MaxEventLogs)
-            {
-                int removeCount = _data.EventLogs.Count - MaxEventLogs;
-                _data.EventLogs.RemoveRange(0, removeCount);
-            }
+                _data.EventLogs.RemoveRange(0, _data.EventLogs.Count - MaxEventLogs);
 
             if (_data.Sessions != null && _data.Sessions.Count > MaxSessions)
-            {
-                int removeCount = _data.Sessions.Count - MaxSessions;
-                _data.Sessions.RemoveRange(0, removeCount);
-            }
+                _data.Sessions.RemoveRange(0, _data.Sessions.Count - MaxSessions);
         }
 
         public DatabaseData GetData() => _data;
-
         public string GetDatabasePath() => _dbPath;
     }
 
