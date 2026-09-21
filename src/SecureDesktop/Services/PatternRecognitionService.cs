@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -11,26 +10,39 @@ using SecureDesktop.Models;
 
 namespace SecureDesktop.Services
 {
+    /// <summary>
+    /// Rozpoznawanie wzorca oparte na NCC (Normalized Cross-Correlation)
+    /// na obrazie w odcieniach szarości.
+    ///
+    /// Zalety NCC w tym zastosowaniu:
+    ///  - Niezmiennicze na zmianę jasności/kontrastu (np. przyciemnienie
+    ///    przez overlay blokady nie psuje dopasowania).
+    ///  - Odporne na drobne różnice antialiasu między klatkami.
+    ///  - Daje wyraźny pik dla prawdziwego dopasowania (>0.95) i wyraźnie
+    ///    niższe wartości dla przypadkowych (<0.7), co ułatwia odrzucanie
+    ///    fałszywych trafień i stabilizację pozycji ramki.
+    /// </summary>
     public class PatternRecognitionService : IDisposable
     {
         private readonly double _defaultMatchThreshold;
-        private readonly double _acceptThreshold;
         private readonly int _intervalMs;
         private CancellationTokenSource _cts;
         private Task _worker;
         private bool _isRunning;
         private List<CachedPattern> _patterns;
         private readonly Dictionary<string, Rectangle> _lastLocations = new Dictionary<string, Rectangle>();
+        private readonly Dictionary<string, double> _lastScores = new Dictionary<string, double>();
         private readonly object _sync = new object();
         private Point _captureOrigin = Point.Empty;
 
         public event EventHandler<PatternFoundEventArgs> PatternFound;
         public event EventHandler<PatternLostEventArgs> PatternLost;
 
-        public PatternRecognitionService(double defaultMatchThreshold = 0.75, double earlyAcceptThreshold = 0.93, int intervalMs = 200)
+        public PatternRecognitionService(double defaultMatchThreshold = 0.85,
+                                         double earlyAcceptThreshold = 0.97,
+                                         int intervalMs = 200)
         {
             _defaultMatchThreshold = defaultMatchThreshold;
-            _acceptThreshold = earlyAcceptThreshold;
             _intervalMs = Math.Max(50, intervalMs);
         }
 
@@ -90,7 +102,7 @@ namespace SecureDesktop.Services
                                     catch (Exception ex)
                                     {
                                         System.Diagnostics.Debug.WriteLine(
-                                            $"ProcessPattern error '{pattern?.Source?.Name}': {ex.Message}");
+                                            $"ProcessPattern '{pattern?.Source?.Name}': {ex.Message}");
                                     }
                                 }
                             }
@@ -112,49 +124,75 @@ namespace SecureDesktop.Services
         {
             string key = pattern.Source.Name ?? ("pattern_" + pattern.Source.Id);
 
-            Rectangle result = FindPattern(screen, pattern, false);
+            Rectangle prev;
+            bool hasPrev = _lastLocations.TryGetValue(key, out prev);
 
-            if (result == Rectangle.Empty && _lastLocations.ContainsKey(key))
-                result = FindPattern(screen, pattern, true);
+            // 1) Szukaj najpierw w oknie ±150 px wokół ostatniej pozycji
+            //    (szybko, stabilnie, brak skoków między odległymi rejonami).
+            Rectangle searchArea = hasPrev
+                ? Inflate(prev, 150, screen.Size)
+                : new Rectangle(0, 0, screen.Width, screen.Height);
 
-            if (result != Rectangle.Empty)
+            var match = FindBestMatch(screen, pattern, searchArea);
+
+            // 2) Jeśli nie znaleźliśmy w oknie, spróbuj pełny ekran (fallback).
+            if (!match.Found && hasPrev)
             {
-                Rectangle prev;
-                bool hasPrev = _lastLocations.TryGetValue(key, out prev);
-                bool changed;
+                match = FindBestMatch(screen, pattern,
+                    new Rectangle(0, 0, screen.Width, screen.Height));
+            }
+
+            if (match.Found)
+            {
+                var newRect = new Rectangle(match.X, match.Y, pattern.Width, pattern.Height);
+                bool shouldReport = true;
 
                 if (hasPrev)
                 {
-                    int dx = Math.Abs(prev.X - result.X);
-                    int dy = Math.Abs(prev.Y - result.Y);
-                    // Próg 3 px eliminuje mikro-jitter, ale NIE wygładzamy
-                    // pozycji (poprzednie "smoothing" powodowało, że duże
-                    // wzorce pływały po ekranie).
-                    changed = dx > 3 || dy > 3;
+                    int dx = Math.Abs(prev.X - match.X);
+                    int dy = Math.Abs(prev.Y - match.Y);
+
+                    // Anti-jitter: mikro-ruch < 3 px w obu osiach - ignoruj.
+                    if (dx <= 3 && dy <= 3)
+                        shouldReport = false;
+
+                    // Histereza: duży skok (>20 px) akceptujemy tylko jeśli
+                    // nowy wynik jest istotnie lepszy (żeby nie skakać na
+                    // fałszywe dopasowania w innych częściach ekranu).
+                    if (shouldReport && (dx > 20 || dy > 20))
+                    {
+                        double prevScore;
+                        if (_lastScores.TryGetValue(key, out prevScore))
+                        {
+                            if (match.Score < prevScore + 0.03)
+                                shouldReport = false;
+                        }
+                    }
                 }
-                else changed = true;
 
-                if (changed)
+                if (shouldReport)
                 {
-                    _lastLocations[key] = result;
+                    _lastLocations[key] = newRect;
+                    _lastScores[key] = match.Score;
 
-                    var absoluteLocation = new Rectangle(
-                        result.X + _captureOrigin.X,
-                        result.Y + _captureOrigin.Y,
-                        result.Width,
-                        result.Height);
+                    var absLocation = new Rectangle(
+                        newRect.X + _captureOrigin.X,
+                        newRect.Y + _captureOrigin.Y,
+                        newRect.Width,
+                        newRect.Height);
 
                     PatternFound?.Invoke(this, new PatternFoundEventArgs
                     {
                         Pattern = pattern.Source,
-                        Location = absoluteLocation,
-                        Confidence = pattern.LastScore
+                        Location = absLocation,
+                        Confidence = match.Score
                     });
                 }
             }
-            else if (_lastLocations.ContainsKey(key))
+            else if (hasPrev)
             {
                 _lastLocations.Remove(key);
+                _lastScores.Remove(key);
                 PatternLost?.Invoke(this, new PatternLostEventArgs { Pattern = pattern.Source });
             }
         }
@@ -172,12 +210,13 @@ namespace SecureDesktop.Services
                 _patterns = null;
             }
 
-            try { if (_worker != null) _worker.Wait(1000); } catch { }
+            try { if (_worker != null) _worker.Wait(1500); } catch { }
 
             if (toDispose != null)
                 foreach (var p in toDispose) p.Dispose();
 
             _lastLocations.Clear();
+            _lastScores.Clear();
         }
 
         private Bitmap CaptureScreen()
@@ -196,167 +235,174 @@ namespace SecureDesktop.Services
             catch { return null; }
         }
 
-        private Rectangle FindPattern(Bitmap screen, CachedPattern pattern, bool forceFullScreen)
+        private Rectangle FindBestMatch(Bitmap screen, CachedPattern pattern, Rectangle searchArea)
         {
-            string key = pattern.Source.Name ?? ("pattern_" + pattern.Source.Id);
-            Rectangle searchArea = new Rectangle(0, 0, screen.Width, screen.Height);
-
-            if (!forceFullScreen)
-            {
-                Rectangle last;
-                if (_lastLocations.TryGetValue(key, out last))
-                    searchArea = ExpandRectangle(last, 250, screen.Size);
-            }
-
-            if (searchArea.Width <= pattern.Width || searchArea.Height <= pattern.Height)
+            if (searchArea.Width < pattern.Width || searchArea.Height < pattern.Height)
                 return Rectangle.Empty;
 
-            BitmapData screenData = screen.LockBits(searchArea, ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
+            BitmapData data = screen.LockBits(searchArea, ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
             try
             {
-                return FindPatternInLockedData(screenData, searchArea, pattern);
+                return FindBestMatchLocked(data, searchArea, pattern);
             }
             finally
             {
-                screen.UnlockBits(screenData);
+                screen.UnlockBits(data);
             }
         }
 
-        private unsafe Rectangle FindPatternInLockedData(BitmapData screenData, Rectangle searchArea, CachedPattern pattern)
+        private unsafe Rectangle FindBestMatchLocked(BitmapData data, Rectangle searchArea, CachedPattern pattern)
         {
-            byte* ptr = (byte*)screenData.Scan0;
-            int stride = screenData.Stride;
+            byte* ptr = (byte*)data.Scan0;
+            int stride = data.Stride;
 
             int maxX = searchArea.Width - pattern.Width;
             int maxY = searchArea.Height - pattern.Height;
-            if (maxX <= 0 || maxY <= 0) return Rectangle.Empty;
 
-            // Drobniejszy krok coarse dla małych wzorców, grubszy dla dużych.
+            if (maxX < 0 || maxY < 0) return Rectangle.Empty;
+
+            // Jedyna możliwa pozycja - tylko jedna próba.
+            if (maxX == 0 && maxY == 0)
+            {
+                double s = ComputeNCC(ptr, stride, 0, 0, pattern);
+                pattern.LastScore = s;
+                if (s >= pattern.Threshold)
+                    return new Rectangle(searchArea.X, searchArea.Y, pattern.Width, pattern.Height);
+                return Rectangle.Empty;
+            }
+
+            // Krok zgrubny: małe wzorce - 2 px, większe - proporcjonalny.
             int minDim = Math.Min(pattern.Width, pattern.Height);
-            int coarseStep = minDim <= 48 ? 2 : Math.Max(4, minDim / 6);
+            int coarseStep = minDim <= 16 ? 2 : Math.Max(4, minDim / 8);
 
-            int rows = (maxY / coarseStep) + 1;
-            var bestPerRow = new RowResult[rows];
+            int numRows = (maxY / coarseStep) + 1;
+            var rowScore = new double[numRows];
+            var rowX = new int[numRows];
+            var rowY = new int[numRows];
 
-            Parallel.For(0, rows, ri =>
+            Parallel.For(0, numRows, ri =>
             {
                 int y = ri * coarseStep;
-                if (y > maxY) return;
+                if (y > maxY) y = maxY;
 
-                double localBest = 0;
+                double localBest = -1;
                 int localX = 0;
 
                 for (int x = 0; x <= maxX; x += coarseStep)
                 {
-                    double score = CompareFast(ptr, stride, x, y, pattern.CoarsePoints);
-                    if (score > localBest)
+                    double s = ComputeNCC(ptr, stride, x, y, pattern);
+                    if (s > localBest)
                     {
-                        localBest = score;
+                        localBest = s;
                         localX = x;
                     }
                 }
-                bestPerRow[ri] = new RowResult { Score = localBest, X = localX, Y = y };
+
+                rowScore[ri] = localBest;
+                rowX[ri] = localX;
+                rowY[ri] = y;
             });
 
-            RowResult candidate = new RowResult { Score = -1 };
-            for (int i = 0; i < bestPerRow.Length; i++)
-                if (bestPerRow[i].Score > candidate.Score)
-                    candidate = bestPerRow[i];
-
-            if (candidate.Score < pattern.Threshold * 0.35)
-                return Rectangle.Empty;
-
-            double bestScore = 0;
-            int bestX = candidate.X;
-            int bestY = candidate.Y;
-
-            int refineRadius = Math.Max(coarseStep, 8);
-            int rx0 = Math.Max(0, candidate.X - refineRadius);
-            int rx1 = Math.Min(maxX, candidate.X + refineRadius);
-            int ry0 = Math.Max(0, candidate.Y - refineRadius);
-            int ry1 = Math.Min(maxY, candidate.Y + refineRadius);
-
-            for (int y = ry0; y <= ry1; y++)
+            double coarseBest = -1;
+            int cbX = 0, cbY = 0;
+            for (int i = 0; i < numRows; i++)
             {
-                bool done = false;
-                for (int x = rx0; x <= rx1; x++)
+                if (rowScore[i] > coarseBest)
                 {
-                    double score = CompareFast(ptr, stride, x, y, pattern.Points);
-                    if (score > bestScore)
-                    {
-                        bestScore = score;
-                        bestX = x;
-                        bestY = y;
-
-                        if (bestScore >= _acceptThreshold)
-                        {
-                            done = true;
-                            break;
-                        }
-                    }
+                    coarseBest = rowScore[i];
+                    cbX = rowX[i];
+                    cbY = rowY[i];
                 }
-                if (done) break;
             }
 
-            if (bestScore >= pattern.Threshold)
+            // Refine: dokładny skan w oknie ±coarseStep wokół najlepszego kandydata.
+            int r0x = Math.Max(0, cbX - coarseStep);
+            int r1x = Math.Min(maxX, cbX + coarseStep);
+            int r0y = Math.Max(0, cbY - coarseStep);
+            int r1y = Math.Min(maxY, cbY + coarseStep);
+
+            double bestScore = 0;
+            int bestX = cbX, bestY = cbY;
+
+            for (int y = r0y; y <= r1y; y++)
             {
-                pattern.LastScore = bestScore;
-                return new Rectangle(searchArea.X + bestX, searchArea.Y + bestY, pattern.Width, pattern.Height);
+                for (int x = r0x; x <= r1x; x++)
+                {
+                    double s = ComputeNCC(ptr, stride, x, y, pattern);
+                    if (s > bestScore)
+                    {
+                        bestScore = s;
+                        bestX = x;
+                        bestY = y;
+                    }
+                }
             }
 
             pattern.LastScore = bestScore;
+
+            if (bestScore >= pattern.Threshold)
+            {
+                return new Rectangle(
+                    searchArea.X + bestX,
+                    searchArea.Y + bestY,
+                    pattern.Width,
+                    pattern.Height);
+            }
+
             return Rectangle.Empty;
         }
 
-        private unsafe double CompareFast(byte* screen, int stride, int x, int y, PatternPoint[] points)
+        /// <summary>
+        /// NCC między wzorcem (pattern.PointGray) a regionem ekranu zaczynającym
+        /// się w (offsetX, offsetY) wewnątrz zablokowanego obszaru.
+        /// Wynik w [0, 1]: 1.0 = idealne dopasowanie strukturalne.
+        /// </summary>
+        private unsafe double ComputeNCC(byte* ptr, int stride, int offsetX, int offsetY, CachedPattern pattern)
         {
-            int good = 0;
+            int n = pattern.PointX.Length;
+            double sumS = 0, sumSqS = 0, sumProd = 0;
+            double tMean = pattern.Mean;
 
-            for (int i = 0; i < points.Length; i++)
+            for (int i = 0; i < n; i++)
             {
-                PatternPoint p = points[i];
-                int px = x + p.X;
-                int py = y + p.Y;
+                int px = offsetX + pattern.PointX[i];
+                int py = offsetY + pattern.PointY[i];
+                byte* pixel = ptr + (long)py * stride + (px * 3);
 
-                byte* pixel = screen + ((long)py * stride) + (px * 3);
+                // Luminancja BT.601
+                double gv = 0.299 * pixel[2] + 0.587 * pixel[1] + 0.114 * pixel[0];
 
-                byte b = pixel[0];
-                byte g = pixel[1];
-                byte r = pixel[2];
-
-                int dr = r - p.R;
-                int dg = g - p.G;
-                int db = b - p.B;
-                // Tolerancja 1600 (~40 na kanał). Poprzednie 1200 bywało
-                // za ostre dla małych, zantyaliasowanych ikon pulpitu.
-                if ((dr * dr + dg * dg + db * db) < 1600)
-                    good++;
+                sumS += gv;
+                sumSqS += gv * gv;
+                sumProd += gv * pattern.PointGray[i];
             }
 
-            return (double)good / points.Length;
+            double meanS = sumS / n;
+            double varS = sumSqS / n - meanS * meanS;
+            if (varS <= 1e-4) return 0;   // płaski region - brak dopasowania
+
+            double numerator = sumProd / n - meanS * tMean;
+            double denom = Math.Sqrt(varS) * pattern.StdDev;
+            if (denom <= 1e-6) return 0;
+
+            double ncc = numerator / denom;
+            return ncc < 0 ? 0 : ncc;
         }
 
-        private Rectangle ExpandRectangle(Rectangle r, int size, Size screen)
+        private static Rectangle Inflate(Rectangle r, int size, Size screen)
         {
-            r.Inflate(size, size);
-            if (r.X < 0) r.X = 0;
-            if (r.Y < 0) r.Y = 0;
-            if (r.Right > screen.Width) r.Width = screen.Width - r.X;
-            if (r.Bottom > screen.Height) r.Height = screen.Height - r.Y;
-            return r;
+            int x = Math.Max(0, r.X - size);
+            int y = Math.Max(0, r.Y - size);
+            int right = Math.Min(screen.Width, r.Right + size);
+            int bottom = Math.Min(screen.Height, r.Bottom + size);
+            if (right <= x || bottom <= y) return new Rectangle(0, 0, screen.Width, screen.Height);
+            return new Rectangle(x, y, right - x, bottom - y);
         }
 
         public void Dispose()
         {
             Stop();
             if (_cts != null) _cts.Dispose();
-        }
-
-        private struct RowResult
-        {
-            public double Score;
-            public int X;
-            public int Y;
         }
     }
 
@@ -365,10 +411,18 @@ namespace SecureDesktop.Services
         public Pattern Source;
         public int Width;
         public int Height;
-        public PatternPoint[] Points;
-        public PatternPoint[] CoarsePoints;
-        public double LastScore;
+
+        // Punktowe próbki wzorca (offsety względem 0,0 wzorca)
+        public int[] PointX;
+        public int[] PointY;
+        public double[] PointGray;
+
+        // Statystyki wzorca (do NCC)
+        public double Mean;
+        public double StdDev;
+
         public double Threshold;
+        public double LastScore;
 
         public CachedPattern(Pattern pattern, double defaultThreshold)
         {
@@ -387,85 +441,77 @@ namespace SecureDesktop.Services
                 Width = bmp.Width;
                 Height = bmp.Height;
 
-                if (Width <= 0 || Height <= 0)
-                    throw new InvalidOperationException("Wzorzec ma nieprawidłowe wymiary.");
+                if (Width < 4 || Height < 4)
+                    throw new InvalidOperationException($"Wzorzec jest za mały ({Width}x{Height}, min 4x4).");
+                if (Width > 512 || Height > 512)
+                    throw new InvalidOperationException($"Wzorzec jest za duży ({Width}x{Height}, max 512x512).");
 
-                // Więcej punktów dla małych wzorców - gęstość próbkowania
-                // dostosowana tak, żeby nawet 16x16 miało pełne pokrycie.
-                int targetPoints = Clamp((Width * Height) / 16, 150, 900);
-                int gridSize = (int)Math.Sqrt(targetPoints);
-                int stepX = Math.Max(1, Width / gridSize);
-                int stepY = Math.Max(1, Height / gridSize);
+                // Krok próbkowania - celujemy w ~256 punktów.
+                int totalPixels = Width * Height;
+                const int targetPoints = 256;
+                int step = (int)Math.Round(Math.Sqrt((double)totalPixels / targetPoints));
+                if (step < 1) step = 1;
 
-                Points = SamplePoints(bmp, stepX, stepY, 0);
+                var xs = new List<int>();
+                var ys = new List<int>();
+                var gs = new List<double>();
 
-                int coarseStepX = stepX * 3;
-                int coarseStepY = stepY * 3;
-                CoarsePoints = SamplePoints(bmp, coarseStepX, coarseStepY, 12);
-            }
-        }
+                BitmapData data = bmp.LockBits(
+                    new Rectangle(0, 0, Width, Height),
+                    ImageLockMode.ReadOnly,
+                    PixelFormat.Format24bppRgb);
 
-        private PatternPoint[] SamplePoints(Bitmap bmp, int stepX, int stepY, int minPoints)
-        {
-            var points = new List<PatternPoint>();
-
-            using (LockedBitmapReader locked = new LockedBitmapReader(bmp))
-            {
-                for (int y = 0; y < Height; y += stepY)
+                try
                 {
-                    for (int x = 0; x < Width; x += stepX)
+                    unsafe
                     {
-                        Color c = locked.GetPixel(x, y);
-                        points.Add(new PatternPoint { X = x, Y = y, R = c.R, G = c.G, B = c.B });
+                        byte* p = (byte*)data.Scan0;
+                        int stride = data.Stride;
+
+                        for (int y = 0; y < Height; y += step)
+                        {
+                            for (int x = 0; x < Width; x += step)
+                            {
+                                byte* pixel = p + (long)y * stride + (x * 3);
+                                double gv = 0.299 * pixel[2] + 0.587 * pixel[1] + 0.114 * pixel[0];
+                                xs.Add(x);
+                                ys.Add(y);
+                                gs.Add(gv);
+                            }
+                        }
                     }
                 }
+                finally
+                {
+                    bmp.UnlockBits(data);
+                }
+
+                PointX = xs.ToArray();
+                PointY = ys.ToArray();
+                PointGray = gs.ToArray();
+
+                int n = PointGray.Length;
+                double sum = 0, sumSq = 0;
+                for (int i = 0; i < n; i++)
+                {
+                    sum += PointGray[i];
+                    sumSq += PointGray[i] * PointGray[i];
+                }
+
+                Mean = sum / n;
+                double variance = sumSq / n - Mean * Mean;
+                StdDev = Math.Sqrt(Math.Max(0.01, variance));
+
+                if (StdDev < 3.0)
+                {
+                    System.Diagnostics.Debug.WriteLine(
+                        $"Wzorzec '{pattern.Name}' ma bardzo niski kontrast (StdDev={StdDev:F2}). " +
+                        "NCC może być niestabilne - rozważ dodanie wzorca o wyraźniejszych krawędziach.");
+                }
             }
-
-            if (points.Count < minPoints && stepX > 1)
-                return SamplePoints(bmp, Math.Max(1, stepX / 2), Math.Max(1, stepY / 2), 0);
-
-            return points.ToArray();
-        }
-
-        private static int Clamp(int value, int min, int max)
-        {
-            if (value < min) return min;
-            if (value > max) return max;
-            return value;
         }
 
         public void Dispose() { }
-    }
-
-    internal sealed class LockedBitmapReader : IDisposable
-    {
-        private readonly Bitmap _bmp;
-        private readonly BitmapData _data;
-
-        public LockedBitmapReader(Bitmap bmp)
-        {
-            _bmp = bmp;
-            _data = bmp.LockBits(new Rectangle(0, 0, bmp.Width, bmp.Height),
-                ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
-        }
-
-        public unsafe Color GetPixel(int x, int y)
-        {
-            byte* ptr = (byte*)_data.Scan0;
-            byte* p = ptr + (y * _data.Stride) + (x * 3);
-            return Color.FromArgb(p[2], p[1], p[0]);
-        }
-
-        public void Dispose() { _bmp.UnlockBits(_data); }
-    }
-
-    internal struct PatternPoint
-    {
-        public int X;
-        public int Y;
-        public byte R;
-        public byte G;
-        public byte B;
     }
 
     public class PatternFoundEventArgs : EventArgs
