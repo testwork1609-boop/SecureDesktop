@@ -409,7 +409,7 @@ namespace SecureDesktop.Forms
             });
         }
 
-        private void TestSelectedPattern(object sender, EventArgs e)
+              private void TestSelectedPattern(object sender, EventArgs e)
         {
             if (_patternListBox.SelectedIndex < 0 || _patternListBox.SelectedIndex >= _patterns.Count)
             {
@@ -444,28 +444,42 @@ namespace SecureDesktop.Forms
                 return;
             }
 
+            // Analiza "charakterystyczności" wzorca: jeśli top-1 jest blisko
+            // top-2, to znaczy że wzorzec ma wiele równorzędnych miejsc na
+            // ekranie - słaby (fałszywe trafienia przy blokadzie).
+            double gap12 = result.Score - result.SecondScore;
+            double gap13 = result.Score - result.ThirdScore;
+
             string verdict;
-            if (result.Found) verdict = "✅ ZNALEZIONO na ekranie";
-            else if (result.Score >= 0.6) verdict = "⚠️ Prawdopodobnie znajdziesz obniżając próg";
-            else if (result.Score >= 0.35) verdict = "⚠️ Słabe dopasowanie — nagraj lepszy wzorzec";
-            else verdict = "❌ Wzorzec NIE jest widoczny na ekranie";
+            if (result.Found && gap12 >= 0.15)
+                verdict = "✅ WZORZEC DOBRY — jedno wyraźne maksimum";
+            else if (result.Found && gap12 >= 0.05)
+                verdict = "⚠️ WZORZEC ŚREDNI — maksimum wyraźne, ale nie mocno";
+            else if (result.Found)
+                verdict = "❌ WZORZEC SŁABY — kilka miejsc o podobnym score (fałszywe trafienia)";
+            else if (result.Score >= 0.6)
+                verdict = "⚠️ Wzorzec NIE jest widoczny, ale coś podobnego jest";
+            else
+                verdict = "❌ Wzorzec NIE jest widoczny na ekranie";
 
             string msg =
                 $"Wzorzec: \"{pattern.Name}\"\n" +
-                $"Rozmiar: {result.PatternWidth}x{result.PatternHeight} px\n" +
-                $"Kontrast (StdDev): {result.StdDev:F1}" +
-                (result.StdDev < 5 ? "  ⚠️ bardzo niski!" : "") + "\n\n" +
-                $"Wynik NCC: {result.Score:F3}\n" +
-                $"Próg (threshold): {result.Threshold:F2}\n" +
-                $"Najlepsze dopasowanie @ ({result.Location.X}, {result.Location.Y})\n\n" +
-                verdict;
+                $"Rozmiar: {result.PatternWidth}x{result.PatternHeight} px, kontrast: {result.StdDev:F1}" +
+                (result.StdDev < 10 ? "  ⚠️ niski" : "") + "\n\n" +
+                $"Top-1 score:  {result.Score:F3}   (próg: {result.Threshold:F2})\n" +
+                $"Top-2 score:  {result.SecondScore:F3}   (różnica 1-2: {gap12:F3})\n" +
+                $"Top-3 score:  {result.ThirdScore:F3}   (różnica 1-3: {gap13:F3})\n\n" +
+                verdict + "\n\n" +
+                "Czerwony = 1. miejsce, pomarańczowy = 2., żółty = 3.\n" +
+                "Jeśli wszystkie 3 ramki są na jednym obiekcie → wzorzec OK.\n" +
+                "Jeśli rozsiane po całym ekranie → nagraj coś bardziej charakterystycznego.";
 
             if (result.Screenshot != null)
             {
                 using (var preview = new Form
                 {
                     Text = "Podgląd dopasowania — " + pattern.Name,
-                    Size = new Size(1000, 750),
+                    Size = new Size(1100, 800),
                     StartPosition = FormStartPosition.CenterParent,
                     BackColor = Color.White
                 })
@@ -478,22 +492,35 @@ namespace SecureDesktop.Forms
                     };
 
                     using (var g = Graphics.FromImage(pb.Image))
-                    using (var pen = new Pen(Color.Red, 5))
                     {
-                        g.DrawRectangle(pen, new Rectangle(
-                            result.Location.X,
-                            result.Location.Y,
-                            result.PatternWidth,
-                            result.PatternHeight));
+                        // Rysuj wszystkich kandydatów z result.Candidates
+                        Color[] colors = { Color.Red, Color.Orange, Color.Gold };
+                        int[] widths = { 5, 4, 3 };
+
+                        for (int i = 0; i < result.Candidates.Count && i < 3; i++)
+                        {
+                            var c = result.Candidates[i];
+                            using (var pen = new Pen(colors[i], widths[i]))
+                            {
+                                g.DrawRectangle(pen, new Rectangle(c.X, c.Y, c.Width, c.Height));
+                            }
+
+                            using (var brush = new SolidBrush(colors[i]))
+                            using (var font = new Font("Segoe UI", 12, FontStyle.Bold))
+                            {
+                                g.DrawString($"#{i + 1}  {c.Score:F3}", font, brush,
+                                    c.X, Math.Max(0, c.Y - 22));
+                            }
+                        }
                     }
 
                     var info = new Label
                     {
                         Text = msg,
                         Dock = DockStyle.Top,
-                        Height = 130,
+                        Height = 200,
                         Padding = new Padding(10),
-                        Font = UiFonts.Segoe10,
+                        Font = UiFonts.Segoe9,
                         BackColor = Color.FromArgb(245, 245, 245)
                     };
 
