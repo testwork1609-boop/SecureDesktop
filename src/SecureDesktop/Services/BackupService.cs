@@ -6,6 +6,16 @@ namespace SecureDesktop.Services
 {
     public class BackupService
     {
+        // Czyszczenie starych backupów wymaga przeskanowania całego drzewa
+        // katalogów backupu. Wcześniej robiono to synchronicznie przy KAŻDYM
+        // pojedynczym CreateBackup() (np. przy każdym logowaniu użytkownika,
+        // jeśli skonfigurowano monitorowany plik) - niepotrzebnie obciążając
+        // dysk i wątek wywołujący. Teraz czyszczenie jest throttlowane do
+        // maksymalnie raz na kilka godzin per proces.
+        private static DateTime _lastCleanupUtc = DateTime.MinValue;
+        private static readonly TimeSpan CleanupInterval = TimeSpan.FromHours(6);
+        private static readonly object CleanupLock = new object();
+
         /// <summary>
         /// Tworzy kopię zapasową pliku w folderze z datą i godziną
         /// </summary>
@@ -28,8 +38,9 @@ namespace SecureDesktop.Services
 
                 File.Copy(sourcePath, destPath, false);
 
-                // Wyczyść stare backupy (starsze niż 30 dni)
-                CleanOldBackups(backupRoot, 30);
+                // Czyszczenie starych backupów (starsze niż 30 dni) - throttlowane,
+                // nie wykonywane przy każdym pojedynczym backupie.
+                TryCleanOldBackupsThrottled(backupRoot, 30);
 
                 return destPath;
             }
@@ -39,8 +50,24 @@ namespace SecureDesktop.Services
             }
         }
 
+        private void TryCleanOldBackupsThrottled(string backupRoot, int maxDays)
+        {
+            lock (CleanupLock)
+            {
+                if (DateTime.UtcNow - _lastCleanupUtc < CleanupInterval)
+                    return;
+
+                _lastCleanupUtc = DateTime.UtcNow;
+            }
+
+            CleanOldBackups(backupRoot, maxDays);
+        }
+
         /// <summary>
-        /// Usuwa foldery backupów starsze niż określona liczba dni
+        /// Usuwa foldery backupów starsze niż określona liczba dni.
+        /// Metoda publiczna pozostaje dostępna do jawnego wywołania
+        /// (np. z przycisku "Wyczyść stare backupy" w UI), niezależnie
+        /// od wewnętrznego throttlingu w CreateBackup.
         /// </summary>
         public void CleanOldBackups(string backupRoot, int maxDays)
         {
@@ -54,7 +81,7 @@ namespace SecureDesktop.Services
                 foreach (var dateDir in Directory.GetDirectories(backupRoot))
                 {
                     string folderName = Path.GetFileName(dateDir);
-                    
+
                     // Sprawdź czy nazwa folderu to data (format YYYY-MM-DD)
                     if (DateTime.TryParseExact(folderName, "yyyy-MM-dd", null,
                         System.Globalization.DateTimeStyles.None, out DateTime folderDate))
