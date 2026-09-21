@@ -58,6 +58,7 @@
     <Compile Include="Forms\ConfigurationForm.cs" />
     <Compile Include="Forms\EventHistoryForm.cs" />
     <Compile Include="Utils\SecurityHelper.cs" />
+    <Compile Include="Utils\UiFonts.cs" />
     <Compile Include="Core\SecurityManager.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
