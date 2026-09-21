@@ -112,7 +112,7 @@ namespace SecureDesktop.Forms
             };
             cancelBtn.FlatAppearance.BorderColor = borderColor;
             cancelBtn.FlatAppearance.BorderSize = 1;
-            cancelBtn.Click += (s, e) => CloseRequested?.Invoke();
+            cancelBtn.Click += (s, e) => { var h = CloseRequested; if (h != null) h(); };
 
             bottomPanel.Controls.Add(saveBtn);
             bottomPanel.Controls.Add(cancelBtn);
@@ -237,7 +237,8 @@ namespace SecureDesktop.Forms
                         {
                             using (var ms = new MemoryStream(pattern.ImageData))
                             {
-                                _patternPreviewBox.Image?.Dispose();
+                                if (_patternPreviewBox.Image != null)
+                                    _patternPreviewBox.Image.Dispose();
                                 _patternPreviewBox.Image = Image.FromStream(ms);
                             }
                         }
@@ -326,9 +327,7 @@ namespace SecureDesktop.Forms
                 return;
             }
 
-            // Nie da się ukryć całego okna (bo ukrylibyśmy cały Dashboard z tym widokiem).
-            // Zamiast tego minimalizujemy tymczasowo tylko okno główne na ułamek sekundy.
-             var parentForm = this.FindForm();
+            var parentForm = this.FindForm();
             if (parentForm != null)
                 parentForm.WindowState = FormWindowState.Minimized;
             System.Threading.Thread.Sleep(400);
@@ -346,11 +345,10 @@ namespace SecureDesktop.Forms
                     parentForm.Activate();
                 }
             }
-           }
 
             if (result == null || result.Error != null)
             {
-                MessageBox.Show("Błąd testu: " + (result?.Error ?? "nieznany"), "Błąd");
+                MessageBox.Show("Błąd testu: " + (result == null ? "nieznany" : result.Error), "Błąd");
                 return;
             }
 
@@ -363,8 +361,8 @@ namespace SecureDesktop.Forms
             else verdict = "❌ Wzorzec NIE jest widoczny na ekranie";
 
             string msg =
-                $"Wzorzec: \"{pattern.Name}\"  ({result.PatternWidth}x{result.PatternHeight} px, kontrast: {result.StdDev:F1})\n" +
-                $"Top-1: {result.Score:F3}   Top-2: {result.SecondScore:F3}   Top-3: {result.ThirdScore:F3}   Próg: {result.Threshold:F2}\n" +
+                "Wzorzec: \"" + pattern.Name + "\"  (" + result.PatternWidth + "x" + result.PatternHeight + " px, kontrast: " + result.StdDev.ToString("F1") + ")\n" +
+                "Top-1: " + result.Score.ToString("F3") + "   Top-2: " + result.SecondScore.ToString("F3") + "   Top-3: " + result.ThirdScore.ToString("F3") + "   Próg: " + result.Threshold.ToString("F2") + "\n" +
                 verdict;
 
             using (var preview = new Form
@@ -394,7 +392,7 @@ namespace SecureDesktop.Forms
                             g.DrawRectangle(pen, new Rectangle(c.X, c.Y, c.Width, c.Height));
                         using (var brush = new SolidBrush(colors[i]))
                         using (var font = new Font("Segoe UI", 14, FontStyle.Bold))
-                            g.DrawString($"#{i + 1}  {c.Score:F3}", font, brush, c.X, Math.Max(0, c.Y - 26));
+                            g.DrawString("#" + (i + 1) + "  " + c.Score.ToString("F3"), font, brush, c.X, Math.Max(0, c.Y - 26));
                     }
                 }
 
@@ -407,11 +405,17 @@ namespace SecureDesktop.Forms
                 preview.Controls.Add(pb);
                 preview.Controls.Add(info);
                 preview.Controls.Add(stripPanel);
-                preview.FormClosed += (s, a) => { pb.Image?.Dispose(); result.Crop1?.Dispose(); result.Crop2?.Dispose(); result.Crop3?.Dispose(); };
+                preview.FormClosed += (s, a) =>
+                {
+                    if (pb.Image != null) pb.Image.Dispose();
+                    if (result.Crop1 != null) result.Crop1.Dispose();
+                    if (result.Crop2 != null) result.Crop2.Dispose();
+                    if (result.Crop3 != null) result.Crop3.Dispose();
+                };
                 preview.ShowDialog(this);
             }
 
-            result.Screenshot?.Dispose();
+            if (result.Screenshot != null) result.Screenshot.Dispose();
         }
 
         private static void AddCrop(Control parent, string label, byte[] imageData, int xpos, ref int nextX)
@@ -667,7 +671,7 @@ namespace SecureDesktop.Forms
             if (user == null) return;
             if (user.IdentificationNumber == "admin") { MessageBox.Show("Nie można usunąć domyślnego administratora.", "Błąd"); return; }
 
-            if (MessageBox.Show($"Czy na pewno dezaktywować użytkownika {user.IdentificationNumber}?",
+            if (MessageBox.Show("Czy na pewno dezaktywować użytkownika " + user.IdentificationNumber + "?",
                 "Potwierdzenie", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
             {
                 _userRepo.DeleteUser(userId);
@@ -686,7 +690,7 @@ namespace SecureDesktop.Forms
             user.IsAdmin = !user.IsAdmin;
             _userRepo.UpdateUser(user);
             RefreshUserList();
-            MessageBox.Show($"Rola zmieniona na: {(user.IsAdmin ? "Administrator" : "Użytkownik")}", "Sukces");
+            MessageBox.Show("Rola zmieniona na: " + (user.IsAdmin ? "Administrator" : "Użytkownik"), "Sukces");
         }
 
         private void LoadPatternsFromDatabase()
@@ -750,9 +754,9 @@ namespace SecureDesktop.Forms
 
         private void AddPatternFromScreen(object sender, EventArgs e)
         {
-            // Zmniejszamy całe okno Dashboard na czas zaznaczania.
             var parentForm = this.FindForm();
-            if (parentForm != null) parentForm.WindowState = FormWindowState.Minimized;
+            if (parentForm != null)
+                parentForm.WindowState = FormWindowState.Minimized;
             System.Threading.Thread.Sleep(400);
 
             try
@@ -776,7 +780,11 @@ namespace SecureDesktop.Forms
             }
             finally
             {
-                if (parentForm != null) { parentForm.WindowState = FormWindowState.Normal; parentForm.Activate(); }
+                if (parentForm != null)
+                {
+                    parentForm.WindowState = FormWindowState.Normal;
+                    parentForm.Activate();
+                }
             }
         }
 
@@ -835,8 +843,11 @@ namespace SecureDesktop.Forms
                     MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
                 {
                     _patterns.RemoveAt(_patternListBox.SelectedIndex);
-                    _patternPreviewBox.Image?.Dispose();
-                    _patternPreviewBox.Image = null;
+                    if (_patternPreviewBox.Image != null)
+                    {
+                        _patternPreviewBox.Image.Dispose();
+                        _patternPreviewBox.Image = null;
+                    }
                     SavePatternsToDatabase();
                     RefreshPatternList();
                 }
@@ -854,8 +865,8 @@ namespace SecureDesktop.Forms
                 if (_patterns.Count > 0)
                     data.NextPatternId = _patterns.Max(p => p.Id) + 1;
 
-                data.Settings["AutoStart"] = (_autoStartCheck?.Checked ?? false).ToString();
-                data.Settings["MinimizeToTray"] = (_trayCheck?.Checked ?? true).ToString();
+                data.Settings["AutoStart"] = (_autoStartCheck != null && _autoStartCheck.Checked).ToString();
+                data.Settings["MinimizeToTray"] = (_trayCheck == null || _trayCheck.Checked).ToString();
                 data.Settings["BackupPath"] = _backupPathBox.Text;
                 if (_monitorPathBox != null) data.Settings["MonitoredFile"] = _monitorPathBox.Text;
                 data.Settings["CheckpointPath"] = _checkpointPathBox.Text;
@@ -875,7 +886,8 @@ namespace SecureDesktop.Forms
                 }
 
                 _db.Save();
-                DataSaved?.Invoke();
+                var saved = DataSaved;
+                if (saved != null) saved();
                 MessageBox.Show("Ustawienia zapisane!", "Sukces", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex) { MessageBox.Show("Błąd zapisu: " + ex.Message, "Błąd"); }
@@ -891,7 +903,7 @@ namespace SecureDesktop.Forms
         private readonly Bitmap _screenshot;
         private Image _resultImage;
 
-        public Image SelectedImage => _resultImage;
+        public Image SelectedImage { get { return _resultImage; } }
 
         public ScreenSelectionForm(Bitmap screenshot)
         {
