@@ -75,12 +75,31 @@ namespace SecureDesktop.Forms
             {
                 if (string.IsNullOrEmpty(password)) return false;
                 var data = _db.GetData();
-                if (data == null || data.Users == null) return false;
-                var user = data.Users.FirstOrDefault(u => u.Id == _currentUser.Id);
-                if (user == null || string.IsNullOrEmpty(user.PasswordHash) || string.IsNullOrEmpty(user.Salt))
-                    return false;
-                var hash = SecurityHelper.HashPassword(password, user.Salt);
-                return string.Equals(hash, user.PasswordHash, StringComparison.Ordinal);
+                if (data == null) return false;
+
+                // 1) Hash zalogowanego użytkownika.
+                if (data.Users != null)
+                {
+                    var user = data.Users.FirstOrDefault(u => u.Id == _currentUser.Id);
+                    if (user != null && !string.IsNullOrEmpty(user.PasswordHash) && !string.IsNullOrEmpty(user.Salt))
+                    {
+                        var hash = SecurityHelper.HashPassword(password, user.Salt);
+                        if (string.Equals(hash, user.PasswordHash, StringComparison.Ordinal))
+                            return true;
+                    }
+                }
+
+                // 2) Fallback: stary plaintext AdminPassword w Settings.
+                if (data.Settings != null)
+                {
+                    string legacy;
+                    if (data.Settings.TryGetValue("AdminPassword", out legacy) &&
+                        !string.IsNullOrEmpty(legacy) &&
+                        string.Equals(password, legacy, StringComparison.Ordinal))
+                        return true;
+                }
+
+                return false;
             }
             catch { return false; }
         }
@@ -188,7 +207,7 @@ namespace SecureDesktop.Forms
             y += 16;
 
             var lockAllBtn = CreateSidebarButton("🔒", Loc.T("dash.sb.lock_all"), y);
-            lockAllBtn.Click += (s, e) => { try { _lockService.LockAllScreens(); } catch (Exception ex) { MessageBox.Show(Loc.T("dash.msg.err") + ex.Message); } };
+            lockAllBtn.Click += OnLockAllScreens;
             y += 48;
 
             var lockPatternBtn = CreateSidebarButton("🎯", Loc.T("dash.sb.lock_pattern"), y);
@@ -315,6 +334,21 @@ namespace SecureDesktop.Forms
             ShowView(home, Loc.T("dash.view_home"));
         }
 
+        private async void OnLockAllScreens(object sender, EventArgs e)
+        {
+            try
+            {
+                this.WindowState = FormWindowState.Minimized;
+                await System.Threading.Tasks.Task.Delay(500);
+                _lockService.LockAllScreens();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(Loc.T("dash.msg.err") + ex.Message, Loc.T("common.error"),
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
         private async void OnLockWithPatterns(object sender, EventArgs e)
         {
             try
@@ -337,7 +371,11 @@ namespace SecureDesktop.Forms
                 await System.Threading.Tasks.Task.Delay(900);
                 _lockService.LockWithPatterns(usable, CreatePatternRecognitionService());
             }
-            catch (Exception ex) { MessageBox.Show(Loc.T("dash.msg.err") + ex.Message, Loc.T("common.error"), MessageBoxButtons.OK, MessageBoxIcon.Error); }
+            catch (Exception ex)
+            {
+                MessageBox.Show(Loc.T("dash.msg.err") + ex.Message, Loc.T("common.error"),
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         private void OnCheckpoint(object sender, EventArgs e)
@@ -355,10 +393,16 @@ namespace SecureDesktop.Forms
                 }
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
                 {
-                    FileName = path, Arguments = args, UseShellExecute = true
+                    FileName = path,
+                    Arguments = args,
+                    UseShellExecute = true
                 });
             }
-            catch (Exception ex) { MessageBox.Show(Loc.T("dash.msg.err") + ex.Message, Loc.T("common.error"), MessageBoxButtons.OK, MessageBoxIcon.Error); }
+            catch (Exception ex)
+            {
+                MessageBox.Show(Loc.T("dash.msg.err") + ex.Message, Loc.T("common.error"),
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         private void OnBackupNow(object sender, EventArgs e)
@@ -368,13 +412,19 @@ namespace SecureDesktop.Forms
                 var sourcePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
                 if (!File.Exists(sourcePath))
                 {
-                    MessageBox.Show(Loc.T("dash.msg.no_db"), Loc.T("common.info"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    MessageBox.Show(Loc.T("dash.msg.no_db"), Loc.T("common.info"),
+                        MessageBoxButtons.OK, MessageBoxIcon.Information);
                     return;
                 }
                 new BackupService().CreateBackup(sourcePath, "Backup");
-                MessageBox.Show(Loc.T("dash.msg.backup_done"), Loc.T("common.success"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show(Loc.T("dash.msg.backup_done"), Loc.T("common.success"),
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
-            catch (Exception ex) { MessageBox.Show(Loc.T("dash.msg.err") + ex.Message, Loc.T("common.error"), MessageBoxButtons.OK, MessageBoxIcon.Error); }
+            catch (Exception ex)
+            {
+                MessageBox.Show(Loc.T("dash.msg.err") + ex.Message, Loc.T("common.error"),
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         private void OnLogout(object sender, EventArgs e)
@@ -396,10 +446,15 @@ namespace SecureDesktop.Forms
 
         protected override void Dispose(bool disposing)
         {
-            if (disposing) { try { if (_lockService != null) _lockService.UnlockScreens(); } catch { } }
+            if (disposing)
+            {
+                try { if (_lockService != null) _lockService.UnlockScreens(); } catch { }
+            }
             base.Dispose(disposing);
         }
     }
+
+    // ============== HOME VIEW ==============
 
     internal class DashboardHomeView : UserControl
     {
@@ -410,7 +465,9 @@ namespace SecureDesktop.Forms
 
             var welcomeCard = new Panel
             {
-                Location = new Point(0, 0), Size = new Size(760, 120), BackColor = UiTheme.Bg,
+                Location = new Point(0, 0),
+                Size = new Size(760, 120),
+                BackColor = UiTheme.Bg,
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
             };
             UiTheme.MakeCard(welcomeCard, 12);
@@ -418,14 +475,20 @@ namespace SecureDesktop.Forms
             welcomeCard.Controls.Add(new Label
             {
                 Text = Loc.T("dash.home.greeting", user.IdentificationNumber),
-                Font = UiFonts.H1, Location = new Point(28, 24), AutoSize = true,
-                ForeColor = UiTheme.TextPrimary, BackColor = Color.Transparent
+                Font = UiFonts.H1,
+                Location = new Point(28, 24),
+                AutoSize = true,
+                ForeColor = UiTheme.TextPrimary,
+                BackColor = Color.Transparent
             });
             welcomeCard.Controls.Add(new Label
             {
                 Text = Loc.T("dash.home.logged_at", DateTime.Now.ToString("dddd, d MMMM yyyy — HH:mm")),
-                Font = UiFonts.Body, Location = new Point(28, 68), AutoSize = true,
-                ForeColor = UiTheme.TextSecondary, BackColor = Color.Transparent
+                Font = UiFonts.Body,
+                Location = new Point(28, 68),
+                AutoSize = true,
+                ForeColor = UiTheme.TextSecondary,
+                BackColor = Color.Transparent
             });
             this.Controls.Add(welcomeCard);
 
@@ -435,7 +498,9 @@ namespace SecureDesktop.Forms
             {
                 var statsRow = new Panel
                 {
-                    Location = new Point(0, 144), Size = new Size(760, 130), BackColor = UiTheme.Bg,
+                    Location = new Point(0, 144),
+                    Size = new Size(760, 130),
+                    BackColor = UiTheme.Bg,
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
                 };
 
@@ -453,29 +518,39 @@ namespace SecureDesktop.Forms
 
             var tipCard = new Panel
             {
-                Location = new Point(0, tipCardTop), Size = new Size(760, 320), BackColor = UiTheme.Bg,
+                Location = new Point(0, tipCardTop),
+                Size = new Size(760, 320),
+                BackColor = UiTheme.Bg,
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom
             };
             UiTheme.MakeCard(tipCard, 12);
 
             tipCard.Controls.Add(new Label
             {
-                Text = "💡", Font = new Font("Segoe UI", 18),
-                Location = new Point(20, 14), Size = new Size(40, 40),
-                TextAlign = ContentAlignment.MiddleCenter, BackColor = Color.Transparent
+                Text = "💡",
+                Font = new Font("Segoe UI", 18),
+                Location = new Point(20, 14),
+                Size = new Size(40, 40),
+                TextAlign = ContentAlignment.MiddleCenter,
+                BackColor = Color.Transparent
             });
 
             tipCard.Controls.Add(new Label
             {
-                Text = Loc.T("dash.home.tips"), Font = UiFonts.H3,
-                Location = new Point(68, 20), AutoSize = true,
-                ForeColor = UiTheme.TextPrimary, BackColor = Color.Transparent
+                Text = Loc.T("dash.home.tips"),
+                Font = UiFonts.H3,
+                Location = new Point(68, 20),
+                AutoSize = true,
+                ForeColor = UiTheme.TextPrimary,
+                BackColor = Color.Transparent
             });
 
             var scroll = new Panel
             {
-                Location = new Point(20, 60), Size = new Size(tipCard.Width - 40, tipCard.Height - 80),
-                BackColor = Color.Transparent, AutoScroll = true,
+                Location = new Point(20, 60),
+                Size = new Size(tipCard.Width - 40, tipCard.Height - 80),
+                BackColor = Color.Transparent,
+                AutoScroll = true,
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom
             };
             tipCard.Controls.Add(scroll);
@@ -504,9 +579,12 @@ namespace SecureDesktop.Forms
                 container.Controls.Add(new Label
                 {
                     Text = Loc.T("dash.home.tips_empty"),
-                    Font = UiFonts.Body, ForeColor = UiTheme.TextMuted,
-                    Location = new Point(0, 0), AutoSize = true,
-                    MaximumSize = new Size(width, 0), BackColor = Color.Transparent
+                    Font = UiFonts.Body,
+                    ForeColor = UiTheme.TextMuted,
+                    Location = new Point(0, 0),
+                    AutoSize = true,
+                    MaximumSize = new Size(width, 0),
+                    BackColor = Color.Transparent
                 });
                 container.ResumeLayout();
                 return;
@@ -520,9 +598,12 @@ namespace SecureDesktop.Forms
                 var titleLbl = new Label
                 {
                     Text = (tip.Title ?? "").ToUpperInvariant(),
-                    Font = UiFonts.CaptionBold, ForeColor = UiTheme.PrimarySoftText,
-                    Location = new Point(0, y), AutoSize = true,
-                    MaximumSize = new Size(width, 0), BackColor = Color.Transparent
+                    Font = UiFonts.CaptionBold,
+                    ForeColor = UiTheme.PrimarySoftText,
+                    Location = new Point(0, y),
+                    AutoSize = true,
+                    MaximumSize = new Size(width, 0),
+                    BackColor = Color.Transparent
                 };
                 container.Controls.Add(titleLbl);
                 y += titleLbl.PreferredHeight + 4;
@@ -530,9 +611,12 @@ namespace SecureDesktop.Forms
                 var contentLbl = new Label
                 {
                     Text = tip.Content ?? "",
-                    Font = UiFonts.Body, ForeColor = UiTheme.TextSecondary,
-                    Location = new Point(0, y), AutoSize = true,
-                    MaximumSize = new Size(width, 0), BackColor = Color.Transparent
+                    Font = UiFonts.Body,
+                    ForeColor = UiTheme.TextSecondary,
+                    Location = new Point(0, y),
+                    AutoSize = true,
+                    MaximumSize = new Size(width, 0),
+                    BackColor = Color.Transparent
                 };
                 container.Controls.Add(contentLbl);
                 y += contentLbl.PreferredHeight + 16;
@@ -557,27 +641,39 @@ namespace SecureDesktop.Forms
 
             card.Controls.Add(new Label
             {
-                Text = icon, Font = new Font("Segoe UI", 18),
-                Location = new Point(20, 18), Size = new Size(40, 40),
-                TextAlign = ContentAlignment.MiddleCenter, BackColor = Color.Transparent
+                Text = icon,
+                Font = new Font("Segoe UI", 18),
+                Location = new Point(20, 18),
+                Size = new Size(40, 40),
+                TextAlign = ContentAlignment.MiddleCenter,
+                BackColor = Color.Transparent
             });
             card.Controls.Add(new Label
             {
-                Text = value, Font = new Font("Segoe UI", 22, FontStyle.Bold),
-                Location = new Point(70, 20), AutoSize = true,
-                ForeColor = UiTheme.TextPrimary, BackColor = Color.Transparent
+                Text = value,
+                Font = new Font("Segoe UI", 22, FontStyle.Bold),
+                Location = new Point(70, 20),
+                AutoSize = true,
+                ForeColor = UiTheme.TextPrimary,
+                BackColor = Color.Transparent
             });
             card.Controls.Add(new Label
             {
-                Text = label, Font = UiFonts.Caption,
-                Location = new Point(20, 74), AutoSize = true,
-                ForeColor = UiTheme.TextSecondary, BackColor = Color.Transparent
+                Text = label,
+                Font = UiFonts.Caption,
+                Location = new Point(20, 74),
+                AutoSize = true,
+                ForeColor = UiTheme.TextSecondary,
+                BackColor = Color.Transparent
             });
             card.Controls.Add(new Label
             {
-                Text = subtext, Font = UiFonts.Small,
-                Location = new Point(20, 94), AutoSize = true,
-                ForeColor = UiTheme.TextMuted, BackColor = Color.Transparent
+                Text = subtext,
+                Font = UiFonts.Small,
+                Location = new Point(20, 94),
+                AutoSize = true,
+                ForeColor = UiTheme.TextMuted,
+                BackColor = Color.Transparent
             });
 
             return card;
