@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.IO;
 using System.Windows.Forms;
 using SecureDesktop.Forms;
 using SecureDesktop.Models;
@@ -13,10 +14,12 @@ namespace SecureDesktop.Services
         private bool _isLocked;
         private PatternRecognitionService _patternService;
 
+        private static readonly object _logLock = new object();
+
         public event EventHandler LockActivated;
         public event EventHandler LockDeactivated;
 
-        public bool IsLocked => _isLocked;
+        public bool IsLocked { get { return _isLocked; } }
 
         public Func<string, bool> PasswordVerifier { get; set; }
 
@@ -25,13 +28,36 @@ namespace SecureDesktop.Services
             _overlays = new List<Form>();
         }
 
+        private static void Log(string msg)
+        {
+            try
+            {
+                var dir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Logs");
+                Directory.CreateDirectory(dir);
+                lock (_logLock)
+                {
+                    File.AppendAllText(Path.Combine(dir, "lock.log"),
+                        "[" + DateTime.Now.ToString("HH:mm:ss.fff") + "] " + msg + "\r\n");
+                }
+            }
+            catch { }
+        }
+
         public void LockAllScreens()
         {
-            if (_isLocked) return;
+            if (_isLocked)
+            {
+                Log("LockAllScreens: already locked, skip");
+                return;
+            }
+
+            _isLocked = true;
+            Log("LockAllScreens: start");
 
             try
             {
                 var screenshots = CaptureAllScreens();
+                Log("LockAllScreens: captured " + screenshots.Count + " screenshots, AllScreens=" + Screen.AllScreens.Length);
 
                 foreach (var screen in Screen.AllScreens)
                 {
@@ -39,14 +65,19 @@ namespace SecureDesktop.Services
                     screenshots.TryGetValue(screen, out shot);
 
                     var overlay = new ScreenLockForm(screen, shot, PasswordVerifier);
+                    overlay.UnlockAllRequested += OnUnlockAllRequested;
+
+                    var local = overlay;
                     overlay.FormClosed += (s, e) =>
                     {
-                        _overlays.Remove(overlay);
+                        _overlays.Remove(local);
+                        Log("Overlay closed, remaining=" + _overlays.Count);
                         if (_overlays.Count == 0)
                         {
                             _isLocked = false;
                             CleanupPatternService();
                             OnLockDeactivated();
+                            Log("All overlays closed, LockDeactivated");
                         }
                     };
 
@@ -54,19 +85,27 @@ namespace SecureDesktop.Services
                     overlay.Show();
                 }
 
-                _isLocked = true;
                 OnLockActivated();
+                Log("LockAllScreens: overlays shown=" + _overlays.Count);
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Error locking screens: {ex.Message}");
+                Log("LockAllScreens ERROR: " + ex.Message);
+                _isLocked = false;
             }
         }
 
         public void LockWithPatterns(List<Pattern> patterns, PatternRecognitionService patternService)
         {
-            if (_isLocked) return;
+            if (_isLocked)
+            {
+                Log("LockWithPatterns: already locked, skip");
+                return;
+            }
             if (patterns == null || patterns.Count == 0) return;
+
+            _isLocked = true;
+            Log("LockWithPatterns: start, patterns=" + patterns.Count);
 
             try
             {
@@ -80,14 +119,19 @@ namespace SecureDesktop.Services
                     screenshots.TryGetValue(screen, out shot);
 
                     var overlay = new ScreenLockForm(screen, shot, PasswordVerifier);
+                    overlay.UnlockAllRequested += OnUnlockAllRequested;
+
+                    var local = overlay;
                     overlay.FormClosed += (s, e) =>
                     {
-                        _overlays.Remove(overlay);
+                        _overlays.Remove(local);
+                        Log("Overlay closed, remaining=" + _overlays.Count);
                         if (_overlays.Count == 0)
                         {
                             CleanupPatternService();
                             _isLocked = false;
                             OnLockDeactivated();
+                            Log("All overlays closed, LockDeactivated");
                         }
                     };
 
@@ -100,23 +144,22 @@ namespace SecureDesktop.Services
 
                 _patternService.Start(patterns);
 
-                _isLocked = true;
                 OnLockActivated();
+                Log("LockWithPatterns: overlays shown=" + _overlays.Count);
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Error in pattern lock: {ex.Message}");
+                Log("LockWithPatterns ERROR: " + ex.Message);
                 UnlockScreens();
             }
         }
 
-        /// <summary>
-        /// Wykonuje zrzut każdego monitora PRZED pokazaniem jakiegokolwiek
-        /// overlaya. Każdy ScreenLockForm użyje go jako tła, przyciemnionego
-        /// lokalnie - dzięki temu nie potrzebujemy WS_EX_LAYERED, a
-        /// SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE) działa poprawnie,
-        /// więc PatternRecognitionService widzi żywy (nieprzygaszony) ekran.
-        /// </summary>
+        private void OnUnlockAllRequested(object sender, EventArgs e)
+        {
+            Log("OnUnlockAllRequested -> UnlockScreens()");
+            UnlockScreens();
+        }
+
         private Dictionary<Screen, Bitmap> CaptureAllScreens()
         {
             var result = new Dictionary<Screen, Bitmap>();
@@ -130,10 +173,7 @@ namespace SecureDesktop.Services
                         g.CopyFromScreen(bounds.Location, Point.Empty, bounds.Size);
                     result[screen] = bmp;
                 }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine("Capture error: " + ex.Message);
-                }
+                catch (Exception ex) { Log("Capture error: " + ex.Message); }
             }
             return result;
         }
@@ -142,16 +182,14 @@ namespace SecureDesktop.Services
         {
             if (e.Pattern == null || e.Location == Rectangle.Empty) return;
 
-            // Brak marginesów - ramka ma być dokładnie w miejscu, gdzie
-            // znaleziono wzorzec, nie powiększona.
             Rectangle absoluteRegion = e.Location;
-
             string key = e.Pattern.Name ?? ("pattern_" + e.Pattern.Id);
 
             foreach (var overlay in _overlays)
             {
-                if (overlay is ScreenLockForm lockForm && !lockForm.IsDisposed)
+                if (overlay is ScreenLockForm && !overlay.IsDisposed)
                 {
+                    var lockForm = (ScreenLockForm)overlay;
                     var screenBounds = lockForm.ScreenBounds;
 
                     if (!screenBounds.IntersectsWith(absoluteRegion))
@@ -177,8 +215,9 @@ namespace SecureDesktop.Services
 
             foreach (var overlay in _overlays)
             {
-                if (overlay is ScreenLockForm lockForm && !lockForm.IsDisposed)
+                if (overlay is ScreenLockForm && !overlay.IsDisposed)
                 {
+                    var lockForm = (ScreenLockForm)overlay;
                     if (lockForm.InvokeRequired)
                         lockForm.BeginInvoke(new Action(() => lockForm.RemoveUnlockRegion(key)));
                     else
@@ -189,37 +228,47 @@ namespace SecureDesktop.Services
 
         public void UnlockScreens()
         {
-            if (!_isLocked) return;
+            if (_overlays.Count == 0 && !_isLocked) return;
+
+            Log("UnlockScreens: closing " + _overlays.Count + " overlays");
 
             try
             {
                 CleanupPatternService();
 
-                foreach (var overlay in _overlays.ToArray())
+                var toClose = _overlays.ToArray();
+                _overlays.Clear();
+
+                foreach (var overlay in toClose)
                 {
                     if (overlay != null && !overlay.IsDisposed)
                     {
                         try
                         {
                             if (overlay.InvokeRequired)
-                                overlay.BeginInvoke(new Action(() => { overlay.Close(); overlay.Dispose(); }));
+                            {
+                                var local = overlay;
+                                local.BeginInvoke(new Action(() =>
+                                {
+                                    try { local.Close(); } catch { }
+                                }));
+                            }
                             else
                             {
                                 overlay.Close();
-                                overlay.Dispose();
                             }
                         }
-                        catch { }
+                        catch (Exception ex) { Log("close overlay: " + ex.Message); }
                     }
                 }
 
-                _overlays.Clear();
                 _isLocked = false;
                 OnLockDeactivated();
+                Log("UnlockScreens: done");
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Error unlocking: {ex.Message}");
+                Log("UnlockScreens ERROR: " + ex.Message);
             }
         }
 
@@ -239,7 +288,7 @@ namespace SecureDesktop.Services
             }
         }
 
-        protected virtual void OnLockActivated() => LockActivated?.Invoke(this, EventArgs.Empty);
-        protected virtual void OnLockDeactivated() => LockDeactivated?.Invoke(this, EventArgs.Empty);
+        protected virtual void OnLockActivated() { var h = LockActivated; if (h != null) h(this, EventArgs.Empty); }
+        protected virtual void OnLockDeactivated() { var h = LockDeactivated; if (h != null) h(this, EventArgs.Empty); }
     }
 }
