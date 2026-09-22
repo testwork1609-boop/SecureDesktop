@@ -28,77 +28,38 @@ namespace SecureDesktop.Forms
 
         private void InitializeComponent()
         {
-            var header = new Panel
-            {
-                Dock = DockStyle.Top,
-                Height = 56,
-                BackColor = UiTheme.Bg
-            };
+            var header = new Panel { Dock = DockStyle.Top, Height = 56, BackColor = UiTheme.Bg };
 
-            var title = new Label
+            header.Controls.Add(new Label
             {
-                Text = "Historia zdarzeń",
-                Font = UiFonts.H1,
-                Location = new Point(0, 8),
-                AutoSize = true,
+                Text = Loc.T("hist.title"),
+                Font = UiFonts.H1, Location = new Point(0, 8), AutoSize = true,
                 ForeColor = UiTheme.TextPrimary
-            };
-            var subtitle = new Label
+            });
+
+            header.Controls.Add(new Label
             {
-                Text = "Wszystkie operacje zarejestrowane w bazie",
-                Font = UiFonts.Body,
-                Location = new Point(0, 34),
-                AutoSize = true,
+                Text = Loc.T("hist.subtitle"),
+                Font = UiFonts.Body, Location = new Point(0, 34), AutoSize = true,
                 ForeColor = UiTheme.TextMuted
-            };
-            header.Controls.Add(title);
-            header.Controls.Add(subtitle);
+            });
 
             var bottomPanel = new Panel
             {
-                Dock = DockStyle.Bottom,
-                Height = 68,
-                BackColor = UiTheme.Bg,
+                Dock = DockStyle.Bottom, Height = 68, BackColor = UiTheme.Bg,
                 Padding = new Padding(0, 12, 0, 12)
             };
 
-            var refreshBtn = new RoundedButton
-            {
-                Text = "🔄  Odśwież",
-                Location = new Point(0, 12),
-                Size = new Size(140, 42),
-                CornerRadius = 10
-            };
+            var refreshBtn = RoundedButton.Primary(Loc.T("hist.btn_refresh"), 140, 42);
+            refreshBtn.Location = new Point(0, 12);
             refreshBtn.Click += (s, e) => LoadEvents();
 
-            var clearBtn = new RoundedButton
-            {
-                Text = "🗑  Wyczyść wszystko",
-                Location = new Point(152, 12),
-                Size = new Size(200, 42),
-                CornerRadius = 10,
-                NormalColor = UiTheme.Surface,
-                HoverColor = UiTheme.DangerLight,
-                PressedColor = UiTheme.DangerLight,
-                ForeColor = UiTheme.Danger,
-                OutlineColor = UiTheme.Danger,
-                OutlineThickness = 1
-            };
+            var clearBtn = RoundedButton.SoftRed(Loc.T("hist.btn_clear"), 200, 42);
+            clearBtn.Location = new Point(152, 12);
             clearBtn.Click += OnClearAll;
 
-            var backBtn = new RoundedButton
-            {
-                Text = "Powrót do panelu",
-                Location = new Point(364, 12),
-                Size = new Size(180, 42),
-                CornerRadius = 10,
-                NormalColor = UiTheme.Surface,
-                HoverColor = UiTheme.SurfaceAlt,
-                PressedColor = UiTheme.SurfaceAlt,
-                ForeColor = UiTheme.TextSecondary,
-                OutlineColor = UiTheme.BorderStrong,
-                OutlineThickness = 1
-            };
+            var backBtn = RoundedButton.Ghost(Loc.T("hist.btn_back"), 180, 42);
+            backBtn.Location = new Point(364, 12);
             backBtn.Click += (s, e) => { var h = CloseRequested; if (h != null) h(); };
 
             bottomPanel.Controls.Add(refreshBtn);
@@ -133,19 +94,18 @@ namespace SecureDesktop.Forms
                 if (events == null || events.Count == 0)
                 {
                     _eventList.Items.Add("");
-                    _eventList.Items.Add("  Brak zapisanych zdarzeń.");
+                    _eventList.Items.Add(Loc.T("hist.empty"));
                     return;
                 }
 
-                _eventList.Items.Add("═══ HISTORIA ZDARZEŃ  (" + events.Count + " wpisów) ═══");
+                _eventList.Items.Add(Loc.T("hist.header_fmt", events.Count));
                 _eventList.Items.Add("");
-                foreach (var e in events)
-                    _eventList.Items.Add(FormatEvent(e));
+                foreach (var e in events) _eventList.Items.Add(FormatEvent(e));
             }
             catch (Exception ex)
             {
                 _eventList.Items.Clear();
-                _eventList.Items.Add("Błąd wczytywania historii: " + ex.Message);
+                _eventList.Items.Add(Loc.T("hist.load_err") + ex.Message);
             }
         }
 
@@ -169,12 +129,10 @@ namespace SecureDesktop.Forms
         private void EventList_DrawItem(object sender, DrawItemEventArgs e)
         {
             if (e.Index < 0) return;
-
             e.DrawBackground();
 
             string text = _eventList.Items[e.Index] as string ?? "";
             Color fore = UiTheme.TextSecondary;
-
             if (text.Contains("✅")) fore = UiTheme.Primary;
             else if (text.Contains("⚠")) fore = UiTheme.Warning;
             else if (text.Contains("✕")) fore = UiTheme.Danger;
@@ -188,9 +146,8 @@ namespace SecureDesktop.Forms
 
         private void OnClearAll(object sender, EventArgs e)
         {
-            if (MessageBox.Show("Czy na pewno usunąć CAŁĄ historię zdarzeń z bazy?",
-                "Potwierdzenie", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
-                return;
+            if (MessageBox.Show(Loc.T("hist.clear_confirm"), Loc.T("common.confirm"),
+                MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
 
             try
             {
@@ -203,7 +160,7 @@ namespace SecureDesktop.Forms
                 }
                 LoadEvents();
             }
-            catch (Exception ex) { MessageBox.Show("Błąd czyszczenia: " + ex.Message, "Błąd"); }
+            catch (Exception ex) { MessageBox.Show(Loc.T("hist.clear_err") + ex.Message, Loc.T("common.error")); }
         }
     }
 }
