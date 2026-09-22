@@ -13,6 +13,7 @@ namespace SecureDesktop.Services
         private List<Form> _overlays;
         private bool _isLocked;
         private bool _unlockInProgress;
+        private DateTime _unlockCooldownUntil = DateTime.MinValue;
         private PatternRecognitionService _patternService;
 
         private static readonly object _logLock = new object();
@@ -44,8 +45,18 @@ namespace SecureDesktop.Services
             catch { }
         }
 
+        private bool IsInCooldown()
+        {
+            return DateTime.UtcNow < _unlockCooldownUntil;
+        }
+
         public void LockAllScreens()
         {
+            if (IsInCooldown())
+            {
+                Log("LockAllScreens: in cooldown, skip");
+                return;
+            }
             if (_isLocked || _unlockInProgress)
             {
                 Log("LockAllScreens: already locked or unlocking, skip");
@@ -98,6 +109,11 @@ namespace SecureDesktop.Services
 
         public void LockWithPatterns(List<Pattern> patterns, PatternRecognitionService patternService)
         {
+            if (IsInCooldown())
+            {
+                Log("LockWithPatterns: in cooldown, skip");
+                return;
+            }
             if (_isLocked || _unlockInProgress)
             {
                 Log("LockWithPatterns: already locked or unlocking, skip");
@@ -241,7 +257,9 @@ namespace SecureDesktop.Services
             }
 
             _unlockInProgress = true;
-            Log("UnlockScreens START, overlays=" + _overlays.Count);
+            // Cooldown: przez 1 sekundę po odblokowaniu nie można zablokować ponownie.
+            _unlockCooldownUntil = DateTime.UtcNow.AddSeconds(1);
+            Log("UnlockScreens START, overlays=" + _overlays.Count + " cooldown until " + _unlockCooldownUntil.ToString("HH:mm:ss.fff"));
 
             try
             {
@@ -256,11 +274,6 @@ namespace SecureDesktop.Services
                         if (overlay != null && !overlay.IsDisposed && overlay.IsHandleCreated)
                         {
                             var local = overlay;
-                            // BeginInvoke: WM_CLOSE do overlaya jest wysyłany PO
-                            // powrocie z bieżącej iteracji pętli komunikatów.
-                            // Bez tego, gdy zamknięcie jest wywołane z wnętrza
-                            // metody overlaya (ShowUnlockDialog), WinForms gubi
-                            // WM_CLOSE i overlay zostaje na ekranie.
                             local.BeginInvoke(new Action(() =>
                             {
                                 try { local.Close(); }
@@ -271,7 +284,6 @@ namespace SecureDesktop.Services
                     catch (Exception ex) { Log("close outer: " + ex.Message); }
                 }
 
-                // Gdyby lista była pusta a _isLocked true - zwolnij ręcznie.
                 if (toClose.Count == 0 && _isLocked)
                 {
                     _isLocked = false;
