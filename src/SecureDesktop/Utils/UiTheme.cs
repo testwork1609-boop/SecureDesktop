@@ -81,6 +81,11 @@ namespace SecureDesktop.Utils
         }
     }
 
+    /// <summary>
+    /// Nowoczesny przycisk. Klawiatura Enter/Space NIE triggeruje kliku
+    /// (to powodowało, że po wpisaniu hasła i Enter, focus wracał do Dashboardu
+    /// i „przechwycony" klawisz Enter ponownie aktywował blokadę).
+    /// </summary>
     public class RoundedButton : Control
     {
         public int CornerRadius { get; set; }
@@ -108,7 +113,7 @@ namespace SecureDesktop.Utils
             Cursor = Cursors.Hand;
             Font = UiFonts.BodyBold;
             ForeColor = Color.White;
-            TabStop = true;
+            TabStop = false;   // nie łapie focusa klawiaturą - eliminuje źródło buga
             CornerRadius = 8;
             NormalColor = UiTheme.Primary;
             HoverColor = UiTheme.PrimaryHover;
@@ -213,7 +218,7 @@ namespace SecureDesktop.Utils
         protected override void OnMouseLeave(EventArgs e) { _hover = false; _pressed = false; Invalidate(); base.OnMouseLeave(e); }
         protected override void OnMouseDown(MouseEventArgs e)
         {
-            if (e.Button == MouseButtons.Left) { _pressed = true; Focus(); Invalidate(); }
+            if (e.Button == MouseButtons.Left) { _pressed = true; Invalidate(); }
             base.OnMouseDown(e);
         }
         protected override void OnMouseUp(MouseEventArgs e)
@@ -221,20 +226,11 @@ namespace SecureDesktop.Utils
             if (e.Button == MouseButtons.Left) { _pressed = false; Invalidate(); }
             base.OnMouseUp(e);
         }
-        protected override bool IsInputKey(Keys keyData) { return true; }
-        protected override void OnKeyDown(KeyEventArgs e)
-        {
-            if (e.KeyCode == Keys.Enter || e.KeyCode == Keys.Space) { _pressed = true; Invalidate(); e.Handled = true; }
-            base.OnKeyDown(e);
-        }
-        protected override void OnKeyUp(KeyEventArgs e)
-        {
-            if (e.KeyCode == Keys.Enter || e.KeyCode == Keys.Space)
-            {
-                _pressed = false; Invalidate(); OnClick(EventArgs.Empty); e.Handled = true;
-            }
-            base.OnKeyUp(e);
-        }
+
+        // UWAGA: celowo NIE nadpisujemy OnKeyDown/OnKeyUp.
+        // Poprzednio Enter/Space na focusowanym przycisku wywoływał OnClick,
+        // co powodowało że "przechwycony" Enter z dialogu hasła ponownie
+        // aktywował blokadę ekranu po powrocie focusu do Dashboardu.
     }
 
     public class CloseButton : Control
