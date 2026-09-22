@@ -42,6 +42,7 @@
     <Compile Include="Models\Pattern.cs" />
     <Compile Include="Models\Session.cs" />
     <Compile Include="Models\EventLog.cs" />
+    <Compile Include="Models\Tip.cs" />
     <Compile Include="Database\DatabaseInitializer.cs" />
     <Compile Include="Database\Repositories\UserRepository.cs" />
     <Compile Include="Database\Repositories\SessionRepository.cs" />
