@@ -242,16 +242,15 @@ namespace SecureDesktop.Forms
     }
 
     /// <summary>
-    /// Osobne, małe okienko z kłódką. NIE ma ustawionej Opacity (domyślnie 100%)
-    /// - użytkownik widzi ikonę w pełni kryjącą. Tło okna jest magenta,
-    /// ustawione jako TransparencyKey - widoczne są tylko narysowane elementy
-    /// (biały ring + zielone koło + etykieta).
+    /// Osobne, małe, w 100% widoczne okienko z kłódką w prawym górnym rogu.
+    /// Tło = magenta ustawione jako TransparencyKey, więc widać tylko
+    /// narysowane elementy (biały ring + zielone koło + etykieta).
     /// </summary>
     internal class LockButtonForm : Form
     {
         public event EventHandler LockClicked;
 
-        private const int CircleSize = 72;   // mniejsze (było 96)
+        private const int CircleSize = 72;
         private const int OuterPadding = 10;
         private const int LabelHeight = 26;
 
@@ -285,27 +284,20 @@ namespace SecureDesktop.Forms
             int cy = OuterPadding + CircleSize / 2;
             int r = CircleSize / 2;
 
-            // Biały pierścień zewnętrzny (dla maksymalnego kontrastu).
             using (var brush = new SolidBrush(Color.White))
                 e.Graphics.FillEllipse(brush, cx - r, cy - r, CircleSize, CircleSize);
 
-            // Delikatna ciemniejsza obwódka.
             using (var pen = new Pen(Color.FromArgb(30, 120, 60), 2))
                 e.Graphics.DrawEllipse(pen, cx - r + 2, cy - r + 2, CircleSize - 4, CircleSize - 4);
 
-            // Zielone koło.
             using (var brush = new SolidBrush(Color.FromArgb(45, 165, 90)))
                 e.Graphics.FillEllipse(brush, cx - r + 5, cy - r + 5, CircleSize - 10, CircleSize - 10);
 
-            // Ikona kłódki — skala dopasowana do 72 px koła.
             using (var brush = new SolidBrush(Color.White))
             {
-                // Korpus
                 e.Graphics.FillRectangle(brush, cx - 11, cy - 1, 22, 18);
-                // Pałąk
                 using (var pen = new Pen(Color.White, 4))
                     e.Graphics.DrawArc(pen, cx - 8, cy - 15, 16, 18, 180, 180);
-                // Dziurka
                 using (var greenBrush = new SolidBrush(Color.FromArgb(45, 165, 90)))
                 {
                     e.Graphics.FillEllipse(greenBrush, cx - 2, cy + 4, 4, 4);
@@ -313,7 +305,6 @@ namespace SecureDesktop.Forms
                 }
             }
 
-            // Etykieta pod kołem.
             string text = "Odblokuj (Ctrl+L)";
             using (var font = new Font("Segoe UI", 8, FontStyle.Bold))
             {
