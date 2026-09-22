@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using SecureDesktop.Utils;
@@ -30,8 +31,33 @@ namespace SecureDesktop.Forms
         private readonly Func<string, bool> _verifyPassword;
         private readonly Bitmap _sourceScreenshot;
         private LockButtonForm _lockButton;
+        private bool _dialogOpen;
+        private bool _closing;
+
+        private static readonly object _logLock = new object();
+
+        /// <summary>
+        /// Wywoływane, gdy użytkownik poda poprawne hasło. ScreenLockService
+        /// subskrybuje i zamyka WSZYSTKIE overlaye (nie tylko ten jeden).
+        /// </summary>
+        public event EventHandler UnlockAllRequested;
 
         public Rectangle ScreenBounds { get { return _screen.Bounds; } }
+
+        private static void Log(string msg)
+        {
+            try
+            {
+                var dir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Logs");
+                Directory.CreateDirectory(dir);
+                lock (_logLock)
+                {
+                    File.AppendAllText(Path.Combine(dir, "lock.log"),
+                        "[" + DateTime.Now.ToString("HH:mm:ss.fff") + "] " + msg + "\r\n");
+                }
+            }
+            catch { }
+        }
 
         public ScreenLockForm(Screen screen, Bitmap sourceScreenshot, Func<string, bool> verifyPassword = null)
         {
@@ -70,8 +96,15 @@ namespace SecureDesktop.Forms
 
             this.Shown += (s, e) =>
             {
-                if (_lockButton != null && !_lockButton.IsDisposed && !_lockButton.Visible)
-                    _lockButton.Show();
+                try
+                {
+                    if (_lockButton != null && !_lockButton.IsDisposed && !_lockButton.Visible)
+                    {
+                        // Owned form - zamknie się razem z overlayem.
+                        _lockButton.Show(this);
+                    }
+                }
+                catch (Exception ex) { Log("Shown: " + ex.Message); }
             };
         }
 
@@ -157,10 +190,14 @@ namespace SecureDesktop.Forms
 
         private void ShowUnlockDialog()
         {
+            if (_closing) return;
+            if (_dialogOpen) return;
+            _dialogOpen = true;
+
             if (_lockButton != null && !_lockButton.IsDisposed)
                 _lockButton.Hide();
 
-            bool shouldClose = false;
+            bool passwordOk = false;
 
             try
             {
@@ -226,11 +263,7 @@ namespace SecureDesktop.Forms
                     {
                         if (_verifyPassword(passBox.Text))
                         {
-                            shouldClose = true;
-                            // Ustawiamy DialogResult i zamykamy dialog.
-                            // Zamknięcie overlaya robimy PO powrocie z ShowDialog,
-                            // w BeginInvoke - inaczej WM_CLOSE do overlaya jest gubiony
-                            // w trakcie zamykania modala.
+                            passwordOk = true;
                             dialog.DialogResult = DialogResult.OK;
                             dialog.Close();
                         }
@@ -261,30 +294,42 @@ namespace SecureDesktop.Forms
                     dialog.ShowDialog(this);
                 }
             }
-            finally
+            catch (Exception ex) { Log("ShowDialog exception: " + ex.Message); }
+            finally { _dialogOpen = false; }
+
+            if (passwordOk)
             {
-                if (shouldClose)
+                Log("Password OK - requesting unlock of ALL overlays");
+                // Zamknij wszystkie overlaye przez serwis.
+                var h = UnlockAllRequested;
+                if (h != null)
                 {
-                    // Zamknij overlay w świeżej iteracji pętli komunikatów.
-                    try
-                    {
-                        if (!this.IsDisposed && this.IsHandleCreated)
-                            this.BeginInvoke(new Action(() => { try { this.Close(); } catch { } }));
-                        else
-                            try { this.Close(); } catch { }
-                    }
-                    catch
-                    {
-                        try { this.Close(); } catch { }
-                    }
+                    try { h(this, EventArgs.Empty); } catch (Exception ex) { Log("UnlockAllRequested: " + ex.Message); }
                 }
                 else
                 {
-                    // Anulowano - pokaż kłódkę z powrotem.
-                    if (_lockButton != null && !_lockButton.IsDisposed && this.Visible)
-                        _lockButton.Show();
+                    // Fallback - brak serwisu, zamknij tylko siebie.
+                    try { this.Close(); } catch { }
                 }
             }
+            else
+            {
+                // Anulowano - pokaż kłódkę z powrotem.
+                if (_lockButton != null && !_lockButton.IsDisposed && this.Visible)
+                {
+                    try { _lockButton.Show(this); } catch { }
+                }
+            }
+        }
+
+        protected override void OnFormClosed(FormClosedEventArgs e)
+        {
+            _closing = true;
+            if (_lockButton != null && !_lockButton.IsDisposed)
+            {
+                try { _lockButton.Close(); } catch { }
+            }
+            base.OnFormClosed(e);
         }
 
         protected override void Dispose(bool disposing)
