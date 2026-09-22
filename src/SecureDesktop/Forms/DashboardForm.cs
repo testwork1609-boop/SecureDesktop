@@ -25,7 +25,6 @@ namespace SecureDesktop.Forms
         private Panel _contentHost;
         private Label _viewTitleLabel;
         private Label _userLabel;
-        private RoundedButton _backButton;
 
         public DashboardForm(User user, DatabaseInitializer db, int sessionId)
         {
@@ -94,23 +93,19 @@ namespace SecureDesktop.Forms
                 var data = _db.GetData();
                 if (data != null && data.Settings != null)
                 {
-                    string thStr;
-                    if (data.Settings.TryGetValue("PatternThreshold", out thStr))
-                    {
-                        int th;
-                        if (int.TryParse(thStr, out th) && th >= 1 && th <= 100)
-                            defaultThreshold = th / 100.0;
-                    }
-                    string ivStr;
-                    if (data.Settings.TryGetValue("SearchInterval", out ivStr))
-                    {
-                        int iv;
-                        if (int.TryParse(ivStr, out iv) && iv > 0)
-                            intervalMs = iv;
-                    }
+                    string s;
+                    int iv;
+                    if (data.Settings.TryGetValue("PatternThreshold", out s) &&
+                        int.TryParse(s, out iv) && iv >= 1 && iv <= 100)
+                        defaultThreshold = iv / 100.0;
+
+                    if (data.Settings.TryGetValue("SearchInterval", out s) &&
+                        int.TryParse(s, out iv) && iv > 0)
+                        intervalMs = iv;
                 }
             }
             catch { }
+
             return new PatternRecognitionService(defaultThreshold, 0.93, intervalMs);
         }
 
@@ -118,8 +113,8 @@ namespace SecureDesktop.Forms
         {
             this.Icon = Program.AppIcon;
             this.Text = "SecureDesktop — Panel główny";
-            this.Size = new Size(1100, 720);
-            this.MinimumSize = new Size(950, 620);
+            this.Size = new Size(1120, 740);
+            this.MinimumSize = new Size(950, 640);
             this.StartPosition = FormStartPosition.CenterScreen;
             this.BackColor = UiTheme.Bg;
             this.ForeColor = UiTheme.TextPrimary;
@@ -153,15 +148,15 @@ namespace SecureDesktop.Forms
             };
             headerPanel.Controls.Add(logoMark);
 
-            var logoLabel = new Label
+            headerPanel.Controls.Add(new Label
             {
                 Text = "SecureDesktop",
                 Font = UiFonts.H2,
                 Location = new Point(66, 24),
                 AutoSize = true,
-                ForeColor = UiTheme.TextPrimary
-            };
-            headerPanel.Controls.Add(logoLabel);
+                ForeColor = UiTheme.TextPrimary,
+                BackColor = Color.Transparent
+            });
 
             _viewTitleLabel = new Label
             {
@@ -169,7 +164,8 @@ namespace SecureDesktop.Forms
                 Font = UiFonts.Body,
                 Location = new Point(220, 28),
                 AutoSize = true,
-                ForeColor = UiTheme.TextMuted
+                ForeColor = UiTheme.TextMuted,
+                BackColor = Color.Transparent
             };
             headerPanel.Controls.Add(_viewTitleLabel);
 
@@ -179,6 +175,7 @@ namespace SecureDesktop.Forms
                 Font = UiFonts.Body,
                 AutoSize = true,
                 ForeColor = UiTheme.TextSecondary,
+                BackColor = Color.Transparent,
                 Anchor = AnchorStyles.Top | AnchorStyles.Right
             };
             headerPanel.Controls.Add(_userLabel);
@@ -202,15 +199,23 @@ namespace SecureDesktop.Forms
 
             var homeBtn = CreateSidebarButton("🏠", "Panel główny", y);
             homeBtn.Click += (s, e) => ShowHome();
-            y += 44;
+            y += 48;
+
+            var sep1 = new Panel { Location = new Point(20, y), Size = new Size(210, 1), BackColor = UiTheme.Border };
+            sidebarPanel.Controls.Add(sep1);
+            y += 16;
 
             var lockAllBtn = CreateSidebarButton("🔒", "Blokuj cały ekran", y);
-            lockAllBtn.Click += (s, e) => { try { _lockService.LockAllScreens(); } catch (Exception ex) { MessageBox.Show("Błąd: " + ex.Message); } };
-            y += 44;
+            lockAllBtn.Click += (s, e) =>
+            {
+                try { _lockService.LockAllScreens(); }
+                catch (Exception ex) { MessageBox.Show("Błąd: " + ex.Message, "Błąd", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+            };
+            y += 48;
 
             var lockPatternBtn = CreateSidebarButton("🎯", "Blokuj z patternem", y);
             lockPatternBtn.Click += OnLockWithPatterns;
-            y += 44;
+            y += 48;
 
             var checkpointBtn = CreateSidebarButton("⚡", "CheckPoint", y);
             checkpointBtn.Click += OnCheckpoint;
@@ -229,12 +234,13 @@ namespace SecureDesktop.Forms
                     Font = UiFonts.SmallBold,
                     ForeColor = UiTheme.TextMuted,
                     Location = new Point(24, y),
-                    AutoSize = true
+                    AutoSize = true,
+                    BackColor = Color.Transparent
                 };
                 sidebarPanel.Controls.Add(sectionLabel);
                 y += 24;
 
-                var configBtn = CreateSidebarButton("⚙️", "Konfiguracja", y);
+                var configBtn = CreateSidebarButton("⚙", "Konfiguracja", y);
                 configBtn.Click += (s, e) =>
                 {
                     var view = new ConfigurationView(_db);
@@ -243,7 +249,7 @@ namespace SecureDesktop.Forms
                     ShowView(view, "Konfiguracja");
                 };
                 sidebarPanel.Controls.Add(configBtn);
-                y += 44;
+                y += 48;
 
                 var historyBtn = CreateSidebarButton("📋", "Historia zdarzeń", y);
                 historyBtn.Click += (s, e) =>
@@ -253,32 +259,40 @@ namespace SecureDesktop.Forms
                     ShowView(view, "Historia zdarzeń");
                 };
                 sidebarPanel.Controls.Add(historyBtn);
-                y += 44;
+                y += 48;
 
                 var backupBtn = CreateSidebarButton("💾", "Wykonaj backup", y);
                 backupBtn.Click += OnBackupNow;
                 sidebarPanel.Controls.Add(backupBtn);
             }
 
+            // === Wyloguj (na dole sidebara) ===
+            var logoutHost = new Panel
+            {
+                Dock = DockStyle.Bottom,
+                Height = 66,
+                BackColor = UiTheme.Surface,
+                Padding = new Padding(16, 10, 16, 10)
+            };
+
             var logoutBtn = new RoundedButton
             {
                 Text = "🚪   Wyloguj",
-                Dock = DockStyle.Bottom,
-                Height = 46,
+                Dock = DockStyle.Fill,
                 CornerRadius = 8,
                 NormalColor = UiTheme.Surface,
-                HoverColor = UiTheme.DangerLight,
-                PressedColor = UiTheme.DangerLight,
-                ForeColor = UiTheme.Danger,
+                HoverColor = UiTheme.DangerSoft,
+                PressedColor = UiTheme.DangerSoftHover,
+                ForeColor = UiTheme.DangerSoftText,
                 Font = UiFonts.BodyBold,
-                Margin = new Padding(16)
+                TextAlign = ContentAlignment.MiddleLeft,
+                ButtonPadding = new Padding(14, 0, 8, 0)
             };
             logoutBtn.Click += OnLogout;
-            var logoutHost = new Panel { Dock = DockStyle.Bottom, Height = 62, BackColor = UiTheme.Surface, Padding = new Padding(16, 8, 16, 8) };
             logoutHost.Controls.Add(logoutBtn);
             sidebarPanel.Controls.Add(logoutHost);
 
-            // === Content ===
+            // === Content host ===
             _contentHost = new Panel
             {
                 Dock = DockStyle.Fill,
@@ -290,21 +304,22 @@ namespace SecureDesktop.Forms
             this.Controls.Add(sidebarPanel);
             this.Controls.Add(headerPanel);
         }
-private RoundedButton CreateSidebarButton(string icon, string text, int yPos)
+
+        private RoundedButton CreateSidebarButton(string icon, string text, int yPos)
         {
             var btn = new RoundedButton
             {
                 Text = icon + "   " + text,
                 Location = new Point(16, yPos),
-                Size = new Size(218, 44),           // ← było 40, robimy 44
-                CornerRadius = 10,
+                Size = new Size(218, 44),
+                CornerRadius = 8,
                 NormalColor = UiTheme.Surface,
-                HoverColor = UiTheme.PrimaryLight,
-                PressedColor = UiTheme.PrimaryLight,
+                HoverColor = UiTheme.PrimarySoftHover,
+                PressedColor = UiTheme.PrimarySoftPressed,
                 ForeColor = UiTheme.TextPrimary,
                 Font = UiFonts.Body,
                 TextAlign = ContentAlignment.MiddleLeft,
-                ButtonPadding = new Padding(14, 0, 8, 0)   // ← nowe
+                ButtonPadding = new Padding(14, 0, 8, 0)
             };
             return btn;
         }
@@ -312,6 +327,7 @@ private RoundedButton CreateSidebarButton(string icon, string text, int yPos)
         private void ShowView(UserControl view, string title)
         {
             _contentHost.SuspendLayout();
+
             Control old = _contentHost.Controls.Count > 0 ? _contentHost.Controls[0] : null;
             _contentHost.Controls.Clear();
             if (old != null) { try { old.Dispose(); } catch { } }
@@ -352,7 +368,10 @@ private RoundedButton CreateSidebarButton(string icon, string text, int yPos)
                 await System.Threading.Tasks.Task.Delay(900);
                 _lockService.LockWithPatterns(usable, CreatePatternRecognitionService());
             }
-            catch (Exception ex) { MessageBox.Show("Błąd: " + ex.Message); }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Błąd: " + ex.Message, "Błąd", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         private void OnCheckpoint(object sender, EventArgs e)
@@ -378,7 +397,10 @@ private RoundedButton CreateSidebarButton(string icon, string text, int yPos)
                     UseShellExecute = true
                 });
             }
-            catch (Exception ex) { MessageBox.Show("Błąd: " + ex.Message); }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Błąd: " + ex.Message, "Błąd", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         private void OnBackupNow(object sender, EventArgs e)
@@ -386,11 +408,18 @@ private RoundedButton CreateSidebarButton(string icon, string text, int yPos)
             try
             {
                 var sourcePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
-                if (!File.Exists(sourcePath)) { MessageBox.Show("Brak bazy danych."); return; }
+                if (!File.Exists(sourcePath))
+                {
+                    MessageBox.Show("Brak bazy danych.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
                 new BackupService().CreateBackup(sourcePath, "Backup");
-                MessageBox.Show("Backup utworzony!", "Sukces");
+                MessageBox.Show("Backup utworzony!", "Sukces", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
-            catch (Exception ex) { MessageBox.Show("Błąd: " + ex.Message); }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Błąd: " + ex.Message, "Błąd", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         private void OnLogout(object sender, EventArgs e)
@@ -420,6 +449,8 @@ private RoundedButton CreateSidebarButton(string icon, string text, int yPos)
         }
     }
 
+    // ============== HOME VIEW ==============
+
     internal class DashboardHomeView : UserControl
     {
         public DashboardHomeView(User user, int totalPatterns, int activePatterns, int totalEvents)
@@ -430,13 +461,13 @@ private RoundedButton CreateSidebarButton(string icon, string text, int yPos)
             var welcomeCard = new Panel
             {
                 Location = new Point(0, 0),
-                Size = new Size(700, 120),
+                Size = new Size(760, 120),
                 BackColor = UiTheme.Bg,
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
             };
             UiTheme.MakeCard(welcomeCard, 12);
 
-            var welcomeTitle = new Label
+            welcomeCard.Controls.Add(new Label
             {
                 Text = "Witaj, " + user.IdentificationNumber + " 👋",
                 Font = UiFonts.H1,
@@ -444,8 +475,9 @@ private RoundedButton CreateSidebarButton(string icon, string text, int yPos)
                 AutoSize = true,
                 ForeColor = UiTheme.TextPrimary,
                 BackColor = Color.Transparent
-            };
-            var welcomeSubtitle = new Label
+            });
+
+            welcomeCard.Controls.Add(new Label
             {
                 Text = "Zalogowano: " + DateTime.Now.ToString("dddd, d MMMM yyyy — HH:mm"),
                 Font = UiFonts.Body,
@@ -453,18 +485,16 @@ private RoundedButton CreateSidebarButton(string icon, string text, int yPos)
                 AutoSize = true,
                 ForeColor = UiTheme.TextSecondary,
                 BackColor = Color.Transparent
-            };
-            welcomeCard.Controls.Add(welcomeTitle);
-            welcomeCard.Controls.Add(welcomeSubtitle);
+            });
+
             this.Controls.Add(welcomeCard);
 
             if (user.IsAdmin)
             {
-                // Stats - trzy karty w rzędzie
                 var statsRow = new Panel
                 {
                     Location = new Point(0, 144),
-                    Size = new Size(700, 130),
+                    Size = new Size(760, 130),
                     BackColor = UiTheme.Bg,
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
                 };
@@ -474,11 +504,11 @@ private RoundedButton CreateSidebarButton(string icon, string text, int yPos)
                 var cardStatus = CreateStatCard("✅", "OK", "Status", "system sprawny");
 
                 cardPatterns.Location = new Point(0, 0);
-                cardEvents.Location = new Point(244, 0);
-                cardStatus.Location = new Point(488, 0);
-                cardPatterns.Size = new Size(228, 130);
-                cardEvents.Size = new Size(228, 130);
-                cardStatus.Size = new Size(228, 130);
+                cardEvents.Location = new Point(264, 0);
+                cardStatus.Location = new Point(528, 0);
+                cardPatterns.Size = new Size(248, 130);
+                cardEvents.Size = new Size(248, 130);
+                cardStatus.Size = new Size(248, 130);
 
                 statsRow.Controls.Add(cardPatterns);
                 statsRow.Controls.Add(cardEvents);
@@ -489,46 +519,43 @@ private RoundedButton CreateSidebarButton(string icon, string text, int yPos)
             var tipCard = new Panel
             {
                 Location = new Point(0, user.IsAdmin ? 296 : 144),
-                Size = new Size(700, 160),
+                Size = new Size(760, 170),
                 BackColor = UiTheme.Bg,
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
             };
             UiTheme.MakeCard(tipCard, 12);
 
-            var tipIcon = new Label
+            tipCard.Controls.Add(new Label
             {
                 Text = "💡",
                 Font = new Font("Segoe UI", 24),
                 Location = new Point(24, 24),
-                Size = new Size(40, 40),
+                Size = new Size(48, 48),
                 TextAlign = ContentAlignment.MiddleCenter,
                 BackColor = Color.Transparent
-            };
-            tipCard.Controls.Add(tipIcon);
+            });
 
-            var tipTitle = new Label
+            tipCard.Controls.Add(new Label
             {
                 Text = "Wskazówka",
                 Font = UiFonts.H3,
-                Location = new Point(76, 24),
+                Location = new Point(84, 26),
                 AutoSize = true,
                 ForeColor = UiTheme.TextPrimary,
                 BackColor = Color.Transparent
-            };
-            tipCard.Controls.Add(tipTitle);
+            });
 
-            var tipBody = new Label
+            tipCard.Controls.Add(new Label
             {
                 Text = "Wzorce nagrywaj z tego, co jest ZAWSZE widoczne na ekranie\n" +
                        "(ikona w pasku zadań, logo w oknie). Unikaj ikon pulpitu, które bywają zasłonięte.\n" +
                        "Przed użyciem sprawdź wzorzec przyciskiem „Testuj wzorzec” w Konfiguracji.",
                 Font = UiFonts.Body,
-                Location = new Point(76, 58),
-                Size = new Size(600, 90),
+                Location = new Point(84, 64),
+                Size = new Size(640, 90),
                 ForeColor = UiTheme.TextSecondary,
                 BackColor = Color.Transparent
-            };
-            tipCard.Controls.Add(tipBody);
+            });
 
             this.Controls.Add(tipCard);
         }
@@ -538,49 +565,45 @@ private RoundedButton CreateSidebarButton(string icon, string text, int yPos)
             var card = new Panel { BackColor = UiTheme.Bg };
             UiTheme.MakeCard(card, 12);
 
-            var iconLbl = new Label
+            card.Controls.Add(new Label
             {
                 Text = icon,
                 Font = new Font("Segoe UI", 18),
                 Location = new Point(20, 18),
-                Size = new Size(36, 36),
+                Size = new Size(40, 40),
                 TextAlign = ContentAlignment.MiddleCenter,
                 BackColor = Color.Transparent
-            };
-            card.Controls.Add(iconLbl);
+            });
 
-            var valueLbl = new Label
+            card.Controls.Add(new Label
             {
                 Text = value,
                 Font = new Font("Segoe UI", 22, FontStyle.Bold),
-                Location = new Point(20, 54),
+                Location = new Point(70, 20),
                 AutoSize = true,
                 ForeColor = UiTheme.TextPrimary,
                 BackColor = Color.Transparent
-            };
-            card.Controls.Add(valueLbl);
+            });
 
-            var labelLbl = new Label
+            card.Controls.Add(new Label
             {
                 Text = label,
                 Font = UiFonts.Caption,
-                Location = new Point(20, 94),
+                Location = new Point(20, 74),
                 AutoSize = true,
                 ForeColor = UiTheme.TextSecondary,
                 BackColor = Color.Transparent
-            };
-            card.Controls.Add(labelLbl);
+            });
 
-            var subLbl = new Label
+            card.Controls.Add(new Label
             {
                 Text = subtext,
                 Font = UiFonts.Small,
-                Location = new Point(20, 110),
+                Location = new Point(20, 94),
                 AutoSize = true,
                 ForeColor = UiTheme.TextMuted,
                 BackColor = Color.Transparent
-            };
-            card.Controls.Add(subLbl);
+            });
 
             return card;
         }
