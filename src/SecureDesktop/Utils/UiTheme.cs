@@ -8,7 +8,6 @@ namespace SecureDesktop.Utils
 {
     public static class UiTheme
     {
-        // === Paleta ===
         public static readonly Color Primary = Color.FromArgb(16, 185, 129);
         public static readonly Color PrimaryHover = Color.FromArgb(5, 150, 105);
         public static readonly Color PrimaryPressed = Color.FromArgb(4, 120, 87);
@@ -31,15 +30,10 @@ namespace SecureDesktop.Utils
         public static readonly Color Info = Color.FromArgb(59, 130, 246);
         public static readonly Color InfoHover = Color.FromArgb(37, 99, 235);
 
-        // === Rounded path helper ===
         public static GraphicsPath RoundedPath(Rectangle rect, int radius)
         {
             var path = new GraphicsPath();
-            if (radius <= 0)
-            {
-                path.AddRectangle(rect);
-                return path;
-            }
+            if (radius <= 0) { path.AddRectangle(rect); return path; }
             int d = radius * 2;
             if (d > rect.Width) d = rect.Width;
             if (d > rect.Height) d = rect.Height;
@@ -52,16 +46,12 @@ namespace SecureDesktop.Utils
             return path;
         }
 
-        /// <summary>
-        /// Nadaje kontrolce "card look" - okrągłe rogi, białe tło, cienka obwódka.
-        /// </summary>
         public static void MakeCard(Control ctrl, int radius = 10, bool shadow = true, bool border = true)
         {
             ctrl.Paint += (s, e) =>
             {
                 var g = e.Graphics;
                 g.SmoothingMode = SmoothingMode.AntiAlias;
-
                 var rect = new Rectangle(0, 0, ctrl.Width - 1, ctrl.Height - 1);
 
                 using (var path = RoundedPath(rect, radius))
@@ -75,16 +65,15 @@ namespace SecureDesktop.Utils
                         g.DrawPath(pen, path);
                 }
             };
-
             ctrl.Resize += (s, e) => ctrl.Invalidate();
         }
     }
 
     /// <summary>
-    /// Nowoczesny przycisk z zaokrąglonymi rogami.
-    /// Do przycięcia używa Region — żadnych artefaktów na krawędziach.
+    /// Nowoczesny przycisk bazujący na Control (nie Button).
+    /// Brak Region = brak halo. Transparentne tło + pełne rysowanie w OnPaint.
     /// </summary>
-    public class RoundedButton : Button
+    public class RoundedButton : Control
     {
         public int CornerRadius { get; set; }
         public Color NormalColor { get; set; }
@@ -96,24 +85,29 @@ namespace SecureDesktop.Utils
 
         private bool _hover;
         private bool _pressed;
+        private ContentAlignment _textAlign = ContentAlignment.MiddleCenter;
+
+        public ContentAlignment TextAlign
+        {
+            get { return _textAlign; }
+            set { _textAlign = value; Invalidate(); }
+        }
 
         public RoundedButton()
         {
-            // Kluczowe: UserPaint + AllPaintingInWmPaint => WinForms nie rysuje tła
-            // ani ramki Win32 - tylko nasz OnPaint. Razem z Region daje czysty efekt.
             SetStyle(
                 ControlStyles.UserPaint |
                 ControlStyles.AllPaintingInWmPaint |
                 ControlStyles.OptimizedDoubleBuffer |
-                ControlStyles.ResizeRedraw, true);
+                ControlStyles.ResizeRedraw |
+                ControlStyles.SupportsTransparentBackColor |
+                ControlStyles.Selectable, true);
 
-            this.FlatStyle = FlatStyle.Flat;
-            this.FlatAppearance.BorderSize = 0;
-            this.UseVisualStyleBackColor = false;
-            this.Cursor = Cursors.Hand;
-            this.Font = UiFonts.BodyBold;
-            this.ForeColor = Color.White;
-            this.BackColor = UiTheme.Primary; // wypełniane w OnPaint, ale musi być nieprzezroczyste
+            BackColor = Color.Transparent;
+            Cursor = Cursors.Hand;
+            Font = UiFonts.BodyBold;
+            ForeColor = Color.White;
+            TabStop = true;
 
             CornerRadius = 10;
             NormalColor = UiTheme.Primary;
@@ -122,44 +116,7 @@ namespace SecureDesktop.Utils
             OutlineColor = Color.Transparent;
             OutlineThickness = 0;
             ButtonPadding = new Padding(16, 0, 16, 0);
-            TextAlign = ContentAlignment.MiddleCenter;
         }
-
-        protected override void OnHandleCreated(EventArgs e)
-        {
-            base.OnHandleCreated(e);
-            UpdateRegion();
-        }
-
-        protected override void OnResize(EventArgs e)
-        {
-            base.OnResize(e);
-            UpdateRegion();
-        }
-
-        /// <summary>
-        /// Przytnij kontrolkę do zaokrąglonego kształtu.
-        /// Dzięki temu WinForms nigdy nie rysuje prostokątnych rogów.
-        /// </summary>
-        private void UpdateRegion()
-        {
-            if (Width <= 0 || Height <= 0) return;
-            try
-            {
-                using (var path = UiTheme.RoundedPath(new Rectangle(0, 0, Width, Height), CornerRadius))
-                {
-                    var old = Region;
-                    Region = new Region(path);
-                    if (old != null) old.Dispose();
-                }
-            }
-            catch { }
-        }
-
-        protected override void OnMouseEnter(EventArgs e) { _hover = true; Invalidate(); base.OnMouseEnter(e); }
-        protected override void OnMouseLeave(EventArgs e) { _hover = false; _pressed = false; Invalidate(); base.OnMouseLeave(e); }
-        protected override void OnMouseDown(MouseEventArgs e) { _pressed = true; Invalidate(); base.OnMouseDown(e); }
-        protected override void OnMouseUp(MouseEventArgs e) { _pressed = false; Invalidate(); base.OnMouseUp(e); }
 
         protected override void OnPaint(PaintEventArgs e)
         {
@@ -167,12 +124,13 @@ namespace SecureDesktop.Utils
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
 
-            // Wypełnienie (Region już przycina do zaokrąglenia).
+            var rect = new Rectangle(0, 0, Width - 1, Height - 1);
             Color fill = _pressed ? PressedColor : (_hover ? HoverColor : NormalColor);
-            using (var brush = new SolidBrush(fill))
-                g.FillRectangle(brush, 0, 0, Width, Height);
 
-            // Opcjonalna obwódka (rysowana 1 px w środku).
+            using (var path = UiTheme.RoundedPath(rect, CornerRadius))
+            using (var brush = new SolidBrush(fill))
+                g.FillPath(brush, path);
+
             if (OutlineThickness > 0 && OutlineColor.A > 0)
             {
                 var inset = new Rectangle(
@@ -185,7 +143,6 @@ namespace SecureDesktop.Utils
                     g.DrawPath(pen, path);
             }
 
-            // Tekst z paddingiem i wyrównaniem.
             var textRect = new Rectangle(
                 ButtonPadding.Left,
                 0,
@@ -193,7 +150,7 @@ namespace SecureDesktop.Utils
                 Height);
 
             var flags = TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis;
-            switch (TextAlign)
+            switch (_textAlign)
             {
                 case ContentAlignment.MiddleLeft: flags |= TextFormatFlags.Left; break;
                 case ContentAlignment.MiddleRight: flags |= TextFormatFlags.Right; break;
@@ -201,6 +158,105 @@ namespace SecureDesktop.Utils
             }
 
             TextRenderer.DrawText(g, Text, Font, textRect, ForeColor, flags);
+        }
+
+        protected override void OnMouseEnter(EventArgs e) { _hover = true; Invalidate(); base.OnMouseEnter(e); }
+        protected override void OnMouseLeave(EventArgs e) { _hover = false; _pressed = false; Invalidate(); base.OnMouseLeave(e); }
+
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            if (e.Button == MouseButtons.Left) { _pressed = true; Focus(); Invalidate(); }
+            base.OnMouseDown(e);
+        }
+
+        protected override void OnMouseUp(MouseEventArgs e)
+        {
+            if (e.Button == MouseButtons.Left) { _pressed = false; Invalidate(); }
+            base.OnMouseUp(e);
+        }
+
+        protected override bool IsInputKey(Keys keyData) { return true; }
+
+        protected override void OnKeyDown(KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Enter || e.KeyCode == Keys.Space)
+            {
+                _pressed = true;
+                Invalidate();
+                e.Handled = true;
+            }
+            base.OnKeyDown(e);
+        }
+
+        protected override void OnKeyUp(KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Enter || e.KeyCode == Keys.Space)
+            {
+                _pressed = false;
+                Invalidate();
+                OnClick(EventArgs.Empty);
+                e.Handled = true;
+            }
+            base.OnKeyUp(e);
+        }
+
+        protected override void OnGotFocus(EventArgs e) { Invalidate(); base.OnGotFocus(e); }
+        protected override void OnLostFocus(EventArgs e) { Invalidate(); base.OnLostFocus(e); }
+    }
+
+    /// <summary>
+    /// Prosty, samodzielnie rysowany przycisk zamknięcia (X).
+    /// Niezawodny — nie zależy od czcionek emoji/symboli.
+    /// </summary>
+    public class CloseButton : Control
+    {
+        private bool _hover;
+
+        public Color HoverBack { get; set; }
+        public Color IconColor { get; set; }
+        public Color HoverIconColor { get; set; }
+
+        public CloseButton()
+        {
+            SetStyle(
+                ControlStyles.UserPaint |
+                ControlStyles.AllPaintingInWmPaint |
+                ControlStyles.OptimizedDoubleBuffer |
+                ControlStyles.ResizeRedraw |
+                ControlStyles.SupportsTransparentBackColor, true);
+
+            BackColor = Color.Transparent;
+            Cursor = Cursors.Hand;
+            Size = new Size(36, 36);
+
+            HoverBack = UiTheme.DangerLight;
+            IconColor = UiTheme.TextMuted;
+            HoverIconColor = UiTheme.Danger;
+        }
+
+        protected override void OnMouseEnter(EventArgs e) { _hover = true; Invalidate(); base.OnMouseEnter(e); }
+        protected override void OnMouseLeave(EventArgs e) { _hover = false; Invalidate(); base.OnMouseLeave(e); }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            var g = e.Graphics;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+
+            var rect = new Rectangle(0, 0, Width - 1, Height - 1);
+            if (_hover)
+            {
+                using (var path = UiTheme.RoundedPath(rect, 8))
+                using (var brush = new SolidBrush(HoverBack))
+                    g.FillPath(brush, path);
+            }
+
+            Color col = _hover ? HoverIconColor : IconColor;
+            using (var pen = new Pen(col, 2f))
+            {
+                int pad = 10;
+                g.DrawLine(pen, pad, pad, Width - pad, Height - pad);
+                g.DrawLine(pen, Width - pad, pad, pad, Height - pad);
+            }
         }
     }
 }
