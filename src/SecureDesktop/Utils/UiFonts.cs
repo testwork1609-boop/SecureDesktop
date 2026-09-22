@@ -4,30 +4,50 @@ namespace SecureDesktop.Utils
 {
     /// <summary>
     /// Współdzielone, statyczne instancje Font używane w całej aplikacji.
-    /// Font implementuje IDisposable i trzyma uchwyt GDI - tworzenie nowego
-    /// obiektu Font przy każdym otwarciu formularza (np. ConfigurationForm,
-    /// LoginForm w pętli logowania, ScreenLockForm przy każdej blokadzie)
-    /// bez jego zwalniania prowadzi do powolnego wyczerpywania zasobów GDI
-    /// systemu Windows. Fonty tutaj żyją przez cały czas działania aplikacji
-    /// i są tworzone tylko raz, więc nie ma potrzeby ich zwalniania.
+    /// Skala typograficzna: Display / H1 / H2 / H3 / Body / Caption / Small.
     /// </summary>
     public static class UiFonts
     {
-        public static readonly Font Segoe9 = new Font("Segoe UI", 9);
-        public static readonly Font Segoe9Bold = new Font("Segoe UI", 9, FontStyle.Bold);
-        public static readonly Font Segoe10 = new Font("Segoe UI", 10);
-        public static readonly Font Segoe10Bold = new Font("Segoe UI", 10, FontStyle.Bold);
-        public static readonly Font Segoe11 = new Font("Segoe UI", 11);
-        public static readonly Font Segoe11Bold = new Font("Segoe UI", 11, FontStyle.Bold);
-        public static readonly Font Segoe12 = new Font("Segoe UI", 12);
-        public static readonly Font Segoe12Bold = new Font("Segoe UI", 12, FontStyle.Bold);
-        public static readonly Font Segoe14Bold = new Font("Segoe UI", 14, FontStyle.Bold);
-        public static readonly Font Segoe16Bold = new Font("Segoe UI", 16, FontStyle.Bold);
-        public static readonly Font Segoe18Bold = new Font("Segoe UI", 18, FontStyle.Bold);
-        public static readonly Font Segoe22Bold = new Font("Segoe UI", 22, FontStyle.Bold);
-        public static readonly Font Segoe24 = new Font("Segoe UI", 24);
-        public static readonly Font Segoe36 = new Font("Segoe UI", 36);
-        public static readonly Font Consolas9 = new Font("Consolas", 9);
-        public static readonly Font Consolas10 = new Font("Consolas", 10);
+        private const string Family = "Segoe UI";
+
+        // Nagłówki
+        public static readonly Font Display = new Font(Family, 24, FontStyle.Bold);
+        public static readonly Font H1 = new Font(Family, 18, FontStyle.Bold);
+        public static readonly Font H2 = new Font(Family, 14, FontStyle.Bold);
+        public static readonly Font H3 = new Font(Family, 12, FontStyle.Bold);
+
+        // Treść
+        public static readonly Font Body = new Font(Family, 10, FontStyle.Regular);
+        public static readonly Font BodyBold = new Font(Family, 10, FontStyle.Bold);
+        public static readonly Font BodyLarge = new Font(Family, 11, FontStyle.Regular);
+        public static readonly Font BodyLargeBold = new Font(Family, 11, FontStyle.Bold);
+
+        // Drobne
+        public static readonly Font Caption = new Font(Family, 9, FontStyle.Regular);
+        public static readonly Font CaptionBold = new Font(Family, 9, FontStyle.Bold);
+        public static readonly Font Small = new Font(Family, 8, FontStyle.Regular);
+        public static readonly Font SmallBold = new Font(Family, 8, FontStyle.Bold);
+
+        // Mono
+        public static readonly Font Mono = new Font("Consolas", 10, FontStyle.Regular);
+        public static readonly Font MonoSmall = new Font("Consolas", 9, FontStyle.Regular);
+
+        // Aliasy wsteczne (żeby stare odwołania nie padały)
+        public static readonly Font Segoe9 = Caption;
+        public static readonly Font Segoe9Bold = CaptionBold;
+        public static readonly Font Segoe10 = Body;
+        public static readonly Font Segoe10Bold = BodyBold;
+        public static readonly Font Segoe11 = BodyLarge;
+        public static readonly Font Segoe11Bold = BodyLargeBold;
+        public static readonly Font Segoe12 = new Font(Family, 12, FontStyle.Regular);
+        public static readonly Font Segoe12Bold = H3;
+        public static readonly Font Segoe14Bold = H2;
+        public static readonly Font Segoe16Bold = new Font(Family, 16, FontStyle.Bold);
+        public static readonly Font Segoe18Bold = H1;
+        public static readonly Font Segoe22Bold = new Font(Family, 22, FontStyle.Bold);
+        public static readonly Font Segoe24 = new Font(Family, 24, FontStyle.Regular);
+        public static readonly Font Segoe36 = new Font(Family, 36, FontStyle.Regular);
+        public static readonly Font Consolas9 = MonoSmall;
+        public static readonly Font Consolas10 = Mono;
     }
 }
