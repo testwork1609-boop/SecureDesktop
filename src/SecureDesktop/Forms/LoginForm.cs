@@ -85,33 +85,14 @@ namespace SecureDesktop.Forms
                     this.Region = new Region(path);
             };
 
-            // Drag bar
-            var dragBar = new Panel { Location = new Point(0, 0), Size = new Size(480, 44), BackColor = Color.Transparent };
-            dragBar.MouseDown += (s, e) =>
-            {
-                if (e.Button == MouseButtons.Left)
-                {
-                    NativeMethods.ReleaseCapture();
-                    NativeMethods.SendMessage(Handle, 0xA1, 0x2, 0);
-                }
-            };
-            this.Controls.Add(dragBar);
+            // ========================================================
+            // Kolejność dodawania kontrolek ma znaczenie (WinForms):
+            // ostatnio dodana = na wierzchu. Dlatego najpierw dodajemy
+            // elementy, które mają być NA SPODZIE, a na końcu te,
+            // które mają być NA WIERZCHU (flagi, X).
+            // ========================================================
 
-            // Language flags (top-left)
-            _langPl = new LanguageButton { LangCode = "pl", Location = new Point(16, 8), Size = new Size(48, 30) };
-            _langPl.Click += (s, e) => Loc.SetLanguage("pl");
-            this.Controls.Add(_langPl);
-
-            _langGb = new LanguageButton { LangCode = "en", Location = new Point(70, 8), Size = new Size(48, 30) };
-            _langGb.Click += (s, e) => Loc.SetLanguage("en");
-            this.Controls.Add(_langGb);
-
-            // Close X (top-right)
-            var closeBtn = new CloseButton { Location = new Point(480 - 44, 6), Size = new Size(36, 36) };
-            closeBtn.Click += (s, e) => Application.Exit();
-            this.Controls.Add(closeBtn);
-
-            // Card
+            // 1) CARD (najniżej) — główna karta logowania
             var card = new Panel
             {
                 Location = new Point(44, 80),
@@ -119,6 +100,7 @@ namespace SecureDesktop.Forms
                 BackColor = UiTheme.Bg
             };
             UiTheme.MakeCard(card, 14, true, true);
+            this.Controls.Add(card);
 
             var logoCircle = new Panel
             {
@@ -248,8 +230,50 @@ namespace SecureDesktop.Forms
             };
             card.Controls.Add(_hintLabel);
 
-            this.Controls.Add(card);
+            // 2) DRAG BAR — pasek do przeciągania okna. Wąski pas na górze (0-44 px).
+            // Dodawany PO karcie, więc jest NAD kartą (karta i tak zaczyna się od y=80,
+            // więc nie ma konfliktu). Ale flagi i X dodane PÓŹNIEJ będą NAD nim.
+            var dragBar = new Panel
+            {
+                Location = new Point(0, 0),
+                Size = new Size(480, 44),
+                BackColor = Color.Transparent
+            };
+            dragBar.MouseDown += (s, e) =>
+            {
+                if (e.Button == MouseButtons.Left)
+                {
+                    NativeMethods.ReleaseCapture();
+                    NativeMethods.SendMessage(Handle, 0xA1, 0x2, 0);
+                }
+            };
+            this.Controls.Add(dragBar);
 
+            // 3) FLAGI językowe (lewy górny róg)
+            _langPl = new LanguageButton { LangCode = "pl", Location = new Point(16, 8), Size = new Size(48, 30) };
+            _langPl.Click += (s, e) => Loc.SetLanguage("pl");
+            this.Controls.Add(_langPl);
+
+            _langGb = new LanguageButton { LangCode = "en", Location = new Point(70, 8), Size = new Size(48, 30) };
+            _langGb.Click += (s, e) => Loc.SetLanguage("en");
+            this.Controls.Add(_langGb);
+
+            // 4) PRZYCISK X (prawy górny róg) — NAJWIĘKSZY z-order, na samej górze.
+            var closeBtn = new CloseButton
+            {
+                Location = new Point(480 - 44, 6),
+                Size = new Size(36, 36)
+            };
+            closeBtn.Click += (s, e) => Application.Exit();
+            this.Controls.Add(closeBtn);
+
+            // Dla pewności — flagi i X na wierzch.
+            _langPl.BringToFront();
+            _langGb.BringToFront();
+            closeBtn.BringToFront();
+            dragBar.SendToBack();
+
+            // Enter / klawiatura
             this.KeyDown += (s, e) => { if (e.KeyCode == Keys.Enter) LoginAction(s, e); };
             _idBox.KeyDown += (s, e) => { if (e.KeyCode == Keys.Enter) { _passBox.Focus(); e.SuppressKeyPress = true; } };
             _passBox.KeyDown += (s, e) => { if (e.KeyCode == Keys.Enter) { LoginAction(s, e); e.SuppressKeyPress = true; } };
