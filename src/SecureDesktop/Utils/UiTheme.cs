@@ -374,4 +374,121 @@ namespace SecureDesktop.Utils
             }
         }
     }
+        /// <summary>
+    /// Mały przycisk języka z narysowaną flagą (PL lub GB).
+    /// </summary>
+    public class LanguageButton : Control
+    {
+        public string LangCode { get; set; }
+        private bool _selected;
+        private bool _hover;
+
+        public bool IsSelected
+        {
+            get { return _selected; }
+            set { _selected = value; Invalidate(); }
+        }
+
+        public LanguageButton()
+        {
+            SetStyle(
+                ControlStyles.UserPaint |
+                ControlStyles.AllPaintingInWmPaint |
+                ControlStyles.OptimizedDoubleBuffer |
+                ControlStyles.ResizeRedraw |
+                ControlStyles.SupportsTransparentBackColor, true);
+            BackColor = Color.Transparent;
+            Cursor = Cursors.Hand;
+            Size = new Size(44, 32);
+        }
+
+        protected override void OnMouseEnter(EventArgs e) { _hover = true; Invalidate(); base.OnMouseEnter(e); }
+        protected override void OnMouseLeave(EventArgs e) { _hover = false; Invalidate(); base.OnMouseLeave(e); }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            var g = e.Graphics;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+
+            var rect = new Rectangle(0, 0, Width - 1, Height - 1);
+
+            if (_selected)
+            {
+                using (var path = UiTheme.RoundedPath(rect, 6))
+                using (var pen = new Pen(UiTheme.Primary, 2))
+                    g.DrawPath(pen, path);
+            }
+            else if (_hover)
+            {
+                using (var path = UiTheme.RoundedPath(rect, 6))
+                using (var pen = new Pen(UiTheme.Border, 1))
+                    g.DrawPath(pen, path);
+            }
+
+            var inner = new Rectangle(6, 6, Width - 12, Height - 12);
+            if (inner.Width <= 0 || inner.Height <= 0) return;
+
+            if (LangCode == "pl") DrawPolishFlag(g, inner);
+            else DrawBritishFlag(g, inner);
+        }
+
+        private static void DrawPolishFlag(Graphics g, Rectangle rect)
+        {
+            int half = rect.Height / 2;
+            using (var b = new SolidBrush(Color.White))
+                g.FillRectangle(b, rect.X, rect.Y, rect.Width, half);
+            using (var b = new SolidBrush(Color.FromArgb(220, 20, 60)))
+                g.FillRectangle(b, rect.X, rect.Y + half, rect.Width, rect.Height - half);
+            using (var pen = new Pen(UiTheme.Border, 1))
+                g.DrawRectangle(pen, rect.X, rect.Y, rect.Width - 1, rect.Height - 1);
+        }
+
+        private static void DrawBritishFlag(Graphics g, Rectangle rect)
+        {
+            int w = rect.Width, h = rect.Height;
+
+            // Białe tło
+            using (var b = new SolidBrush(Color.White))
+                g.FillRectangle(b, rect);
+
+            // Niebieskie tło (do wycięcia białymi przekątnymi)
+            using (var b = new SolidBrush(Color.FromArgb(1, 33, 105)))
+                g.FillRectangle(b, rect);
+
+            // Białe przekątne
+            using (var pen = new Pen(Color.White, Math.Max(3, h / 5f)))
+            {
+                g.DrawLine(pen, rect.X, rect.Y, rect.Right, rect.Bottom);
+                g.DrawLine(pen, rect.Right, rect.Y, rect.X, rect.Bottom);
+            }
+
+            // Biały krzyż
+            int crossW = Math.Max(3, w / 5);
+            int crossH = Math.Max(3, h / 5);
+            using (var b = new SolidBrush(Color.White))
+            {
+                g.FillRectangle(b, rect.X + (w - crossW) / 2, rect.Y, crossW, h);
+                g.FillRectangle(b, rect.X, rect.Y + (h - crossH) / 2, w, crossH);
+            }
+
+            // Czerwone przekątne
+            using (var pen = new Pen(Color.FromArgb(200, 16, 46), Math.Max(2, h / 10f)))
+            {
+                g.DrawLine(pen, rect.X, rect.Y, rect.Right, rect.Bottom);
+                g.DrawLine(pen, rect.Right, rect.Y, rect.X, rect.Bottom);
+            }
+
+            // Czerwony krzyż
+            int rcw = Math.Max(2, w / 11);
+            int rch = Math.Max(2, h / 11);
+            using (var b = new SolidBrush(Color.FromArgb(200, 16, 46)))
+            {
+                g.FillRectangle(b, rect.X + (w - rcw) / 2, rect.Y, rcw, h);
+                g.FillRectangle(b, rect.X, rect.Y + (h - rch) / 2, w, rch);
+            }
+
+            using (var pen = new Pen(UiTheme.Border, 1))
+                g.DrawRectangle(pen, rect.X, rect.Y, rect.Width - 1, rect.Height - 1);
+        }
+    }
 }
