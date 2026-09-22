@@ -31,6 +31,14 @@ namespace SecureDesktop.Forms
         private readonly UserRepository _userRepo;
         private ListView _userListView;
 
+        // Tips tab
+        private List<Tip> _tips;
+        private ListBox _tipsListBox;
+        private TextBox _tipTitleBox;
+        private TextBox _tipContentBox;
+        private Label _tipEditingLabel;
+        private int _editingTipId = -1;
+
         public event Action CloseRequested;
         public event Action DataSaved;
 
@@ -39,6 +47,7 @@ namespace SecureDesktop.Forms
             _db = db;
             _userRepo = new UserRepository(_db);
             _patterns = new List<Pattern>();
+            _tips = new List<Tip>();
             this.BackColor = UiTheme.Bg;
             this.ForeColor = UiTheme.TextPrimary;
             this.Font = UiFonts.Body;
@@ -46,6 +55,7 @@ namespace SecureDesktop.Forms
 
             InitializeComponent();
             LoadPatternsFromDatabase();
+            LoadTipsFromDatabase();
             LoadSettingsIntoControls();
         }
 
@@ -53,12 +63,7 @@ namespace SecureDesktop.Forms
 
         private void InitializeComponent()
         {
-            var header = new Panel
-            {
-                Dock = DockStyle.Top,
-                Height = 56,
-                BackColor = UiTheme.Bg
-            };
+            var header = new Panel { Dock = DockStyle.Top, Height = 56, BackColor = UiTheme.Bg };
 
             header.Controls.Add(new Label
             {
@@ -88,18 +93,21 @@ namespace SecureDesktop.Forms
 
             var tabGeneral = MakeTab("Ogólne");
             var tabPatterns = MakeTab("Wzorce");
+            var tabTips = MakeTab("Wskazówki");
             var tabCheckpoint = MakeTab("CheckPoint");
             var tabBackup = MakeTab("Backup");
             var tabUsers = MakeTab("Użytkownicy");
 
             tabControl.TabPages.Add(tabGeneral);
             tabControl.TabPages.Add(tabPatterns);
+            tabControl.TabPages.Add(tabTips);
             tabControl.TabPages.Add(tabCheckpoint);
             tabControl.TabPages.Add(tabBackup);
             tabControl.TabPages.Add(tabUsers);
 
             BuildGeneralTab(tabGeneral);
             BuildPatternsTab(tabPatterns);
+            BuildTipsTab(tabTips);
             BuildCheckpointTab(tabCheckpoint);
             BuildBackupTab(tabBackup);
             BuildUsersTab(tabUsers);
@@ -352,6 +360,215 @@ namespace SecureDesktop.Forms
             };
             tab.Controls.Add(applySettingsBtn);
         }
+
+        // ============== WSKAZÓWKI ==============
+
+        private void BuildTipsTab(TabPage tab)
+        {
+            tab.Controls.Add(new Label
+            {
+                Text = "Wskazówki na panelu głównym",
+                Font = UiFonts.H3,
+                ForeColor = UiTheme.TextPrimary,
+                Location = new Point(0, 0),
+                AutoSize = true
+            });
+
+            _tipsListBox = new ListBox
+            {
+                Location = new Point(0, 28),
+                Size = new Size(380, 340),
+                Font = UiFonts.Body,
+                BorderStyle = BorderStyle.None,
+                BackColor = UiTheme.Surface,
+                ForeColor = UiTheme.TextPrimary
+            };
+            _tipsListBox.SelectedIndexChanged += (s, e) => LoadSelectedTipIntoForm();
+            tab.Controls.Add(_tipsListBox);
+
+            var newBtn = RoundedButton.SoftGreen("➕   Nowa wskazówka", 184, 40);
+            newBtn.Location = new Point(0, 380);
+            newBtn.Click += (s, e) => StartNewTip();
+            tab.Controls.Add(newBtn);
+
+            var deleteBtn = RoundedButton.SoftRed("🗑   Usuń zaznaczoną", 184, 40);
+            deleteBtn.Location = new Point(196, 380);
+            deleteBtn.Click += DeleteSelectedTip;
+            tab.Controls.Add(deleteBtn);
+
+            // Prawa kolumna - edycja
+            _tipEditingLabel = new Label
+            {
+                Text = "Nowa wskazówka",
+                Font = UiFonts.H3,
+                ForeColor = UiTheme.TextPrimary,
+                Location = new Point(420, 0),
+                AutoSize = true
+            };
+            tab.Controls.Add(_tipEditingLabel);
+
+            tab.Controls.Add(MakeFieldLabel("Tytuł (wyświetlany WIELKIMI literami)", 420, 36));
+            _tipTitleBox = MakeTextBox(420, 58, 340);
+            tab.Controls.Add(_tipTitleBox);
+
+            tab.Controls.Add(MakeFieldLabel("Treść", 420, 100));
+            _tipContentBox = new TextBox
+            {
+                Location = new Point(420, 122),
+                Size = new Size(340, 240),
+                Font = UiFonts.Body,
+                BorderStyle = BorderStyle.FixedSingle,
+                BackColor = UiTheme.Surface,
+                ForeColor = UiTheme.TextPrimary,
+                Multiline = true,
+                ScrollBars = ScrollBars.Vertical,
+                AcceptsReturn = true
+            };
+            tab.Controls.Add(_tipContentBox);
+
+            var saveTipBtn = RoundedButton.Primary("💾   Zapisz wskazówkę", 220, 42);
+            saveTipBtn.Location = new Point(420, 374);
+            saveTipBtn.Click += (s, e) => SaveCurrentTip();
+            tab.Controls.Add(saveTipBtn);
+
+            var resetTipBtn = RoundedButton.Ghost("Wyczyść", 112, 42);
+            resetTipBtn.Location = new Point(648, 374);
+            resetTipBtn.Click += (s, e) => StartNewTip();
+            tab.Controls.Add(resetTipBtn);
+        }
+
+        private void LoadTipsFromDatabase()
+        {
+            try
+            {
+                var data = _db.GetData();
+                _tips = data != null && data.Tips != null ? data.Tips : new List<Tip>();
+            }
+            catch (Exception ex)
+            {
+                _tips = new List<Tip>();
+                System.Diagnostics.Debug.WriteLine("Load tips error: " + ex.Message);
+            }
+            RefreshTipsList();
+        }
+
+        private void SaveTipsToDatabase()
+        {
+            try
+            {
+                if (_db == null) return;
+                var data = _db.GetData();
+                data.Tips = _tips;
+                if (_tips.Count > 0)
+                    data.NextTipId = _tips.Max(t => t.Id) + 1;
+                else
+                    data.NextTipId = 1;
+                _db.Save();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Błąd zapisu wskazówek: " + ex.Message, "Błąd", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void RefreshTipsList()
+        {
+            if (_tipsListBox == null) return;
+            _tipsListBox.Items.Clear();
+            foreach (var t in _tips)
+            {
+                string title = string.IsNullOrWhiteSpace(t.Title) ? "(bez tytułu)" : t.Title.ToUpperInvariant();
+                _tipsListBox.Items.Add(title);
+            }
+        }
+
+        private void StartNewTip()
+        {
+            _editingTipId = -1;
+            _tipsListBox.ClearSelected();
+            _tipTitleBox.Text = "";
+            _tipContentBox.Text = "";
+            _tipEditingLabel.Text = "Nowa wskazówka";
+        }
+
+        private void LoadSelectedTipIntoForm()
+        {
+            if (_tipsListBox.SelectedIndex < 0 || _tipsListBox.SelectedIndex >= _tips.Count) return;
+            var t = _tips[_tipsListBox.SelectedIndex];
+            _editingTipId = t.Id;
+            _tipTitleBox.Text = t.Title ?? "";
+            _tipContentBox.Text = t.Content ?? "";
+            _tipEditingLabel.Text = "Edycja wskazówki";
+        }
+
+        private void SaveCurrentTip()
+        {
+            string title = (_tipTitleBox.Text ?? "").Trim();
+            string content = (_tipContentBox.Text ?? "").Trim();
+
+            if (string.IsNullOrWhiteSpace(title))
+            {
+                MessageBox.Show("Podaj tytuł wskazówki.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            if (string.IsNullOrWhiteSpace(content))
+            {
+                MessageBox.Show("Podaj treść wskazówki.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            if (_editingTipId == -1)
+            {
+                int newId = _tips.Count > 0 ? _tips.Max(t => t.Id) + 1 : 1;
+                _tips.Add(new Tip
+                {
+                    Id = newId,
+                    Title = title,
+                    Content = content,
+                    IsActive = true,
+                    CreatedAt = DateTime.Now
+                });
+            }
+            else
+            {
+                var t = _tips.FirstOrDefault(x => x.Id == _editingTipId);
+                if (t != null)
+                {
+                    t.Title = title;
+                    t.Content = content;
+                    t.UpdatedAt = DateTime.Now;
+                }
+            }
+
+            SaveTipsToDatabase();
+            RefreshTipsList();
+            var h = DataSaved;
+            if (h != null) h();
+            StartNewTip();
+            MessageBox.Show("Wskazówka zapisana!", "Sukces", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+        private void DeleteSelectedTip(object sender, EventArgs e)
+        {
+            if (_tipsListBox.SelectedIndex < 0 || _tipsListBox.SelectedIndex >= _tips.Count)
+            {
+                MessageBox.Show("Zaznacz wskazówkę do usunięcia.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            if (MessageBox.Show("Czy na pewno usunąć zaznaczoną wskazówkę?",
+                "Potwierdzenie", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                return;
+
+            _tips.RemoveAt(_tipsListBox.SelectedIndex);
+            SaveTipsToDatabase();
+            RefreshTipsList();
+            var h = DataSaved;
+            if (h != null) h();
+            StartNewTip();
+        }
+
+        // ============== TEST WZORCA ==============
 
         private void TestSelectedPattern(object sender, EventArgs e)
         {
@@ -1016,6 +1233,10 @@ namespace SecureDesktop.Forms
                 data.Patterns = _patterns;
                 if (_patterns.Count > 0)
                     data.NextPatternId = _patterns.Max(p => p.Id) + 1;
+
+                data.Tips = _tips;
+                if (_tips.Count > 0)
+                    data.NextTipId = _tips.Max(t => t.Id) + 1;
 
                 data.Settings["AutoStart"] = (_autoStartCheck != null && _autoStartCheck.Checked).ToString();
                 data.Settings["MinimizeToTray"] = (_trayCheck == null || _trayCheck.Checked).ToString();
