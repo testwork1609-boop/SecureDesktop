@@ -36,7 +36,7 @@
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
   
-  <ItemGroup>
+   <ItemGroup>
     <Compile Include="Program.cs" />
     <Compile Include="Models\User.cs" />
     <Compile Include="Models\Pattern.cs" />
@@ -59,6 +59,7 @@
     <Compile Include="Forms\EventHistoryForm.cs" />
     <Compile Include="Utils\SecurityHelper.cs" />
     <Compile Include="Utils\UiFonts.cs" />
+    <Compile Include="Utils\UiTheme.cs" />
     <Compile Include="Core\SecurityManager.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
