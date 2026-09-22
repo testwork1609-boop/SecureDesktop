@@ -50,6 +50,7 @@ namespace SecureDesktop.Database
                         return;
                     }
 
+                    EnsureCollections();
                     MigrateLegacyPasswordSetting();
                 }
                 catch (Exception ex)
@@ -60,14 +61,30 @@ namespace SecureDesktop.Database
         }
 
         /// <summary>
-        /// Jednorazowa migracja: jeśli w Settings istnieje stare pole
-        /// "AdminPassword" (plaintext), przenosimy je do User.PasswordHash
-        /// (z nową solą) i usuwamy z Settings. Dzięki temu hasło przestaje
-        /// leżeć jawnym tekstem w database.json.
+        /// Zabezpieczenie dla starych database.json (bez pola Tips).
+        /// Newtonsoft zostawia null przy braku klucza w JSON mimo initializera.
         /// </summary>
+        private void EnsureCollections()
+        {
+            if (_data == null) _data = new DatabaseData();
+            if (_data.Users == null) _data.Users = new List<Models.User>();
+            if (_data.Sessions == null) _data.Sessions = new List<Models.Session>();
+            if (_data.EventLogs == null) _data.EventLogs = new List<Models.EventLog>();
+            if (_data.Patterns == null) _data.Patterns = new List<Models.Pattern>();
+            if (_data.Tips == null) _data.Tips = new List<Models.Tip>();
+            if (_data.Settings == null) _data.Settings = new Dictionary<string, string>();
+
+            if (_data.NextTipId < 1)
+                _data.NextTipId = (_data.Tips.Count > 0 ? _data.Tips.Max(t => t.Id) : 0) + 1;
+            if (_data.NextPatternId < 1)
+                _data.NextPatternId = (_data.Patterns.Count > 0 ? _data.Patterns.Max(p => p.Id) : 0) + 1;
+            if (_data.NextUserId < 1)
+                _data.NextUserId = (_data.Users.Count > 0 ? _data.Users.Max(u => u.Id) : 0) + 1;
+        }
+
         private void MigrateLegacyPasswordSetting()
         {
-            if (_data?.Settings == null) return;
+            if (_data == null || _data.Settings == null) return;
             if (!_data.Settings.TryGetValue("AdminPassword", out var legacy)) return;
 
             if (!string.IsNullOrEmpty(legacy) && _data.Users != null)
@@ -112,6 +129,17 @@ namespace SecureDesktop.Database
             _data.Settings["MinimizeToTray"] = "true";
             _data.Settings["Theme"] = "Dark";
             _data.Settings["BackupPath"] = ".\\Backup";
+
+            _data.Tips.Add(new Models.Tip
+            {
+                Id = 1,
+                Title = "Witaj w SecureDesktop",
+                Content = "Ta sekcja zawiera wskazówki dodane przez administratora. " +
+                          "Możesz je edytować w Konfiguracja → Wskazówki.",
+                CreatedAt = DateTime.Now,
+                IsActive = true
+            });
+            _data.NextTipId = 2;
         }
 
         public void Save()
@@ -124,8 +152,6 @@ namespace SecureDesktop.Database
             TrimData();
             var json = JsonConvert.SerializeObject(_data, Formatting.Indented);
 
-            // Atomowy zapis: najpierw tmp, potem File.Replace. Zapobiega
-            // uszkodzeniu database.json, gdyby aplikacja padła w połowie zapisu.
             var tmp = _dbPath + ".tmp";
             File.WriteAllText(tmp, json);
 
@@ -158,8 +184,8 @@ namespace SecureDesktop.Database
                 _data.Sessions.RemoveRange(0, _data.Sessions.Count - MaxSessions);
         }
 
-        public DatabaseData GetData() => _data;
-        public string GetDatabasePath() => _dbPath;
+        public DatabaseData GetData() { return _data; }
+        public string GetDatabasePath() { return _dbPath; }
     }
 
     public class DatabaseData
@@ -168,11 +194,13 @@ namespace SecureDesktop.Database
         public List<Models.Session> Sessions { get; set; } = new List<Models.Session>();
         public List<Models.EventLog> EventLogs { get; set; } = new List<Models.EventLog>();
         public List<Models.Pattern> Patterns { get; set; } = new List<Models.Pattern>();
+        public List<Models.Tip> Tips { get; set; } = new List<Models.Tip>();
         public Dictionary<string, string> Settings { get; set; } = new Dictionary<string, string>();
 
         public int NextUserId { get; set; } = 2;
         public int NextSessionId { get; set; } = 1;
         public int NextEventId { get; set; } = 1;
         public int NextPatternId { get; set; } = 1;
+        public int NextTipId { get; set; } = 1;
     }
 }
