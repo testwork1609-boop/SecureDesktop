@@ -290,21 +290,21 @@ namespace SecureDesktop.Forms
             this.Controls.Add(sidebarPanel);
             this.Controls.Add(headerPanel);
         }
-
-        private RoundedButton CreateSidebarButton(string icon, string text, int yPos)
+private RoundedButton CreateSidebarButton(string icon, string text, int yPos)
         {
             var btn = new RoundedButton
             {
                 Text = icon + "   " + text,
                 Location = new Point(16, yPos),
-                Size = new Size(218, 40),
-                CornerRadius = 8,
+                Size = new Size(218, 44),           // ← było 40, robimy 44
+                CornerRadius = 10,
                 NormalColor = UiTheme.Surface,
                 HoverColor = UiTheme.PrimaryLight,
                 PressedColor = UiTheme.PrimaryLight,
                 ForeColor = UiTheme.TextPrimary,
                 Font = UiFonts.Body,
-                TextAlign = ContentAlignment.MiddleLeft
+                TextAlign = ContentAlignment.MiddleLeft,
+                ButtonPadding = new Padding(14, 0, 8, 0)   // ← nowe
             };
             return btn;
         }
