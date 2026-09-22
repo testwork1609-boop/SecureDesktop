@@ -26,6 +26,7 @@ namespace SecureDesktop.Forms
         private Panel _contentHost;
         private Label _viewTitleLabel;
         private Label _userLabel;
+        private bool _lockInProgress;
 
         public DashboardForm(User user, DatabaseInitializer db, int sessionId)
         {
@@ -77,7 +78,6 @@ namespace SecureDesktop.Forms
                 var data = _db.GetData();
                 if (data == null) return false;
 
-                // 1) Hash zalogowanego użytkownika.
                 if (data.Users != null)
                 {
                     var user = data.Users.FirstOrDefault(u => u.Id == _currentUser.Id);
@@ -89,7 +89,6 @@ namespace SecureDesktop.Forms
                     }
                 }
 
-                // 2) Fallback: stary plaintext AdminPassword w Settings.
                 if (data.Settings != null)
                 {
                     string legacy;
@@ -336,6 +335,8 @@ namespace SecureDesktop.Forms
 
         private async void OnLockAllScreens(object sender, EventArgs e)
         {
+            if (_lockInProgress) return;
+            _lockInProgress = true;
             try
             {
                 this.WindowState = FormWindowState.Minimized;
@@ -347,10 +348,16 @@ namespace SecureDesktop.Forms
                 MessageBox.Show(Loc.T("dash.msg.err") + ex.Message, Loc.T("common.error"),
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
+            finally
+            {
+                _lockInProgress = false;
+            }
         }
 
         private async void OnLockWithPatterns(object sender, EventArgs e)
         {
+            if (_lockInProgress) return;
+            _lockInProgress = true;
             try
             {
                 var data = _db.GetData();
@@ -375,6 +382,10 @@ namespace SecureDesktop.Forms
             {
                 MessageBox.Show(Loc.T("dash.msg.err") + ex.Message, Loc.T("common.error"),
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                _lockInProgress = false;
             }
         }
 
@@ -453,8 +464,6 @@ namespace SecureDesktop.Forms
             base.Dispose(disposing);
         }
     }
-
-    // ============== HOME VIEW ==============
 
     internal class DashboardHomeView : UserControl
     {
