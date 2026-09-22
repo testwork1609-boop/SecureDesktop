@@ -251,8 +251,6 @@ namespace SecureDesktop.Forms
                         FlatStyle = FlatStyle.Flat
                     };
 
-                    // WinForms sam obsłuży Enter (AcceptButton) i Esc (CancelButton)
-                    // bez ręcznego KeyDown, więc Enter nie "przesiąknie" dalej.
                     dialog.AcceptButton = unlockBtn;
                     dialog.CancelButton = cancelBtn;
 
@@ -330,13 +328,26 @@ namespace SecureDesktop.Forms
         }
     }
 
+    /// <summary>
+    /// Osobne, małe, w 100% widoczne okienko z kłódką w prawym górnym rogu.
+    ///
+    /// Zamiast TransparencyKey używamy Region — forma jest fizycznie przycięta
+    /// do kształtu (elipsa + prostokąt na etykietę). Dzięki temu nie ma
+    /// różowej poświaty na krawędziach, którą dawał antyaliasowany okrąg
+    /// na tle magenta + TransparencyKey.
+    /// </summary>
     internal class LockButtonForm : Form
     {
         public event EventHandler LockClicked;
 
+        private const int FormWidth = 200;
+        private const int FormHeight = 140;
         private const int CircleSize = 72;
-        private const int OuterPadding = 10;
-        private const int LabelHeight = 26;
+        private const int CircleTop = 10;
+        private const int LabelTop = CircleTop + CircleSize + 8; // 90
+
+        private const int ScreenMarginX = 40;
+        private const int ScreenMarginY = 40;
 
         public LockButtonForm(Screen screen)
         {
@@ -345,18 +356,65 @@ namespace SecureDesktop.Forms
             this.TopMost = true;
             this.StartPosition = FormStartPosition.Manual;
 
-            int totalWidth = CircleSize + OuterPadding * 2;
-            int totalHeight = OuterPadding + CircleSize + 6 + LabelHeight + OuterPadding;
-            this.Size = new Size(totalWidth, totalHeight);
-            this.Location = new Point(screen.Bounds.Right - totalWidth - 16, screen.Bounds.Top + 16);
+            this.Size = new Size(FormWidth, FormHeight);
+            this.Location = new Point(
+                screen.Bounds.Right - FormWidth - ScreenMarginX,
+                screen.Bounds.Top + ScreenMarginY);
 
-            this.BackColor = Color.Magenta;
-            this.TransparencyKey = Color.Magenta;
+            // Bez TransparencyKey — Region przycina okno.
+            this.BackColor = UiTheme.Bg;
             this.DoubleBuffered = true;
             this.Cursor = Cursors.Hand;
-
             this.Paint += OnPaintInternal;
             this.MouseClick += OnMouseClickInternal;
+        }
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            ApplyRegion();
+        }
+
+        /// <summary>
+        /// Ustawia Region formy jako sumę: elipsa (kółko kłódki) + prostokąt
+        /// (obszar etykiety pod kołem). Wszystko poza tym nie istnieje.
+        /// </summary>
+        private void ApplyRegion()
+        {
+            try
+            {
+                int cx = FormWidth / 2;
+                int cy = CircleTop + CircleSize / 2;
+                int r = CircleSize / 2;
+
+                using (var path = new GraphicsPath())
+                {
+                    // Kółko
+                    path.AddEllipse(cx - r, cy - r, CircleSize, CircleSize);
+
+                    // Prostokąt pod etykietę — szeroki na ~180, wysoki na 30 px,
+                    // wyśrodkowany pod kółkiem.
+                    int labelW = 180;
+                    int labelH = 32;
+                    int labelX = cx - labelW / 2;
+                    int labelY = LabelTop;
+
+                    // Zaokrąglony prostokąt na etykietę.
+                    int rad = 10;
+                    int d = rad * 2;
+                    var rect = new Rectangle(labelX, labelY, labelW, labelH);
+                    path.AddArc(rect.X, rect.Y, d, d, 180, 90);
+                    path.AddArc(rect.Right - d, rect.Y, d, d, 270, 90);
+                    path.AddArc(rect.Right - d, rect.Bottom - d, d, d, 0, 90);
+                    path.AddArc(rect.X, rect.Bottom - d, d, d, 90, 90);
+                    path.CloseFigure();
+
+                    var old = this.Region;
+                    this.Region = new Region(path);
+                    if (old != null) old.Dispose();
+                }
+            }
+            catch { }
         }
 
         private void OnPaintInternal(object sender, PaintEventArgs e)
@@ -364,19 +422,23 @@ namespace SecureDesktop.Forms
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
             e.Graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
 
-            int cx = this.Width / 2;
-            int cy = OuterPadding + CircleSize / 2;
+            int cx = FormWidth / 2;
+            int cy = CircleTop + CircleSize / 2;
             int r = CircleSize / 2;
 
+            // Zewnętrzny biały pierścień.
             using (var brush = new SolidBrush(Color.White))
                 e.Graphics.FillEllipse(brush, cx - r, cy - r, CircleSize, CircleSize);
 
+            // Ciemniejsza obwódka (delikatna).
             using (var pen = new Pen(Color.FromArgb(30, 120, 60), 2))
                 e.Graphics.DrawEllipse(pen, cx - r + 2, cy - r + 2, CircleSize - 4, CircleSize - 4);
 
+            // Zielone koło.
             using (var brush = new SolidBrush(Color.FromArgb(45, 165, 90)))
                 e.Graphics.FillEllipse(brush, cx - r + 5, cy - r + 5, CircleSize - 10, CircleSize - 10);
 
+            // Biała kłódka.
             using (var brush = new SolidBrush(Color.White))
             {
                 e.Graphics.FillRectangle(brush, cx - 11, cy - 1, 22, 18);
@@ -389,16 +451,22 @@ namespace SecureDesktop.Forms
                 }
             }
 
+            // Etykieta pod kółkiem — czarna pigułka z białym tekstem.
             string text = Loc.T("lock.hint");
-            using (var font = new Font("Segoe UI", 8, FontStyle.Bold))
+            using (var font = new Font("Segoe UI", 9, FontStyle.Bold))
             {
                 var size = e.Graphics.MeasureString(text, font);
+                int labelW = 180;
+                int labelH = 32;
+                int labelX = cx - labelW / 2;
+                int labelY = LabelTop;
+
+                using (var bgBrush = new SolidBrush(Color.FromArgb(235, 15, 15, 15)))
+                using (var path = UiTheme.RoundedPath(new Rectangle(labelX, labelY, labelW, labelH), 10))
+                    e.Graphics.FillPath(bgBrush, path);
+
                 float tx = cx - size.Width / 2f;
-                float ty = cy + r + 4;
-
-                using (var bgBrush = new SolidBrush(Color.FromArgb(235, 0, 0, 0)))
-                    e.Graphics.FillRectangle(bgBrush, tx - 6, ty - 1, size.Width + 12, size.Height + 2);
-
+                float ty = labelY + (labelH - size.Height) / 2f;
                 using (var textBrush = new SolidBrush(Color.White))
                     e.Graphics.DrawString(text, font, textBrush, tx, ty);
             }
@@ -406,8 +474,8 @@ namespace SecureDesktop.Forms
 
         private void OnMouseClickInternal(object sender, MouseEventArgs e)
         {
-            int cx = this.Width / 2;
-            int cy = OuterPadding + CircleSize / 2;
+            int cx = FormWidth / 2;
+            int cy = CircleTop + CircleSize / 2;
             int r = CircleSize / 2 + 6;
             int dx = e.X - cx;
             int dy = e.Y - cy;
