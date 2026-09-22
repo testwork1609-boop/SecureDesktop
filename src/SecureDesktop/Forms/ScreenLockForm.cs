@@ -24,15 +24,14 @@ namespace SecureDesktop.Forms
 
         private const int RGN_DIFF = 4;
         private const int FRAME_THICKNESS = 2;
-        private static readonly Color PrimaryColor = Color.FromArgb(45, 165, 90);
-        private static readonly Color PrimaryHover = Color.FromArgb(60, 190, 110);
 
         private readonly Screen _screen;
         private readonly Dictionary<string, Rectangle> _unlockRegions;
         private readonly Func<string, bool> _verifyPassword;
         private readonly Bitmap _sourceScreenshot;
+        private LockButtonForm _lockButton;
 
-        public Rectangle ScreenBounds => _screen.Bounds;
+        public Rectangle ScreenBounds { get { return _screen.Bounds; } }
 
         public ScreenLockForm(Screen screen, Bitmap sourceScreenshot, Func<string, bool> verifyPassword = null)
         {
@@ -57,74 +56,8 @@ namespace SecureDesktop.Forms
             this.DoubleBuffered = true;
             this.KeyPreview = true;
 
-            // --- Duża, okrągła kłódka w prawym górnym rogu ---
-            var unlockContainer = new Panel
-            {
-                Size = new Size(220, 240),
-                Location = new Point(this.Width - 250, 20),
-                BackColor = Color.Transparent
-            };
-
-            var circle = new Panel
-            {
-                Size = new Size(140, 140),
-                Location = new Point(40, 0),
-                BackColor = Color.Transparent,
-                Cursor = Cursors.Hand
-            };
-            circle.Paint += (s, e) =>
-            {
-                e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-                bool hovered = circle.Tag as string == "hover";
-                Color fill = hovered ? PrimaryHover : PrimaryColor;
-
-                // Zewnętrzny pierścień (biały, półprzezroczysty)
-                using (var brush = new SolidBrush(Color.FromArgb(220, 255, 255, 255)))
-                    e.Graphics.FillEllipse(brush, 0, 0, 140, 140);
-
-                // Cienki drugi pierścień (obwódka)
-                using (var pen = new Pen(Color.FromArgb(200, 20, 120, 60), 3))
-                    e.Graphics.DrawEllipse(pen, 4, 4, 132, 132);
-
-                // Zielone koło
-                using (var brush = new SolidBrush(fill))
-                    e.Graphics.FillEllipse(brush, 10, 10, 120, 120);
-
-                // Ikona kłódki (biała), wyśrodkowana
-                using (var brush = new SolidBrush(Color.White))
-                {
-                    // Korpus kłódki
-                    e.Graphics.FillRectangle(brush, 48, 68, 44, 42);
-                    // Pałąk
-                    using (var pen = new Pen(Color.White, 8))
-                        e.Graphics.DrawArc(pen, 52, 32, 36, 40, 180, 180);
-                    // Dziurka
-                    using (var greenBrush = new SolidBrush(fill))
-                    {
-                        e.Graphics.FillEllipse(greenBrush, 63, 82, 14, 12);
-                        e.Graphics.FillRectangle(greenBrush, 67, 90, 6, 14);
-                    }
-                }
-            };
-            circle.MouseEnter += (s, e) => { circle.Tag = "hover"; circle.Invalidate(); };
-            circle.MouseLeave += (s, e) => { circle.Tag = null; circle.Invalidate(); };
-            circle.Click += (s, e) => ShowUnlockDialog();
-
-            // Etykieta pod kółkiem
-            var hint = new Label
-            {
-                Text = "Kliknij, aby odblokować   (Ctrl+L)",
-                Font = UiFonts.Segoe10Bold,
-                ForeColor = Color.White,
-                BackColor = Color.FromArgb(180, 0, 0, 0),
-                TextAlign = ContentAlignment.MiddleCenter,
-                Location = new Point(0, 155),
-                Size = new Size(220, 34)
-            };
-
-            unlockContainer.Controls.Add(circle);
-            unlockContainer.Controls.Add(hint);
-            this.Controls.Add(unlockContainer);
+            _lockButton = new LockButtonForm(_screen);
+            _lockButton.LockClicked += (s, e) => ShowUnlockDialog();
 
             this.KeyDown += (s, e) =>
             {
@@ -133,6 +66,12 @@ namespace SecureDesktop.Forms
                     e.SuppressKeyPress = true;
                     ShowUnlockDialog();
                 }
+            };
+
+            this.Shown += (s, e) =>
+            {
+                if (_lockButton != null && !_lockButton.IsDisposed && !_lockButton.Visible)
+                    _lockButton.Show();
             };
         }
 
@@ -218,69 +157,190 @@ namespace SecureDesktop.Forms
 
         private void ShowUnlockDialog()
         {
-            using (var dialog = new Form
+            if (_lockButton != null && !_lockButton.IsDisposed)
+                _lockButton.Hide();
+
+            try
             {
-                Text = "Odblokuj ekran",
-                Size = new Size(380, 250),
-                StartPosition = FormStartPosition.CenterScreen,
-                FormBorderStyle = FormBorderStyle.FixedDialog,
-                MaximizeBox = false,
-                MinimizeBox = false,
-                TopMost = true,
-                BackColor = Color.White,
-                KeyPreview = true,
-                ShowInTaskbar = false
-            })
+                using (var dialog = new Form
+                {
+                    Text = "Odblokuj ekran",
+                    Size = new Size(380, 250),
+                    StartPosition = FormStartPosition.CenterScreen,
+                    FormBorderStyle = FormBorderStyle.FixedDialog,
+                    MaximizeBox = false,
+                    MinimizeBox = false,
+                    TopMost = true,
+                    BackColor = Color.White,
+                    KeyPreview = true,
+                    ShowInTaskbar = false
+                })
+                {
+                    var icon = new Label { Text = "🔒", Font = UiFonts.Segoe24, Location = new Point(20, 15), Size = new Size(60, 40) };
+                    var title = new Label { Text = "Wprowadź hasło, aby odblokować", Font = UiFonts.Segoe11Bold, Location = new Point(75, 22), AutoSize = true };
+                    var passBox = new TextBox { Location = new Point(30, 85), Size = new Size(310, 30), PasswordChar = '●', Font = UiFonts.Segoe12 };
+                    var errorLabel = new Label { Location = new Point(30, 122), Size = new Size(310, 20), ForeColor = Color.Red, Visible = false };
+
+                    var unlockBtn = new Button { Text = "Odblokuj", Location = new Point(80, 155), Size = new Size(100, 38), BackColor = Color.FromArgb(45, 165, 90), ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Font = UiFonts.Segoe10Bold };
+                    unlockBtn.FlatAppearance.BorderSize = 0;
+                    var cancelBtn = new Button { Text = "Anuluj", Location = new Point(200, 155), Size = new Size(100, 38), BackColor = Color.White, FlatStyle = FlatStyle.Flat };
+
+                    Action unlockAction = () =>
+                    {
+                        if (_verifyPassword(passBox.Text))
+                        {
+                            dialog.Close();
+                            this.Close();
+                        }
+                        else
+                        {
+                            errorLabel.Text = "Nieprawidłowe hasło!";
+                            errorLabel.Visible = true;
+                            passBox.Text = "";
+                            passBox.Focus();
+                        }
+                    };
+
+                    unlockBtn.Click += (s, args) => unlockAction();
+                    cancelBtn.Click += (s, args) => dialog.Close();
+
+                    passBox.KeyDown += (s, args) =>
+                    {
+                        if (args.KeyCode == Keys.Enter) { args.SuppressKeyPress = true; unlockAction(); }
+                    };
+                    dialog.KeyDown += (s, args) =>
+                    {
+                        if (args.KeyCode == Keys.Enter) { args.SuppressKeyPress = true; unlockAction(); }
+                        else if (args.KeyCode == Keys.Escape) dialog.Close();
+                    };
+
+                    dialog.Controls.AddRange(new Control[] { icon, title, passBox, errorLabel, unlockBtn, cancelBtn });
+                    dialog.Shown += (s, args) => passBox.Focus();
+                    dialog.ShowDialog(this);
+                }
+            }
+            finally
             {
-                var icon = new Label { Text = "🔒", Font = UiFonts.Segoe24, Location = new Point(20, 15), Size = new Size(60, 40) };
-                var title = new Label { Text = "Wprowadź hasło, aby odblokować", Font = UiFonts.Segoe11Bold, Location = new Point(75, 22), AutoSize = true };
-                var passBox = new TextBox { Location = new Point(30, 85), Size = new Size(310, 30), PasswordChar = '●', Font = UiFonts.Segoe12 };
-                var errorLabel = new Label { Location = new Point(30, 122), Size = new Size(310, 20), ForeColor = Color.Red, Visible = false };
-
-                var unlockBtn = new Button { Text = "Odblokuj", Location = new Point(80, 155), Size = new Size(100, 38), BackColor = PrimaryColor, ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Font = UiFonts.Segoe10Bold };
-                unlockBtn.FlatAppearance.BorderSize = 0;
-                var cancelBtn = new Button { Text = "Anuluj", Location = new Point(200, 155), Size = new Size(100, 38), BackColor = Color.White, FlatStyle = FlatStyle.Flat };
-
-                Action unlockAction = () =>
-                {
-                    if (_verifyPassword(passBox.Text))
-                    {
-                        dialog.Close();
-                        this.Close();
-                    }
-                    else
-                    {
-                        errorLabel.Text = "Nieprawidłowe hasło!";
-                        errorLabel.Visible = true;
-                        passBox.Text = "";
-                        passBox.Focus();
-                    }
-                };
-
-                unlockBtn.Click += (s, args) => unlockAction();
-                cancelBtn.Click += (s, args) => dialog.Close();
-
-                passBox.KeyDown += (s, args) =>
-                {
-                    if (args.KeyCode == Keys.Enter) { args.SuppressKeyPress = true; unlockAction(); }
-                };
-                dialog.KeyDown += (s, args) =>
-                {
-                    if (args.KeyCode == Keys.Enter) { args.SuppressKeyPress = true; unlockAction(); }
-                    else if (args.KeyCode == Keys.Escape) dialog.Close();
-                };
-
-                dialog.Controls.AddRange(new Control[] { icon, title, passBox, errorLabel, unlockBtn, cancelBtn });
-                dialog.Shown += (s, args) => passBox.Focus();
-                dialog.ShowDialog(this);
+                if (_lockButton != null && !_lockButton.IsDisposed && this.Visible)
+                    _lockButton.Show();
             }
         }
 
         protected override void Dispose(bool disposing)
         {
             if (disposing)
-                _sourceScreenshot?.Dispose();
+            {
+                if (_lockButton != null && !_lockButton.IsDisposed)
+                {
+                    try { _lockButton.Close(); _lockButton.Dispose(); } catch { }
+                    _lockButton = null;
+                }
+                if (_sourceScreenshot != null) _sourceScreenshot.Dispose();
+            }
             base.Dispose(disposing);
+        }
+    }
+
+    /// <summary>
+    /// Osobne, małe okienko z kłódką. NIE ma ustawionej Opacity (domyślnie 100%)
+    /// - użytkownik widzi ikonę w pełni kryjącą. Tło okna jest magenta,
+    /// ustawione jako TransparencyKey - widoczne są tylko narysowane elementy
+    /// (biały ring + zielone koło + etykieta).
+    /// </summary>
+    internal class LockButtonForm : Form
+    {
+        public event EventHandler LockClicked;
+
+        private const int CircleSize = 72;   // mniejsze (było 96)
+        private const int OuterPadding = 10;
+        private const int LabelHeight = 26;
+
+        public LockButtonForm(Screen screen)
+        {
+            this.FormBorderStyle = FormBorderStyle.None;
+            this.ShowInTaskbar = false;
+            this.TopMost = true;
+            this.StartPosition = FormStartPosition.Manual;
+
+            int totalWidth = CircleSize + OuterPadding * 2;
+            int totalHeight = OuterPadding + CircleSize + 6 + LabelHeight + OuterPadding;
+            this.Size = new Size(totalWidth, totalHeight);
+            this.Location = new Point(screen.Bounds.Right - totalWidth - 16, screen.Bounds.Top + 16);
+
+            this.BackColor = Color.Magenta;
+            this.TransparencyKey = Color.Magenta;
+            this.DoubleBuffered = true;
+            this.Cursor = Cursors.Hand;
+
+            this.Paint += OnPaintInternal;
+            this.MouseClick += OnMouseClickInternal;
+        }
+
+        private void OnPaintInternal(object sender, PaintEventArgs e)
+        {
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            e.Graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
+
+            int cx = this.Width / 2;
+            int cy = OuterPadding + CircleSize / 2;
+            int r = CircleSize / 2;
+
+            // Biały pierścień zewnętrzny (dla maksymalnego kontrastu).
+            using (var brush = new SolidBrush(Color.White))
+                e.Graphics.FillEllipse(brush, cx - r, cy - r, CircleSize, CircleSize);
+
+            // Delikatna ciemniejsza obwódka.
+            using (var pen = new Pen(Color.FromArgb(30, 120, 60), 2))
+                e.Graphics.DrawEllipse(pen, cx - r + 2, cy - r + 2, CircleSize - 4, CircleSize - 4);
+
+            // Zielone koło.
+            using (var brush = new SolidBrush(Color.FromArgb(45, 165, 90)))
+                e.Graphics.FillEllipse(brush, cx - r + 5, cy - r + 5, CircleSize - 10, CircleSize - 10);
+
+            // Ikona kłódki — skala dopasowana do 72 px koła.
+            using (var brush = new SolidBrush(Color.White))
+            {
+                // Korpus
+                e.Graphics.FillRectangle(brush, cx - 11, cy - 1, 22, 18);
+                // Pałąk
+                using (var pen = new Pen(Color.White, 4))
+                    e.Graphics.DrawArc(pen, cx - 8, cy - 15, 16, 18, 180, 180);
+                // Dziurka
+                using (var greenBrush = new SolidBrush(Color.FromArgb(45, 165, 90)))
+                {
+                    e.Graphics.FillEllipse(greenBrush, cx - 2, cy + 4, 4, 4);
+                    e.Graphics.FillRectangle(greenBrush, cx - 1, cy + 7, 2, 6);
+                }
+            }
+
+            // Etykieta pod kołem.
+            string text = "Odblokuj (Ctrl+L)";
+            using (var font = new Font("Segoe UI", 8, FontStyle.Bold))
+            {
+                var size = e.Graphics.MeasureString(text, font);
+                float tx = cx - size.Width / 2f;
+                float ty = cy + r + 4;
+
+                using (var bgBrush = new SolidBrush(Color.FromArgb(235, 0, 0, 0)))
+                    e.Graphics.FillRectangle(bgBrush, tx - 6, ty - 1, size.Width + 12, size.Height + 2);
+
+                using (var textBrush = new SolidBrush(Color.White))
+                    e.Graphics.DrawString(text, font, textBrush, tx, ty);
+            }
+        }
+
+        private void OnMouseClickInternal(object sender, MouseEventArgs e)
+        {
+            int cx = this.Width / 2;
+            int cy = OuterPadding + CircleSize / 2;
+            int r = CircleSize / 2 + 6;
+            int dx = e.X - cx;
+            int dy = e.Y - cy;
+            if (dx * dx + dy * dy <= r * r)
+            {
+                var h = LockClicked;
+                if (h != null) h(this, EventArgs.Empty);
+            }
         }
     }
 }
