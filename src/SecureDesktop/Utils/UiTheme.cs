@@ -9,20 +9,20 @@ namespace SecureDesktop.Utils
     public static class UiTheme
     {
         // === Paleta ===
-        public static readonly Color Primary = Color.FromArgb(16, 185, 129);        // emerald-500
-        public static readonly Color PrimaryHover = Color.FromArgb(5, 150, 105);    // emerald-600
-        public static readonly Color PrimaryPressed = Color.FromArgb(4, 120, 87);   // emerald-700
-        public static readonly Color PrimaryLight = Color.FromArgb(209, 250, 229);  // emerald-100
+        public static readonly Color Primary = Color.FromArgb(16, 185, 129);
+        public static readonly Color PrimaryHover = Color.FromArgb(5, 150, 105);
+        public static readonly Color PrimaryPressed = Color.FromArgb(4, 120, 87);
+        public static readonly Color PrimaryLight = Color.FromArgb(209, 250, 229);
 
-        public static readonly Color Bg = Color.FromArgb(248, 250, 252);           // slate-50
+        public static readonly Color Bg = Color.FromArgb(248, 250, 252);
         public static readonly Color Surface = Color.FromArgb(255, 255, 255);
-        public static readonly Color SurfaceAlt = Color.FromArgb(241, 245, 249);    // slate-100
-        public static readonly Color Border = Color.FromArgb(226, 232, 240);       // slate-200
-        public static readonly Color BorderStrong = Color.FromArgb(203, 213, 225);  // slate-300
+        public static readonly Color SurfaceAlt = Color.FromArgb(241, 245, 249);
+        public static readonly Color Border = Color.FromArgb(226, 232, 240);
+        public static readonly Color BorderStrong = Color.FromArgb(203, 213, 225);
 
-        public static readonly Color TextPrimary = Color.FromArgb(15, 23, 42);     // slate-900
-        public static readonly Color TextSecondary = Color.FromArgb(71, 85, 105);   // slate-600
-        public static readonly Color TextMuted = Color.FromArgb(148, 163, 184);     // slate-400
+        public static readonly Color TextPrimary = Color.FromArgb(15, 23, 42);
+        public static readonly Color TextSecondary = Color.FromArgb(71, 85, 105);
+        public static readonly Color TextMuted = Color.FromArgb(148, 163, 184);
 
         public static readonly Color Danger = Color.FromArgb(239, 68, 68);
         public static readonly Color DangerHover = Color.FromArgb(220, 38, 38);
@@ -53,9 +53,7 @@ namespace SecureDesktop.Utils
         }
 
         /// <summary>
-        /// Nadaje kontrolce "card look" - okrągłe rogi, białe tło, cienka obwódka,
-        /// opcjonalny delikatny cień. Wywołać raz na kontrolkę, np. w konstruktorze.
-        /// Wymaga BackColor = kolor tła rodzica (żeby okrągłe rogi ładnie wyglądały).
+        /// Nadaje kontrolce "card look" - okrągłe rogi, białe tło, cienka obwódka.
         /// </summary>
         public static void MakeCard(Control ctrl, int radius = 10, bool shadow = true, bool border = true)
         {
@@ -65,17 +63,6 @@ namespace SecureDesktop.Utils
                 g.SmoothingMode = SmoothingMode.AntiAlias;
 
                 var rect = new Rectangle(0, 0, ctrl.Width - 1, ctrl.Height - 1);
-
-                if (shadow)
-                {
-                    for (int i = 3; i >= 1; i--)
-                    {
-                        var shRect = new Rectangle(rect.X + 1, rect.Y + i, rect.Width - 2, rect.Height - 1);
-                        using (var shPath = RoundedPath(shRect, radius))
-                        using (var shBrush = new SolidBrush(Color.FromArgb(6, 0, 0, 0)))
-                            g.FillPath(shBrush, shPath);
-                    }
-                }
 
                 using (var path = RoundedPath(rect, radius))
                 using (var brush = new SolidBrush(Surface))
@@ -91,28 +78,11 @@ namespace SecureDesktop.Utils
 
             ctrl.Resize += (s, e) => ctrl.Invalidate();
         }
-
-        /// <summary>
-        /// Nadaje kontrolce subtelne zaokrąglenie narożników i wyłącza standardowe
-        /// tło (żeby rodzica kolor przebijał). Używać dla kontenerów, nie dla kart.
-        /// </summary>
-        public static void MakeRounded(Control ctrl, int radius)
-        {
-            ctrl.Paint += (s, e) =>
-            {
-                var g = e.Graphics;
-                g.SmoothingMode = SmoothingMode.AntiAlias;
-                var rect = new Rectangle(0, 0, ctrl.Width - 1, ctrl.Height - 1);
-                using (var path = RoundedPath(rect, radius))
-                using (var brush = new SolidBrush(ctrl.BackColor))
-                    g.FillPath(brush, path);
-            };
-        }
     }
 
     /// <summary>
-    /// Nowoczesny przycisk - zaokrąglone rogi, hover, pressed.
-    /// Domyślnie primary (zielony), ale można ustawić własne kolory.
+    /// Nowoczesny przycisk z zaokrąglonymi rogami.
+    /// Do przycięcia używa Region — żadnych artefaktów na krawędziach.
     /// </summary>
     public class RoundedButton : Button
     {
@@ -122,33 +92,68 @@ namespace SecureDesktop.Utils
         public Color PressedColor { get; set; }
         public Color OutlineColor { get; set; }
         public int OutlineThickness { get; set; }
-        public bool UseFlatText { get; set; }
+        public Padding ButtonPadding { get; set; }
 
         private bool _hover;
         private bool _pressed;
 
         public RoundedButton()
         {
-            this.SetStyle(
-                ControlStyles.AllPaintingInWmPaint |
+            // Kluczowe: UserPaint + AllPaintingInWmPaint => WinForms nie rysuje tła
+            // ani ramki Win32 - tylko nasz OnPaint. Razem z Region daje czysty efekt.
+            SetStyle(
                 ControlStyles.UserPaint |
+                ControlStyles.AllPaintingInWmPaint |
                 ControlStyles.OptimizedDoubleBuffer |
-                ControlStyles.ResizeRedraw |
-                ControlStyles.SupportsTransparentBackColor, true);
+                ControlStyles.ResizeRedraw, true);
 
-            this.BackColor = Color.Transparent;
             this.FlatStyle = FlatStyle.Flat;
             this.FlatAppearance.BorderSize = 0;
-            this.ForeColor = Color.White;
-            this.Font = UiFonts.BodyBold;
+            this.UseVisualStyleBackColor = false;
             this.Cursor = Cursors.Hand;
+            this.Font = UiFonts.BodyBold;
+            this.ForeColor = Color.White;
+            this.BackColor = UiTheme.Primary; // wypełniane w OnPaint, ale musi być nieprzezroczyste
 
-            CornerRadius = 8;
+            CornerRadius = 10;
             NormalColor = UiTheme.Primary;
             HoverColor = UiTheme.PrimaryHover;
             PressedColor = UiTheme.PrimaryPressed;
             OutlineColor = Color.Transparent;
             OutlineThickness = 0;
+            ButtonPadding = new Padding(16, 0, 16, 0);
+            TextAlign = ContentAlignment.MiddleCenter;
+        }
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            UpdateRegion();
+        }
+
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            UpdateRegion();
+        }
+
+        /// <summary>
+        /// Przytnij kontrolkę do zaokrąglonego kształtu.
+        /// Dzięki temu WinForms nigdy nie rysuje prostokątnych rogów.
+        /// </summary>
+        private void UpdateRegion()
+        {
+            if (Width <= 0 || Height <= 0) return;
+            try
+            {
+                using (var path = UiTheme.RoundedPath(new Rectangle(0, 0, Width, Height), CornerRadius))
+                {
+                    var old = Region;
+                    Region = new Region(path);
+                    if (old != null) old.Dispose();
+                }
+            }
+            catch { }
         }
 
         protected override void OnMouseEnter(EventArgs e) { _hover = true; Invalidate(); base.OnMouseEnter(e); }
@@ -162,22 +167,40 @@ namespace SecureDesktop.Utils
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
 
-            var rect = new Rectangle(0, 0, this.Width - 1, this.Height - 1);
+            // Wypełnienie (Region już przycina do zaokrąglenia).
             Color fill = _pressed ? PressedColor : (_hover ? HoverColor : NormalColor);
-
-            using (var path = UiTheme.RoundedPath(rect, CornerRadius))
             using (var brush = new SolidBrush(fill))
-                g.FillPath(brush, path);
+                g.FillRectangle(brush, 0, 0, Width, Height);
 
+            // Opcjonalna obwódka (rysowana 1 px w środku).
             if (OutlineThickness > 0 && OutlineColor.A > 0)
             {
-                using (var path = UiTheme.RoundedPath(rect, CornerRadius))
+                var inset = new Rectangle(
+                    OutlineThickness / 2,
+                    OutlineThickness / 2,
+                    Width - OutlineThickness - 1,
+                    Height - OutlineThickness - 1);
+                using (var path = UiTheme.RoundedPath(inset, Math.Max(2, CornerRadius - 1)))
                 using (var pen = new Pen(OutlineColor, OutlineThickness))
                     g.DrawPath(pen, path);
             }
 
-            TextRenderer.DrawText(g, this.Text, this.Font, rect, this.ForeColor,
-                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+            // Tekst z paddingiem i wyrównaniem.
+            var textRect = new Rectangle(
+                ButtonPadding.Left,
+                0,
+                Math.Max(0, Width - ButtonPadding.Left - ButtonPadding.Right),
+                Height);
+
+            var flags = TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis;
+            switch (TextAlign)
+            {
+                case ContentAlignment.MiddleLeft: flags |= TextFormatFlags.Left; break;
+                case ContentAlignment.MiddleRight: flags |= TextFormatFlags.Right; break;
+                default: flags |= TextFormatFlags.HorizontalCenter; break;
+            }
+
+            TextRenderer.DrawText(g, Text, Font, textRect, ForeColor, flags);
         }
     }
 }
