@@ -38,6 +38,24 @@ namespace SecureDesktop.Forms
             _db = db;
             _sessionId = sessionId;
             _lockService = new ScreenLockService { PasswordVerifier = VerifyCurrentUserPassword };
+
+            // Po odblokowaniu ekranu przywracamy panel główny z minimalizacji
+            // (bo przed blokadą chowamy go, żeby nie zasłaniał ekranu).
+            _lockService.LockDeactivated += (s, e) =>
+            {
+                try
+                {
+                    BeginInvoke(new Action(() =>
+                    {
+                        if (this.IsDisposed) return;
+                        this.WindowState = FormWindowState.Normal;
+                        this.Show();
+                        this.Activate();
+                    }));
+                }
+                catch { }
+            };
+
             LoadStats();
             InitializeComponent();
             ShowHome();
@@ -306,7 +324,7 @@ namespace SecureDesktop.Forms
             _backButton.Visible = false;
         }
 
-        private void OnLockWithPatterns(object sender, EventArgs e)
+        private async void OnLockWithPatterns(object sender, EventArgs e)
         {
             try
             {
@@ -323,6 +341,16 @@ namespace SecureDesktop.Forms
                         "Pattern Lock", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     return;
                 }
+
+                // Zminimalizuj okno Dashboardu, żeby nie zasłaniało ekranu.
+                // Bez tego pattern service robi screenshot z widocznym oknem
+                // aplikacji i nie znajduje wzorca nagranego z pulpitu pod spodem.
+                this.WindowState = FormWindowState.Minimized;
+
+                // Odczekaj ~900 ms - system zdąży odświeżyć pulpit pod spodem,
+                // zanim ruszy overlay i pierwszy skan wzorca.
+                await System.Threading.Tasks.Task.Delay(900);
+
                 _lockService.LockWithPatterns(usable, CreatePatternRecognitionService());
             }
             catch (Exception ex) { MessageBox.Show("Błąd: " + ex.Message); }
