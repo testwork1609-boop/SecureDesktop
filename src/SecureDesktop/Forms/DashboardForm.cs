@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Linq;
@@ -120,13 +121,7 @@ namespace SecureDesktop.Forms
             this.ForeColor = UiTheme.TextPrimary;
             this.DoubleBuffered = true;
 
-            // === Header ===
-            var headerPanel = new Panel
-            {
-                Dock = DockStyle.Top,
-                Height = 72,
-                BackColor = UiTheme.Surface
-            };
+            var headerPanel = new Panel { Dock = DockStyle.Top, Height = 72, BackColor = UiTheme.Surface };
             headerPanel.Paint += (s, e) =>
             {
                 using (var pen = new Pen(UiTheme.Border, 1))
@@ -182,13 +177,7 @@ namespace SecureDesktop.Forms
             headerPanel.Resize += (s, e) =>
                 _userLabel.Location = new Point(headerPanel.Width - _userLabel.Width - 32, 28);
 
-            // === Sidebar ===
-            var sidebarPanel = new Panel
-            {
-                Dock = DockStyle.Left,
-                Width = 250,
-                BackColor = UiTheme.Surface
-            };
+            var sidebarPanel = new Panel { Dock = DockStyle.Left, Width = 250, BackColor = UiTheme.Surface };
             sidebarPanel.Paint += (s, e) =>
             {
                 using (var pen = new Pen(UiTheme.Border, 1))
@@ -201,8 +190,7 @@ namespace SecureDesktop.Forms
             homeBtn.Click += (s, e) => ShowHome();
             y += 48;
 
-            var sep1 = new Panel { Location = new Point(20, y), Size = new Size(210, 1), BackColor = UiTheme.Border };
-            sidebarPanel.Controls.Add(sep1);
+            sidebarPanel.Controls.Add(new Panel { Location = new Point(20, y), Size = new Size(210, 1), BackColor = UiTheme.Border });
             y += 16;
 
             var lockAllBtn = CreateSidebarButton("🔒", "Blokuj cały ekran", y);
@@ -228,7 +216,7 @@ namespace SecureDesktop.Forms
 
             if (_currentUser.IsAdmin)
             {
-                var sectionLabel = new Label
+                sidebarPanel.Controls.Add(new Label
                 {
                     Text = "ADMINISTRACJA",
                     Font = UiFonts.SmallBold,
@@ -236,8 +224,7 @@ namespace SecureDesktop.Forms
                     Location = new Point(24, y),
                     AutoSize = true,
                     BackColor = Color.Transparent
-                };
-                sidebarPanel.Controls.Add(sectionLabel);
+                });
                 y += 24;
 
                 var configBtn = CreateSidebarButton("⚙", "Konfiguracja", y);
@@ -266,15 +253,7 @@ namespace SecureDesktop.Forms
                 sidebarPanel.Controls.Add(backupBtn);
             }
 
-            // === Wyloguj (na dole sidebara) ===
-            var logoutHost = new Panel
-            {
-                Dock = DockStyle.Bottom,
-                Height = 66,
-                BackColor = UiTheme.Surface,
-                Padding = new Padding(16, 10, 16, 10)
-            };
-
+            var logoutHost = new Panel { Dock = DockStyle.Bottom, Height = 66, BackColor = UiTheme.Surface, Padding = new Padding(16, 10, 16, 10) };
             var logoutBtn = new RoundedButton
             {
                 Text = "🚪   Wyloguj",
@@ -292,13 +271,7 @@ namespace SecureDesktop.Forms
             logoutHost.Controls.Add(logoutBtn);
             sidebarPanel.Controls.Add(logoutHost);
 
-            // === Content host ===
-            _contentHost = new Panel
-            {
-                Dock = DockStyle.Fill,
-                BackColor = UiTheme.Bg,
-                Padding = new Padding(28)
-            };
+            _contentHost = new Panel { Dock = DockStyle.Fill, BackColor = UiTheme.Bg, Padding = new Padding(28) };
 
             this.Controls.Add(_contentHost);
             this.Controls.Add(sidebarPanel);
@@ -342,7 +315,16 @@ namespace SecureDesktop.Forms
         private void ShowHome()
         {
             LoadStats();
-            var home = new DashboardHomeView(_currentUser, _totalPatterns, _activePatterns, _totalEvents);
+            List<Tip> tips;
+            try
+            {
+                tips = _db.GetData() != null && _db.GetData().Tips != null
+                    ? _db.GetData().Tips.Where(t => t.IsActive).OrderBy(t => t.Id).ToList()
+                    : new List<Tip>();
+            }
+            catch { tips = new List<Tip>(); }
+
+            var home = new DashboardHomeView(_currentUser, _totalPatterns, _activePatterns, _totalEvents, tips);
             ShowView(home, "Panel główny");
         }
 
@@ -352,7 +334,7 @@ namespace SecureDesktop.Forms
             {
                 var data = _db.GetData();
                 var patterns = data == null || data.Patterns == null
-                    ? new System.Collections.Generic.List<Pattern>()
+                    ? new List<Pattern>()
                     : data.Patterns.ToList();
 
                 var usable = patterns.Where(p => p.IsActive && p.ImageData != null && p.ImageData.Length > 0).ToList();
@@ -368,10 +350,7 @@ namespace SecureDesktop.Forms
                 await System.Threading.Tasks.Task.Delay(900);
                 _lockService.LockWithPatterns(usable, CreatePatternRecognitionService());
             }
-            catch (Exception ex)
-            {
-                MessageBox.Show("Błąd: " + ex.Message, "Błąd", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
+            catch (Exception ex) { MessageBox.Show("Błąd: " + ex.Message, "Błąd", MessageBoxButtons.OK, MessageBoxIcon.Error); }
         }
 
         private void OnCheckpoint(object sender, EventArgs e)
@@ -397,10 +376,7 @@ namespace SecureDesktop.Forms
                     UseShellExecute = true
                 });
             }
-            catch (Exception ex)
-            {
-                MessageBox.Show("Błąd: " + ex.Message, "Błąd", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
+            catch (Exception ex) { MessageBox.Show("Błąd: " + ex.Message, "Błąd", MessageBoxButtons.OK, MessageBoxIcon.Error); }
         }
 
         private void OnBackupNow(object sender, EventArgs e)
@@ -408,18 +384,11 @@ namespace SecureDesktop.Forms
             try
             {
                 var sourcePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
-                if (!File.Exists(sourcePath))
-                {
-                    MessageBox.Show("Brak bazy danych.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    return;
-                }
+                if (!File.Exists(sourcePath)) { MessageBox.Show("Brak bazy danych.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
                 new BackupService().CreateBackup(sourcePath, "Backup");
                 MessageBox.Show("Backup utworzony!", "Sukces", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
-            catch (Exception ex)
-            {
-                MessageBox.Show("Błąd: " + ex.Message, "Błąd", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
+            catch (Exception ex) { MessageBox.Show("Błąd: " + ex.Message, "Błąd", MessageBoxButtons.OK, MessageBoxIcon.Error); }
         }
 
         private void OnLogout(object sender, EventArgs e)
@@ -453,7 +422,7 @@ namespace SecureDesktop.Forms
 
     internal class DashboardHomeView : UserControl
     {
-        public DashboardHomeView(User user, int totalPatterns, int activePatterns, int totalEvents)
+        public DashboardHomeView(User user, int totalPatterns, int activePatterns, int totalEvents, List<Tip> tips)
         {
             this.BackColor = UiTheme.Bg;
             this.Dock = DockStyle.Fill;
@@ -486,8 +455,9 @@ namespace SecureDesktop.Forms
                 ForeColor = UiTheme.TextSecondary,
                 BackColor = Color.Transparent
             });
-
             this.Controls.Add(welcomeCard);
+
+            int tipCardTop = 144;
 
             if (user.IsAdmin)
             {
@@ -514,50 +484,136 @@ namespace SecureDesktop.Forms
                 statsRow.Controls.Add(cardEvents);
                 statsRow.Controls.Add(cardStatus);
                 this.Controls.Add(statsRow);
+
+                tipCardTop = 296;
             }
 
+            // === Karta wskazówek z przewijaniem ===
             var tipCard = new Panel
             {
-                Location = new Point(0, user.IsAdmin ? 296 : 144),
-                Size = new Size(760, 170),
+                Location = new Point(0, tipCardTop),
+                Size = new Size(760, 320),
                 BackColor = UiTheme.Bg,
-                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom
             };
             UiTheme.MakeCard(tipCard, 12);
 
+            // Nagłówek
             tipCard.Controls.Add(new Label
             {
                 Text = "💡",
-                Font = new Font("Segoe UI", 24),
-                Location = new Point(24, 24),
-                Size = new Size(48, 48),
+                Font = new Font("Segoe UI", 18),
+                Location = new Point(20, 14),
+                Size = new Size(40, 40),
                 TextAlign = ContentAlignment.MiddleCenter,
                 BackColor = Color.Transparent
             });
 
             tipCard.Controls.Add(new Label
             {
-                Text = "Wskazówka",
+                Text = "Wskazówki",
                 Font = UiFonts.H3,
-                Location = new Point(84, 26),
+                Location = new Point(68, 20),
                 AutoSize = true,
                 ForeColor = UiTheme.TextPrimary,
                 BackColor = Color.Transparent
             });
 
-            tipCard.Controls.Add(new Label
+            // Scrollowalny kontener
+            var scroll = new Panel
             {
-                Text = "Wzorce nagrywaj z tego, co jest ZAWSZE widoczne na ekranie\n" +
-                       "(ikona w pasku zadań, logo w oknie). Unikaj ikon pulpitu, które bywają zasłonięte.\n" +
-                       "Przed użyciem sprawdź wzorzec przyciskiem „Testuj wzorzec” w Konfiguracji.",
-                Font = UiFonts.Body,
-                Location = new Point(84, 64),
-                Size = new Size(640, 90),
-                ForeColor = UiTheme.TextSecondary,
-                BackColor = Color.Transparent
-            });
+                Location = new Point(20, 60),
+                Size = new Size(tipCard.Width - 40, tipCard.Height - 80),
+                BackColor = Color.Transparent,
+                AutoScroll = true,
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom
+            };
+            tipCard.Controls.Add(scroll);
+
+            PopulateTips(scroll, tips, tipCard.Width - 60);
+
+            // Re-layout na resize (żeby separatory i teksty zostały ładne)
+            tipCard.Resize += (s, e) =>
+            {
+                scroll.Size = new Size(tipCard.Width - 40, tipCard.Height - 80);
+                PopulateTips(scroll, tips, tipCard.Width - 60);
+            };
 
             this.Controls.Add(tipCard);
+        }
+
+        private void PopulateTips(Panel container, List<Tip> tips, int width)
+        {
+            container.SuspendLayout();
+
+            // Usuń stare dzieci (oprócz scrollbara - WinForms dodaje go sam)
+            var toRemove = new List<Control>();
+            foreach (Control c in container.Controls) toRemove.Add(c);
+            foreach (var c in toRemove) { container.Controls.Remove(c); c.Dispose(); }
+
+            if (width < 100) width = 100;
+
+            if (tips == null || tips.Count == 0)
+            {
+                var empty = new Label
+                {
+                    Text = "Brak wskazówek. Możesz je dodać w Konfiguracja → Wskazówki.",
+                    Font = UiFonts.Body,
+                    ForeColor = UiTheme.TextMuted,
+                    Location = new Point(0, 0),
+                    AutoSize = true,
+                    MaximumSize = new Size(width, 0),
+                    BackColor = Color.Transparent
+                };
+                container.Controls.Add(empty);
+                container.ResumeLayout();
+                return;
+            }
+
+            int y = 0;
+            for (int i = 0; i < tips.Count; i++)
+            {
+                var tip = tips[i];
+
+                var titleLbl = new Label
+                {
+                    Text = (tip.Title ?? "").ToUpperInvariant(),
+                    Font = UiFonts.CaptionBold,
+                    ForeColor = UiTheme.PrimarySoftText,
+                    Location = new Point(0, y),
+                    AutoSize = true,
+                    MaximumSize = new Size(width, 0),
+                    BackColor = Color.Transparent
+                };
+                container.Controls.Add(titleLbl);
+                y += titleLbl.PreferredHeight + 4;
+
+                var contentLbl = new Label
+                {
+                    Text = tip.Content ?? "",
+                    Font = UiFonts.Body,
+                    ForeColor = UiTheme.TextSecondary,
+                    Location = new Point(0, y),
+                    AutoSize = true,
+                    MaximumSize = new Size(width, 0),
+                    BackColor = Color.Transparent
+                };
+                container.Controls.Add(contentLbl);
+                y += contentLbl.PreferredHeight + 16;
+
+                if (i < tips.Count - 1)
+                {
+                    var sep = new Panel
+                    {
+                        Location = new Point(0, y - 8),
+                        Size = new Size(width, 1),
+                        BackColor = UiTheme.Border
+                    };
+                    container.Controls.Add(sep);
+                }
+            }
+
+            container.ResumeLayout();
         }
 
         private Panel CreateStatCard(string icon, string value, string label, string subtext)
