@@ -18,6 +18,14 @@ namespace SecureDesktop.Forms
         private TextBox _idBox;
         private TextBox _passBox;
         private Label _errorLabel;
+        private Label _titleLabel;
+        private Label _subtitleLabel;
+        private Label _idLabel;
+        private Label _passLabel;
+        private Label _hintLabel;
+        private RoundedButton _loginBtn;
+        private LanguageButton _langPl;
+        private LanguageButton _langGb;
 
         public User LoggedInUser { get; private set; }
         public int LoggedInSessionId { get; private set; }
@@ -29,12 +37,40 @@ namespace SecureDesktop.Forms
             _sessionRepo = new SessionRepository(_db);
             _eventRepo = new EventLogRepository(_db);
             InitializeComponent();
+            Loc.LanguageChanged += OnLanguageChanged;
+            ApplyLanguage();
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) Loc.LanguageChanged -= OnLanguageChanged;
+            base.Dispose(disposing);
+        }
+
+        private void OnLanguageChanged()
+        {
+            if (this.IsDisposed) return;
+            if (this.InvokeRequired) { try { BeginInvoke(new Action(ApplyLanguage)); } catch { } return; }
+            ApplyLanguage();
+        }
+
+        private void ApplyLanguage()
+        {
+            this.Text = Loc.T("login.window_title");
+            _titleLabel.Text = Loc.T("dash.header_brand");
+            _subtitleLabel.Text = Loc.T("login.subtitle");
+            _idLabel.Text = Loc.T("login.id");
+            _passLabel.Text = Loc.T("login.password");
+            _loginBtn.Text = Loc.T("login.submit");
+            _hintLabel.Text = Loc.T("login.hint");
+            _langPl.IsSelected = Loc.Current == "pl";
+            _langGb.IsSelected = Loc.Current == "en";
         }
 
         private void InitializeComponent()
         {
-            this.Text = "SecureDesktop — Logowanie";
-            this.Size = new Size(480, 640);
+            this.Text = "SecureDesktop";
+            this.Size = new Size(480, 660);
             this.StartPosition = FormStartPosition.CenterScreen;
             this.FormBorderStyle = FormBorderStyle.None;
             this.BackColor = UiTheme.Bg;
@@ -49,13 +85,8 @@ namespace SecureDesktop.Forms
                     this.Region = new Region(path);
             };
 
-            // Drag bar (przeciąganie okna za górną krawędź)
-            var dragBar = new Panel
-            {
-                Location = new Point(0, 0),
-                Size = new Size(480, 44),
-                BackColor = Color.Transparent
-            };
+            // Drag bar
+            var dragBar = new Panel { Location = new Point(0, 0), Size = new Size(480, 44), BackColor = Color.Transparent };
             dragBar.MouseDown += (s, e) =>
             {
                 if (e.Button == MouseButtons.Left)
@@ -66,22 +97,25 @@ namespace SecureDesktop.Forms
             };
             this.Controls.Add(dragBar);
 
-            // === Close button (X) - własnoręcznie rysowany ===
-            var closeBtn = new CloseButton
-            {
-                Location = new Point(480 - 44, 8),
-                Size = new Size(36, 36),
-                BackColor = Color.Transparent
-            };
+            // Language flags (top-left)
+            _langPl = new LanguageButton { LangCode = "pl", Location = new Point(16, 8), Size = new Size(48, 30) };
+            _langPl.Click += (s, e) => Loc.SetLanguage("pl");
+            this.Controls.Add(_langPl);
+
+            _langGb = new LanguageButton { LangCode = "en", Location = new Point(70, 8), Size = new Size(48, 30) };
+            _langGb.Click += (s, e) => Loc.SetLanguage("en");
+            this.Controls.Add(_langGb);
+
+            // Close X (top-right)
+            var closeBtn = new CloseButton { Location = new Point(480 - 44, 6), Size = new Size(36, 36) };
             closeBtn.Click += (s, e) => Application.Exit();
             this.Controls.Add(closeBtn);
-            closeBtn.BringToFront();
 
-            // === Card ===
+            // Card
             var card = new Panel
             {
                 Location = new Point(44, 80),
-                Size = new Size(392, 500),
+                Size = new Size(392, 520),
                 BackColor = UiTheme.Bg
             };
             UiTheme.MakeCard(card, 14, true, true);
@@ -111,7 +145,7 @@ namespace SecureDesktop.Forms
             };
             card.Controls.Add(logoCircle);
 
-            card.Controls.Add(new Label
+            _titleLabel = new Label
             {
                 Text = "SecureDesktop",
                 Font = UiFonts.H1,
@@ -120,32 +154,35 @@ namespace SecureDesktop.Forms
                 Size = new Size(392, 32),
                 TextAlign = ContentAlignment.MiddleCenter,
                 BackColor = Color.Transparent
-            });
+            };
+            card.Controls.Add(_titleLabel);
 
-            card.Controls.Add(new Label
+            _subtitleLabel = new Label
             {
-                Text = "Zaloguj się, aby kontynuować",
+                Text = "",
                 Font = UiFonts.Body,
                 ForeColor = UiTheme.TextSecondary,
                 Location = new Point(0, 152),
                 Size = new Size(392, 22),
                 TextAlign = ContentAlignment.MiddleCenter,
                 BackColor = Color.Transparent
-            });
+            };
+            card.Controls.Add(_subtitleLabel);
 
-            card.Controls.Add(new Label
+            _idLabel = new Label
             {
-                Text = "Numer identyfikacyjny",
+                Text = "",
                 Font = UiFonts.CaptionBold,
                 ForeColor = UiTheme.TextSecondary,
-                Location = new Point(48, 202),
+                Location = new Point(48, 208),
                 AutoSize = true,
                 BackColor = Color.Transparent
-            });
+            };
+            card.Controls.Add(_idLabel);
 
             _idBox = new TextBox
             {
-                Location = new Point(48, 226),
+                Location = new Point(48, 232),
                 Size = new Size(296, 34),
                 Font = UiFonts.BodyLarge,
                 BorderStyle = BorderStyle.FixedSingle,
@@ -154,19 +191,20 @@ namespace SecureDesktop.Forms
             };
             card.Controls.Add(_idBox);
 
-            card.Controls.Add(new Label
+            _passLabel = new Label
             {
-                Text = "Hasło",
+                Text = "",
                 Font = UiFonts.CaptionBold,
                 ForeColor = UiTheme.TextSecondary,
-                Location = new Point(48, 278),
+                Location = new Point(48, 284),
                 AutoSize = true,
                 BackColor = Color.Transparent
-            });
+            };
+            card.Controls.Add(_passLabel);
 
             _passBox = new TextBox
             {
-                Location = new Point(48, 302),
+                Location = new Point(48, 308),
                 Size = new Size(296, 34),
                 Font = UiFonts.BodyLarge,
                 PasswordChar = '●',
@@ -176,19 +214,19 @@ namespace SecureDesktop.Forms
             };
             card.Controls.Add(_passBox);
 
-            var loginBtn = new RoundedButton
+            _loginBtn = new RoundedButton
             {
-                Text = "Zaloguj się",
-                Location = new Point(48, 358),
+                Text = "",
+                Location = new Point(48, 364),
                 Size = new Size(296, 44),
                 CornerRadius = 10
             };
-            loginBtn.Click += LoginAction;
-            card.Controls.Add(loginBtn);
+            _loginBtn.Click += LoginAction;
+            card.Controls.Add(_loginBtn);
 
             _errorLabel = new Label
             {
-                Location = new Point(48, 410),
+                Location = new Point(48, 418),
                 Size = new Size(296, 40),
                 ForeColor = UiTheme.Danger,
                 Font = UiFonts.CaptionBold,
@@ -198,16 +236,17 @@ namespace SecureDesktop.Forms
             };
             card.Controls.Add(_errorLabel);
 
-            card.Controls.Add(new Label
+            _hintLabel = new Label
             {
-                Text = "Domyślnie: admin / admin",
+                Text = "",
                 Font = UiFonts.Small,
                 ForeColor = UiTheme.TextMuted,
-                Location = new Point(48, 456),
+                Location = new Point(48, 470),
                 Size = new Size(296, 20),
                 TextAlign = ContentAlignment.MiddleCenter,
                 BackColor = Color.Transparent
-            });
+            };
+            card.Controls.Add(_hintLabel);
 
             this.Controls.Add(card);
 
@@ -224,23 +263,23 @@ namespace SecureDesktop.Forms
             {
                 if (string.IsNullOrWhiteSpace(_idBox.Text) || string.IsNullOrEmpty(_passBox.Text))
                 {
-                    ShowError("Podaj numer identyfikacyjny i hasło");
+                    ShowError(Loc.T("login.err.empty"));
                     return;
                 }
 
                 var user = _userRepo.GetByIdentificationNumber(_idBox.Text.Trim());
-                if (user == null) { ShowError("Nieprawidłowy login lub hasło"); return; }
+                if (user == null) { ShowError(Loc.T("login.err.invalid")); return; }
 
                 if (string.IsNullOrEmpty(user.PasswordHash) || string.IsNullOrEmpty(user.Salt))
                 {
-                    ShowError("Konto nie ma ustawionego hasła");
+                    ShowError(Loc.T("login.err.no_pass"));
                     return;
                 }
 
                 var hash = SecurityHelper.HashPassword(_passBox.Text, user.Salt);
                 if (!string.Equals(hash, user.PasswordHash, StringComparison.Ordinal))
                 {
-                    ShowError("Nieprawidłowy login lub hasło");
+                    ShowError(Loc.T("login.err.invalid"));
                     return;
                 }
 
@@ -267,7 +306,7 @@ namespace SecureDesktop.Forms
                 this.DialogResult = DialogResult.OK;
                 this.Close();
             }
-            catch (Exception ex) { ShowError("Błąd: " + ex.Message); }
+            catch (Exception ex) { ShowError(Loc.T("login.err.generic") + ex.Message); }
         }
 
         private void ShowError(string msg)
