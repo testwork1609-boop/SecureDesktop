@@ -19,6 +19,9 @@ namespace SecureDesktop.Utils
         public static readonly Color PrimarySoftPressed = Color.FromArgb(167, 243, 208);
         public static readonly Color PrimarySoftText = Color.FromArgb(4, 120, 87);
 
+        // Alias dla starych odwołań
+        public static readonly Color PrimaryLight = Color.FromArgb(209, 250, 229);
+
         // === Info (niebieski) ===
         public static readonly Color Info = Color.FromArgb(59, 130, 246);
         public static readonly Color InfoHover = Color.FromArgb(37, 99, 235);
@@ -96,8 +99,8 @@ namespace SecureDesktop.Utils
 
     /// <summary>
     /// Nowoczesny, subtelny przycisk. Bazuje na Control, pełne rysowanie w OnPaint,
-    /// brak halo na krawędziach. Warianty: solid (primary), soft (ghost z tintem),
-    /// outline (przezroczysty + cienka obwódka).
+    /// brak halo na krawędziach. Warianty fabryczne: Primary / SoftGreen / SoftRed /
+    /// SoftBlue / Ghost / GhostRed.
     /// </summary>
     public class RoundedButton : Control
     {
@@ -108,8 +111,8 @@ namespace SecureDesktop.Utils
         public Color OutlineColor { get; set; }
         public int OutlineThickness { get; set; }
         public Padding ButtonPadding { get; set; }
-        private ContentAlignment _textAlign = ContentAlignment.MiddleCenter;
 
+        private ContentAlignment _textAlign = ContentAlignment.MiddleCenter;
         public ContentAlignment TextAlign
         {
             get { return _textAlign; }
@@ -144,7 +147,7 @@ namespace SecureDesktop.Utils
             ButtonPadding = new Padding(16, 0, 16, 0);
         }
 
-        // === Fabryki dla typowych wariantów ===
+        // === Fabryki ===
 
         public static RoundedButton Primary(string text, int width, int height)
         {
