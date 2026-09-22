@@ -160,6 +160,8 @@ namespace SecureDesktop.Forms
             if (_lockButton != null && !_lockButton.IsDisposed)
                 _lockButton.Hide();
 
+            bool shouldClose = false;
+
             try
             {
                 using (var dialog = new Form
@@ -224,8 +226,13 @@ namespace SecureDesktop.Forms
                     {
                         if (_verifyPassword(passBox.Text))
                         {
+                            shouldClose = true;
+                            // Ustawiamy DialogResult i zamykamy dialog.
+                            // Zamknięcie overlaya robimy PO powrocie z ShowDialog,
+                            // w BeginInvoke - inaczej WM_CLOSE do overlaya jest gubiony
+                            // w trakcie zamykania modala.
+                            dialog.DialogResult = DialogResult.OK;
                             dialog.Close();
-                            this.Close();
                         }
                         else
                         {
@@ -256,8 +263,27 @@ namespace SecureDesktop.Forms
             }
             finally
             {
-                if (_lockButton != null && !_lockButton.IsDisposed && this.Visible)
-                    _lockButton.Show();
+                if (shouldClose)
+                {
+                    // Zamknij overlay w świeżej iteracji pętli komunikatów.
+                    try
+                    {
+                        if (!this.IsDisposed && this.IsHandleCreated)
+                            this.BeginInvoke(new Action(() => { try { this.Close(); } catch { } }));
+                        else
+                            try { this.Close(); } catch { }
+                    }
+                    catch
+                    {
+                        try { this.Close(); } catch { }
+                    }
+                }
+                else
+                {
+                    // Anulowano - pokaż kłódkę z powrotem.
+                    if (_lockButton != null && !_lockButton.IsDisposed && this.Visible)
+                        _lockButton.Show();
+                }
             }
         }
 
@@ -278,8 +304,6 @@ namespace SecureDesktop.Forms
 
     /// <summary>
     /// Osobne, małe, w 100% widoczne okienko z kłódką w prawym górnym rogu.
-    /// Tło = magenta ustawione jako TransparencyKey, więc widać tylko
-    /// narysowane elementy (biały ring + zielone koło + etykieta).
     /// </summary>
     internal class LockButtonForm : Form
     {
