@@ -22,6 +22,7 @@ namespace SecureDesktop
         static void Main()
         {
             try { SetProcessDPIAware(); } catch { }
+            SecureDesktop.Utils.Loc.LoadFromDisk(); 
 
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
