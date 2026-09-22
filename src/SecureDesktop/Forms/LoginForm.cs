@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Windows.Forms;
 using SecureDesktop.Database;
 using SecureDesktop.Database.Repositories;
@@ -27,108 +28,203 @@ namespace SecureDesktop.Forms
             _userRepo = new UserRepository(_db);
             _sessionRepo = new SessionRepository(_db);
             _eventRepo = new EventLogRepository(_db);
-
             InitializeComponent();
         }
 
         private void InitializeComponent()
         {
-            Color primaryColor = Color.FromArgb(45, 165, 90);
-
-            this.Text = "SecureDesktop - Logowanie";
-            this.Size = new Size(420, 520);
+            this.Text = "SecureDesktop — Logowanie";
+            this.Size = new Size(460, 620);
             this.StartPosition = FormStartPosition.CenterScreen;
-            this.FormBorderStyle = FormBorderStyle.FixedDialog;
-            this.BackColor = Color.White;
-            this.MaximizeBox = false;
-            this.MinimizeBox = false;
+            this.FormBorderStyle = FormBorderStyle.None;
+            this.BackColor = UiTheme.Bg;
             this.Icon = Program.AppIcon;
             this.KeyPreview = true;
+            this.DoubleBuffered = true;
 
-            var headerPanel = new Panel
+            // Zaokrąglone rogi okna
+            this.Paint += (s, e) =>
             {
-                Location = new Point(0, 0),
-                Size = new Size(420, 120),
-                BackColor = primaryColor
+                e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                using (var path = UiTheme.RoundedPath(new Rectangle(0, 0, Width - 1, Height - 1), 12))
+                {
+                    this.Region = new Region(path);
+                }
             };
 
-            var iconLabel = new Label
+            // Pasek na górze (przeciąganie okna)
+            var dragBar = new Panel { Location = new Point(0, 0), Size = new Size(460, 40), BackColor = Color.Transparent };
+            dragBar.MouseDown += (s, e) =>
             {
-                Text = "🔒",
-                Font = UiFonts.Segoe36,
-                Location = new Point(175, 10),
-                Size = new Size(70, 50),
+                if (e.Button == MouseButtons.Left)
+                {
+                    NativeMethods.ReleaseCapture();
+                    NativeMethods.SendMessage(Handle, 0xA1, 0x2, 0);
+                }
+            };
+            this.Controls.Add(dragBar);
+
+            var closeBtn = new Label
+            {
+                Text = "✕",
+                Font = new Font("Segoe UI", 12, FontStyle.Bold),
+                ForeColor = UiTheme.TextMuted,
+                Location = new Point(424, 10),
+                Size = new Size(26, 26),
                 TextAlign = ContentAlignment.MiddleCenter,
-                ForeColor = Color.White
+                Cursor = Cursors.Hand,
+                BackColor = Color.Transparent
             };
+            closeBtn.MouseEnter += (s, e) => { closeBtn.ForeColor = UiTheme.Danger; closeBtn.BackColor = UiTheme.DangerLight; };
+            closeBtn.MouseLeave += (s, e) => { closeBtn.ForeColor = UiTheme.TextMuted; closeBtn.BackColor = Color.Transparent; };
+            closeBtn.Click += (s, e) => Application.Exit();
+            this.Controls.Add(closeBtn);
+
+            // === Card ===
+            var card = new Panel
+            {
+                Location = new Point(40, 70),
+                Size = new Size(380, 480),
+                BackColor = UiTheme.Bg
+            };
+            UiTheme.MakeCard(card, 14, true, true);
+
+            // Logo
+            var logoCircle = new Panel
+            {
+                Location = new Point((380 - 72) / 2, 32),
+                Size = new Size(72, 72),
+                BackColor = Color.Transparent
+            };
+            logoCircle.Paint += (s, e) =>
+            {
+                e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                using (var brush = new SolidBrush(UiTheme.Primary))
+                    e.Graphics.FillEllipse(brush, 0, 0, 72, 72);
+                using (var brush = new SolidBrush(Color.White))
+                {
+                    e.Graphics.FillRectangle(brush, 24, 36, 24, 22);
+                    using (var pen = new Pen(Color.White, 4))
+                        e.Graphics.DrawArc(pen, 26, 18, 20, 22, 180, 180);
+                    using (var greenBrush = new SolidBrush(UiTheme.Primary))
+                    {
+                        e.Graphics.FillEllipse(greenBrush, 32, 42, 8, 7);
+                        e.Graphics.FillRectangle(greenBrush, 34, 47, 4, 9);
+                    }
+                }
+            };
+            card.Controls.Add(logoCircle);
 
             var titleLabel = new Label
             {
                 Text = "SecureDesktop",
-                Font = UiFonts.Segoe22Bold,
-                Location = new Point(80, 60),
-                Size = new Size(260, 40),
-                TextAlign = ContentAlignment.MiddleCenter,
-                ForeColor = Color.White
+                Font = UiFonts.H1,
+                ForeColor = UiTheme.TextPrimary,
+                Location = new Point(0, 116),
+                Size = new Size(380, 32),
+                TextAlign = ContentAlignment.MiddleCenter
             };
+            card.Controls.Add(titleLabel);
 
-            headerPanel.Controls.Add(iconLabel);
-            headerPanel.Controls.Add(titleLabel);
+            var subtitleLabel = new Label
+            {
+                Text = "Zaloguj się, aby kontynuować",
+                Font = UiFonts.Body,
+                ForeColor = UiTheme.TextSecondary,
+                Location = new Point(0, 148),
+                Size = new Size(380, 22),
+                TextAlign = ContentAlignment.MiddleCenter
+            };
+            card.Controls.Add(subtitleLabel);
 
-            int y = 150;
-            var idLabel = new Label { Text = "Numer identyfikacyjny", Location = new Point(50, y), Size = new Size(320, 20), Font = UiFonts.Segoe10 };
-            y += 25;
-            _idBox = new TextBox { Location = new Point(50, y), Size = new Size(320, 35), Font = UiFonts.Segoe12, BackColor = Color.FromArgb(245, 245, 245), BorderStyle = BorderStyle.FixedSingle };
-            y += 50;
-            var passLabel = new Label { Text = "Hasło", Location = new Point(50, y), Size = new Size(320, 20), Font = UiFonts.Segoe10 };
-            y += 25;
-            _passBox = new TextBox { Location = new Point(50, y), Size = new Size(320, 35), Font = UiFonts.Segoe12, PasswordChar = '●', BackColor = Color.FromArgb(245, 245, 245), BorderStyle = BorderStyle.FixedSingle };
-            y += 55;
+            // ID
+            var idLabel = new Label
+            {
+                Text = "Numer identyfikacyjny",
+                Font = UiFonts.CaptionBold,
+                ForeColor = UiTheme.TextSecondary,
+                Location = new Point(40, 198),
+                AutoSize = true
+            };
+            card.Controls.Add(idLabel);
 
-            var loginBtn = new Button
+            _idBox = new TextBox
+            {
+                Location = new Point(40, 220),
+                Size = new Size(300, 36),
+                Font = UiFonts.BodyLarge,
+                BorderStyle = BorderStyle.FixedSingle,
+                BackColor = UiTheme.SurfaceAlt,
+                ForeColor = UiTheme.TextPrimary
+            };
+            card.Controls.Add(_idBox);
+
+            // Hasło
+            var passLabel = new Label
+            {
+                Text = "Hasło",
+                Font = UiFonts.CaptionBold,
+                ForeColor = UiTheme.TextSecondary,
+                Location = new Point(40, 272),
+                AutoSize = true
+            };
+            card.Controls.Add(passLabel);
+
+            _passBox = new TextBox
+            {
+                Location = new Point(40, 294),
+                Size = new Size(300, 36),
+                Font = UiFonts.BodyLarge,
+                PasswordChar = '●',
+                BorderStyle = BorderStyle.FixedSingle,
+                BackColor = UiTheme.SurfaceAlt,
+                ForeColor = UiTheme.TextPrimary
+            };
+            card.Controls.Add(_passBox);
+
+            // Login button
+            var loginBtn = new RoundedButton
             {
                 Text = "Zaloguj się",
-                Location = new Point(50, y),
-                Size = new Size(320, 42),
-                Font = UiFonts.Segoe12Bold,
-                BackColor = primaryColor,
-                ForeColor = Color.White,
-                FlatStyle = FlatStyle.Flat,
-                Cursor = Cursors.Hand
+                Location = new Point(40, 350),
+                Size = new Size(300, 44),
+                CornerRadius = 10,
+                Font = UiFonts.BodyLargeBold
             };
-            loginBtn.FlatAppearance.BorderSize = 0;
             loginBtn.Click += LoginAction;
-            y += 52;
+            card.Controls.Add(loginBtn);
 
-            var closeBtn = new Button
-            {
-                Text = "Zamknij",
-                Location = new Point(50, y),
-                Size = new Size(320, 35),
-                Font = UiFonts.Segoe10,
-                BackColor = Color.White,
-                FlatStyle = FlatStyle.Flat,
-                Cursor = Cursors.Hand
-            };
-            closeBtn.FlatAppearance.BorderColor = Color.FromArgb(200, 200, 200);
-            closeBtn.FlatAppearance.BorderSize = 1;
-            closeBtn.Click += (s, e) => Application.Exit();
-
+            // Error
             _errorLabel = new Label
             {
-                Location = new Point(50, y + 45),
-                Size = new Size(320, 25),
-                ForeColor = Color.Red,
+                Location = new Point(40, 400),
+                Size = new Size(300, 40),
+                ForeColor = UiTheme.Danger,
+                Font = UiFonts.CaptionBold,
                 TextAlign = ContentAlignment.MiddleCenter,
-                Font = UiFonts.Segoe9,
                 Visible = false
             };
+            card.Controls.Add(_errorLabel);
 
+            var hintLabel = new Label
+            {
+                Text = "Domyślnie: admin / admin",
+                Font = UiFonts.Small,
+                ForeColor = UiTheme.TextMuted,
+                Location = new Point(40, 442),
+                Size = new Size(300, 20),
+                TextAlign = ContentAlignment.MiddleCenter
+            };
+            card.Controls.Add(hintLabel);
+
+            this.Controls.Add(card);
+
+            // Obsługa Enter
             this.KeyDown += (s, e) => { if (e.KeyCode == Keys.Enter) LoginAction(s, e); };
             _idBox.KeyDown += (s, e) => { if (e.KeyCode == Keys.Enter) { _passBox.Focus(); e.SuppressKeyPress = true; } };
             _passBox.KeyDown += (s, e) => { if (e.KeyCode == Keys.Enter) { LoginAction(s, e); e.SuppressKeyPress = true; } };
 
-            Controls.AddRange(new Control[] { headerPanel, idLabel, _idBox, passLabel, _passBox, loginBtn, closeBtn, _errorLabel });
+            this.Shown += (s, e) => _idBox.Focus();
         }
 
         private void LoginAction(object sender, EventArgs e)
@@ -148,7 +244,6 @@ namespace SecureDesktop.Forms
                     return;
                 }
 
-                // Weryfikacja przez PasswordHash + Salt (już nie plaintext).
                 if (string.IsNullOrEmpty(user.PasswordHash) || string.IsNullOrEmpty(user.Salt))
                 {
                     ShowError("Konto nie ma ustawionego hasła");
@@ -195,6 +290,15 @@ namespace SecureDesktop.Forms
         {
             _errorLabel.Text = msg;
             _errorLabel.Visible = true;
+        }
+
+        internal static class NativeMethods
+        {
+            [System.Runtime.InteropServices.DllImport("user32.dll")]
+            public static extern bool ReleaseCapture();
+
+            [System.Runtime.InteropServices.DllImport("user32.dll")]
+            public static extern IntPtr SendMessage(IntPtr hWnd, int Msg, int wParam, int lParam);
         }
     }
 }
