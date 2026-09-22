@@ -36,10 +36,6 @@ namespace SecureDesktop.Forms
 
         private static readonly object _logLock = new object();
 
-        /// <summary>
-        /// Wywoływane, gdy użytkownik poda poprawne hasło. ScreenLockService
-        /// subskrybuje i zamyka WSZYSTKIE overlaye (nie tylko ten jeden).
-        /// </summary>
         public event EventHandler UnlockAllRequested;
 
         public Rectangle ScreenBounds { get { return _screen.Bounds; } }
@@ -99,10 +95,7 @@ namespace SecureDesktop.Forms
                 try
                 {
                     if (_lockButton != null && !_lockButton.IsDisposed && !_lockButton.Visible)
-                    {
-                        // Owned form - zamknie się razem z overlayem.
                         _lockButton.Show(this);
-                    }
                 }
                 catch (Exception ex) { Log("Shown: " + ex.Message); }
             };
@@ -211,7 +204,6 @@ namespace SecureDesktop.Forms
                     MinimizeBox = false,
                     TopMost = true,
                     BackColor = Color.White,
-                    KeyPreview = true,
                     ShowInTaskbar = false
                 })
                 {
@@ -259,7 +251,12 @@ namespace SecureDesktop.Forms
                         FlatStyle = FlatStyle.Flat
                     };
 
-                    Action unlockAction = () =>
+                    // WinForms sam obsłuży Enter (AcceptButton) i Esc (CancelButton)
+                    // bez ręcznego KeyDown, więc Enter nie "przesiąknie" dalej.
+                    dialog.AcceptButton = unlockBtn;
+                    dialog.CancelButton = cancelBtn;
+
+                    unlockBtn.Click += (s, args) =>
                     {
                         if (_verifyPassword(passBox.Text))
                         {
@@ -276,18 +273,7 @@ namespace SecureDesktop.Forms
                         }
                     };
 
-                    unlockBtn.Click += (s, args) => unlockAction();
                     cancelBtn.Click += (s, args) => dialog.Close();
-
-                    passBox.KeyDown += (s, args) =>
-                    {
-                        if (args.KeyCode == Keys.Enter) { args.SuppressKeyPress = true; unlockAction(); }
-                    };
-                    dialog.KeyDown += (s, args) =>
-                    {
-                        if (args.KeyCode == Keys.Enter) { args.SuppressKeyPress = true; unlockAction(); }
-                        else if (args.KeyCode == Keys.Escape) dialog.Close();
-                    };
 
                     dialog.Controls.AddRange(new Control[] { icon, title, passBox, errorLabel, unlockBtn, cancelBtn });
                     dialog.Shown += (s, args) => passBox.Focus();
@@ -300,7 +286,6 @@ namespace SecureDesktop.Forms
             if (passwordOk)
             {
                 Log("Password OK - requesting unlock of ALL overlays");
-                // Zamknij wszystkie overlaye przez serwis.
                 var h = UnlockAllRequested;
                 if (h != null)
                 {
@@ -308,13 +293,11 @@ namespace SecureDesktop.Forms
                 }
                 else
                 {
-                    // Fallback - brak serwisu, zamknij tylko siebie.
                     try { this.Close(); } catch { }
                 }
             }
             else
             {
-                // Anulowano - pokaż kłódkę z powrotem.
                 if (_lockButton != null && !_lockButton.IsDisposed && this.Visible)
                 {
                     try { _lockButton.Show(this); } catch { }
@@ -347,9 +330,6 @@ namespace SecureDesktop.Forms
         }
     }
 
-    /// <summary>
-    /// Osobne, małe, w 100% widoczne okienko z kłódką w prawym górnym rogu.
-    /// </summary>
     internal class LockButtonForm : Form
     {
         public event EventHandler LockClicked;
