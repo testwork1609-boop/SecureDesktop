@@ -164,7 +164,7 @@ namespace SecureDesktop.Forms
             {
                 using (var dialog = new Form
                 {
-                    Text = "Odblokuj ekran",
+                    Text = Loc.T("lock.dlg_title"),
                     Size = new Size(380, 250),
                     StartPosition = FormStartPosition.CenterScreen,
                     FormBorderStyle = FormBorderStyle.FixedDialog,
@@ -177,13 +177,48 @@ namespace SecureDesktop.Forms
                 })
                 {
                     var icon = new Label { Text = "🔒", Font = UiFonts.Segoe24, Location = new Point(20, 15), Size = new Size(60, 40) };
-                    var title = new Label { Text = "Wprowadź hasło, aby odblokować", Font = UiFonts.Segoe11Bold, Location = new Point(75, 22), AutoSize = true };
-                    var passBox = new TextBox { Location = new Point(30, 85), Size = new Size(310, 30), PasswordChar = '●', Font = UiFonts.Segoe12 };
-                    var errorLabel = new Label { Location = new Point(30, 122), Size = new Size(310, 20), ForeColor = Color.Red, Visible = false };
+                    var title = new Label
+                    {
+                        Text = Loc.T("lock.dlg_prompt"),
+                        Font = UiFonts.Segoe11Bold,
+                        Location = new Point(75, 22),
+                        AutoSize = true
+                    };
+                    var passBox = new TextBox
+                    {
+                        Location = new Point(30, 85),
+                        Size = new Size(310, 30),
+                        PasswordChar = '●',
+                        Font = UiFonts.Segoe12
+                    };
+                    var errorLabel = new Label
+                    {
+                        Location = new Point(30, 122),
+                        Size = new Size(310, 20),
+                        ForeColor = Color.Red,
+                        Visible = false
+                    };
 
-                    var unlockBtn = new Button { Text = "Odblokuj", Location = new Point(80, 155), Size = new Size(100, 38), BackColor = Color.FromArgb(45, 165, 90), ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Font = UiFonts.Segoe10Bold };
+                    var unlockBtn = new Button
+                    {
+                        Text = Loc.T("lock.btn_unlock"),
+                        Location = new Point(80, 155),
+                        Size = new Size(100, 38),
+                        BackColor = Color.FromArgb(45, 165, 90),
+                        ForeColor = Color.White,
+                        FlatStyle = FlatStyle.Flat,
+                        Font = UiFonts.Segoe10Bold
+                    };
                     unlockBtn.FlatAppearance.BorderSize = 0;
-                    var cancelBtn = new Button { Text = "Anuluj", Location = new Point(200, 155), Size = new Size(100, 38), BackColor = Color.White, FlatStyle = FlatStyle.Flat };
+
+                    var cancelBtn = new Button
+                    {
+                        Text = Loc.T("lock.btn_cancel"),
+                        Location = new Point(200, 155),
+                        Size = new Size(100, 38),
+                        BackColor = Color.White,
+                        FlatStyle = FlatStyle.Flat
+                    };
 
                     Action unlockAction = () =>
                     {
@@ -194,7 +229,7 @@ namespace SecureDesktop.Forms
                         }
                         else
                         {
-                            errorLabel.Text = "Nieprawidłowe hasło!";
+                            errorLabel.Text = Loc.T("lock.err_wrong");
                             errorLabel.Visible = true;
                             passBox.Text = "";
                             passBox.Focus();
@@ -305,7 +340,7 @@ namespace SecureDesktop.Forms
                 }
             }
 
-            string text = "Odblokuj (Ctrl+L)";
+            string text = Loc.T("lock.hint");
             using (var font = new Font("Segoe UI", 8, FontStyle.Bold))
             {
                 var size = e.Graphics.MeasureString(text, font);
