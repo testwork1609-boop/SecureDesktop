@@ -12,6 +12,7 @@ namespace SecureDesktop.Services
     {
         private List<Form> _overlays;
         private bool _isLocked;
+        private bool _unlockInProgress;
         private PatternRecognitionService _patternService;
 
         private static readonly object _logLock = new object();
@@ -45,9 +46,9 @@ namespace SecureDesktop.Services
 
         public void LockAllScreens()
         {
-            if (_isLocked)
+            if (_isLocked || _unlockInProgress)
             {
-                Log("LockAllScreens: already locked, skip");
+                Log("LockAllScreens: already locked or unlocking, skip");
                 return;
             }
 
@@ -57,7 +58,7 @@ namespace SecureDesktop.Services
             try
             {
                 var screenshots = CaptureAllScreens();
-                Log("LockAllScreens: captured " + screenshots.Count + " screenshots, AllScreens=" + Screen.AllScreens.Length);
+                Log("LockAllScreens: screenshots=" + screenshots.Count + " screens=" + Screen.AllScreens.Length);
 
                 foreach (var screen in Screen.AllScreens)
                 {
@@ -72,12 +73,12 @@ namespace SecureDesktop.Services
                     {
                         _overlays.Remove(local);
                         Log("Overlay closed, remaining=" + _overlays.Count);
-                        if (_overlays.Count == 0)
+                        if (_overlays.Count == 0 && _isLocked)
                         {
                             _isLocked = false;
                             CleanupPatternService();
                             OnLockDeactivated();
-                            Log("All overlays closed, LockDeactivated");
+                            Log("LockDeactivated (all overlays closed)");
                         }
                     };
 
@@ -97,9 +98,9 @@ namespace SecureDesktop.Services
 
         public void LockWithPatterns(List<Pattern> patterns, PatternRecognitionService patternService)
         {
-            if (_isLocked)
+            if (_isLocked || _unlockInProgress)
             {
-                Log("LockWithPatterns: already locked, skip");
+                Log("LockWithPatterns: already locked or unlocking, skip");
                 return;
             }
             if (patterns == null || patterns.Count == 0) return;
@@ -126,12 +127,12 @@ namespace SecureDesktop.Services
                     {
                         _overlays.Remove(local);
                         Log("Overlay closed, remaining=" + _overlays.Count);
-                        if (_overlays.Count == 0)
+                        if (_overlays.Count == 0 && _isLocked)
                         {
                             CleanupPatternService();
                             _isLocked = false;
                             OnLockDeactivated();
-                            Log("All overlays closed, LockDeactivated");
+                            Log("LockDeactivated (all overlays closed)");
                         }
                     };
 
@@ -156,7 +157,7 @@ namespace SecureDesktop.Services
 
         private void OnUnlockAllRequested(object sender, EventArgs e)
         {
-            Log("OnUnlockAllRequested -> UnlockScreens()");
+            Log("OnUnlockAllRequested");
             UnlockScreens();
         }
 
@@ -185,7 +186,7 @@ namespace SecureDesktop.Services
             Rectangle absoluteRegion = e.Location;
             string key = e.Pattern.Name ?? ("pattern_" + e.Pattern.Id);
 
-            foreach (var overlay in _overlays)
+            foreach (var overlay in _overlays.ToArray())
             {
                 if (overlay is ScreenLockForm && !overlay.IsDisposed)
                 {
@@ -202,7 +203,7 @@ namespace SecureDesktop.Services
                         absoluteRegion.Height);
 
                     if (lockForm.InvokeRequired)
-                        lockForm.BeginInvoke(new Action(() => lockForm.AddUnlockRegion(key, localRegion)));
+                        lockForm.BeginInvoke(new Action(() => { try { lockForm.AddUnlockRegion(key, localRegion); } catch { } }));
                     else
                         lockForm.AddUnlockRegion(key, localRegion);
                 }
@@ -213,13 +214,13 @@ namespace SecureDesktop.Services
         {
             string key = e.Pattern.Name ?? ("pattern_" + e.Pattern.Id);
 
-            foreach (var overlay in _overlays)
+            foreach (var overlay in _overlays.ToArray())
             {
                 if (overlay is ScreenLockForm && !overlay.IsDisposed)
                 {
                     var lockForm = (ScreenLockForm)overlay;
                     if (lockForm.InvokeRequired)
-                        lockForm.BeginInvoke(new Action(() => lockForm.RemoveUnlockRegion(key)));
+                        lockForm.BeginInvoke(new Action(() => { try { lockForm.RemoveUnlockRegion(key); } catch { } }));
                     else
                         lockForm.RemoveUnlockRegion(key);
                 }
@@ -228,47 +229,63 @@ namespace SecureDesktop.Services
 
         public void UnlockScreens()
         {
-            if (_overlays.Count == 0 && !_isLocked) return;
+            if (_unlockInProgress)
+            {
+                Log("UnlockScreens: already in progress, skip");
+                return;
+            }
+            if (_overlays.Count == 0 && !_isLocked)
+            {
+                Log("UnlockScreens: nothing to unlock");
+                return;
+            }
 
-            Log("UnlockScreens: closing " + _overlays.Count + " overlays");
+            _unlockInProgress = true;
+            Log("UnlockScreens START, overlays=" + _overlays.Count);
 
             try
             {
                 CleanupPatternService();
 
-                var toClose = _overlays.ToArray();
-                _overlays.Clear();
+                var toClose = new List<Form>(_overlays);
 
                 foreach (var overlay in toClose)
                 {
-                    if (overlay != null && !overlay.IsDisposed)
+                    try
                     {
-                        try
+                        if (overlay != null && !overlay.IsDisposed && overlay.IsHandleCreated)
                         {
-                            if (overlay.InvokeRequired)
+                            var local = overlay;
+                            // BeginInvoke: WM_CLOSE do overlaya jest wysyłany PO
+                            // powrocie z bieżącej iteracji pętli komunikatów.
+                            // Bez tego, gdy zamknięcie jest wywołane z wnętrza
+                            // metody overlaya (ShowUnlockDialog), WinForms gubi
+                            // WM_CLOSE i overlay zostaje na ekranie.
+                            local.BeginInvoke(new Action(() =>
                             {
-                                var local = overlay;
-                                local.BeginInvoke(new Action(() =>
-                                {
-                                    try { local.Close(); } catch { }
-                                }));
-                            }
-                            else
-                            {
-                                overlay.Close();
-                            }
+                                try { local.Close(); }
+                                catch (Exception ex) { Log("close inner: " + ex.Message); }
+                            }));
                         }
-                        catch (Exception ex) { Log("close overlay: " + ex.Message); }
                     }
+                    catch (Exception ex) { Log("close outer: " + ex.Message); }
                 }
 
-                _isLocked = false;
-                OnLockDeactivated();
-                Log("UnlockScreens: done");
+                // Gdyby lista była pusta a _isLocked true - zwolnij ręcznie.
+                if (toClose.Count == 0 && _isLocked)
+                {
+                    _isLocked = false;
+                    OnLockDeactivated();
+                    Log("LockDeactivated (manual)");
+                }
             }
             catch (Exception ex)
             {
                 Log("UnlockScreens ERROR: " + ex.Message);
+            }
+            finally
+            {
+                _unlockInProgress = false;
             }
         }
 
