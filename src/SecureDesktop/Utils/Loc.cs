@@ -90,6 +90,11 @@ namespace SecureDesktop.Utils
             d["login.err.no_shift"] = "Konto nie ma przypisanej zmiany";
             d["login.err.generic"] = "Błąd: ";
 
+            d["lock.dlg_pin"] = "Numer identyfikacyjny (PIN)";
+            d["lock.dlg_pass"] = "Hasło";
+            d["lock.err_empty"] = "Podaj PIN i hasło.";
+            d["log.user_switched"] = "Ekran odblokowany przez innego użytkownika — sesja przełączona";
+
             d["cfg.usr.dlg_individual"] = "Hasło indywidualne";
             d["cfg.usr.dlg_individual_hint"] = "Gdy zaznaczone, użytkownik loguje się własnym hasłem (niezależnym od hasła zmiany).";
             d["cfg.usr.dlg_new_pass"] = "Nowe hasło";
@@ -338,6 +343,11 @@ namespace SecureDesktop.Utils
             d["login.err.no_pass"] = "Shift has no password set";
             d["login.err.no_shift"] = "Account has no shift assigned";
             d["login.err.generic"] = "Error: ";
+
+            d["lock.dlg_pin"] = "Identification number (PIN)";
+            d["lock.dlg_pass"] = "Password";
+            d["lock.err_empty"] = "Enter PIN and password.";
+            d["log.user_switched"] = "Screen unlocked by another user — session switched";
 
             d["cfg.usr.dlg_individual"] = "Individual password";
             d["cfg.usr.dlg_individual_hint"] = "When checked, the user logs in with their own password (independent from the shift password).";
