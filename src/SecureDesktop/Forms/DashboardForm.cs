@@ -20,6 +20,7 @@ namespace SecureDesktop.Forms
         private readonly DatabaseInitializer _db;
         private readonly ScreenLockService _lockService;
         private readonly DateTime _sessionStartTime;
+        private readonly bool _isFirstRun;
 
         private int _totalPatterns = 0;
         private int _activePatterns = 0;
@@ -30,12 +31,19 @@ namespace SecureDesktop.Forms
         private Label _userLabel;
         private bool _lockInProgress;
 
-        public DashboardForm(User user, DatabaseInitializer db, int sessionId)
+        // Tray
+        private NotifyIcon _trayIcon;
+        private ContextMenuStrip _trayMenu;
+        private bool _isInTray;
+
+        public DashboardForm(User user, DatabaseInitializer db, int sessionId, bool isFirstRun = false)
         {
             _currentUser = user;
             _db = db;
             _sessionId = sessionId;
             _sessionStartTime = DateTime.Now;
+            _isFirstRun = isFirstRun;
+
             _lockService = new ScreenLockService { CredentialsVerifier = VerifyAnyUserCredentials };
 
             _lockService.LockDeactivated += (s, e) =>
@@ -45,21 +53,130 @@ namespace SecureDesktop.Forms
                     BeginInvoke(new Action(() =>
                     {
                         if (this.IsDisposed) return;
-                        this.WindowState = FormWindowState.Normal;
-                        this.Show();
-                        this.Activate();
+                        RestoreFromTray();
                     }));
                 }
                 catch { }
             };
 
-            // Zmiana użytkownika po odblokowaniu ekranu innym PIN-em.
             _lockService.UnlockedByUser += OnScreenUnlockedByUser;
 
             LoadStats();
             InitializeComponent();
+            CreateTrayIcon();
             ShowHome();
+
+            if (_isFirstRun)
+            {
+                BeginInvoke(new Action(ShowFirstRunConfiguration));
+            }
         }
+
+        // ============== PIERWSZA KONFIGURACJA ==============
+
+        private void ShowFirstRunConfiguration()
+        {
+            try
+            {
+                var view = new ConfigurationView(_db, _currentUser);
+                view.CloseRequested += () => BeginInvoke(new Action(() =>
+                {
+                    MarkFirstRunCompleted();
+                    LoadStats();
+                    ShowHome();
+                }));
+                view.DataSaved += () => BeginInvoke(new Action(LoadStats));
+                ShowView(view, Loc.T("cfg.title"));
+            }
+            catch { }
+        }
+
+        private void MarkFirstRunCompleted()
+        {
+            try
+            {
+                var data = _db.GetData();
+                if (data != null && data.Settings != null)
+                {
+                    data.Settings["FirstRunCompleted"] = "true";
+                    _db.Save();
+                }
+            }
+            catch { }
+        }
+
+        // ============== TRAY ==============
+
+        private void CreateTrayIcon()
+        {
+            try
+            {
+                _trayMenu = new ContextMenuStrip();
+                _trayMenu.Items.Add(Loc.T("tray.exit"), null, (s, e) => OnTrayExit());
+
+                _trayIcon = new NotifyIcon
+                {
+                    Icon = Program.AppIcon,
+                    Text = Loc.T("tray.locked"),
+                    Visible = false,
+                    ContextMenuStrip = _trayMenu
+                };
+            }
+            catch { }
+        }
+
+        private void HideToTray()
+        {
+            try
+            {
+                _isInTray = true;
+                if (_trayIcon != null)
+                {
+                    _trayIcon.Text = Loc.T("tray.locked");
+                    _trayIcon.Visible = true;
+                }
+                this.ShowInTaskbar = false;
+                this.WindowState = FormWindowState.Minimized;
+                this.Hide();
+            }
+            catch { }
+        }
+
+        private void RestoreFromTray()
+        {
+            try
+            {
+                _isInTray = false;
+                if (_trayIcon != null)
+                    _trayIcon.Visible = false;
+                this.ShowInTaskbar = true;
+                this.WindowState = FormWindowState.Normal;
+                this.Show();
+                this.Activate();
+            }
+            catch { }
+        }
+
+        private void OnTrayExit()
+        {
+            try
+            {
+                var result = MessageBox.Show(
+                    Loc.T("tray.exit_confirm"),
+                    Loc.T("common.confirm"),
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Question);
+
+                if (result == DialogResult.Yes)
+                {
+                    try { _lockService.UnlockScreens(); } catch { }
+                    Application.Exit();
+                }
+            }
+            catch { }
+        }
+
+        // ============== LOGIKA UŻYTKOWNIKA ==============
 
         private void LoadStats()
         {
@@ -107,11 +224,6 @@ namespace SecureDesktop.Forms
             catch { return false; }
         }
 
-        /// <summary>
-        /// Weryfikacja danych logowania do odblokowania ekranu.
-        /// Sprawdza DOWOLNEGO aktywnego użytkownika po PIN-ie.
-        /// Kolejność: hasło indywidualne → hasło zmiany → legacy admin.
-        /// </summary>
         private User VerifyAnyUserCredentials(string pin, string password)
         {
             try
@@ -125,7 +237,6 @@ namespace SecureDesktop.Forms
                     string.Equals(u.IdentificationNumber, pin.Trim(), StringComparison.Ordinal));
                 if (user == null) return null;
 
-                // 1) Hasło indywidualne.
                 if (user.UseIndividualPassword &&
                     !string.IsNullOrEmpty(user.PasswordHash) &&
                     !string.IsNullOrEmpty(user.Salt))
@@ -135,7 +246,6 @@ namespace SecureDesktop.Forms
                         return user;
                 }
 
-                // 2) Hasło zmiany.
                 if (user.ShiftId.HasValue && data.Shifts != null)
                 {
                     var shift = data.Shifts.FirstOrDefault(s => s.Id == user.ShiftId.Value);
@@ -147,7 +257,6 @@ namespace SecureDesktop.Forms
                     }
                 }
 
-                // 3) Fallback: legacy AdminPassword z Settings (dla admina).
                 if (user.IsAdmin && data.Settings != null)
                 {
                     string legacy;
@@ -162,14 +271,10 @@ namespace SecureDesktop.Forms
             catch { return null; }
         }
 
-        /// <summary>
-        /// Wywołane po odblokowaniu ekranu. Jeśli odblokował inny użytkownik
-        /// niż aktualnie zalogowany → przełączamy sesję.
-        /// </summary>
         private void OnScreenUnlockedByUser(User unlockedBy)
         {
             if (unlockedBy == null) return;
-            if (_currentUser != null && unlockedBy.Id == _currentUser.Id) return; // ten sam user - nic nie rób
+            if (_currentUser != null && unlockedBy.Id == _currentUser.Id) return;
 
             try
             {
@@ -184,14 +289,11 @@ namespace SecureDesktop.Forms
             {
                 if (this.IsDisposed) return;
 
-                // 1) Zakończ starą sesję.
                 try { new SessionRepository(_db).EndSession(_sessionId); } catch { }
 
-                // 2) Ustaw nowego użytkownika.
                 var oldPin = _currentUser != null ? _currentUser.IdentificationNumber : "—";
                 _currentUser = newUser;
 
-                // 3) Nowa sesja.
                 try
                 {
                     var session = new Session
@@ -206,7 +308,6 @@ namespace SecureDesktop.Forms
                 }
                 catch { _sessionId = 0; }
 
-                // 4) Log zdarzenia.
                 try
                 {
                     new EventLogRepository(_db).Create(new EventLog
@@ -221,7 +322,6 @@ namespace SecureDesktop.Forms
                 }
                 catch { }
 
-                // 5) Odśwież UI.
                 UpdateUserLabelText();
                 LoadStats();
                 ShowHome();
@@ -386,7 +486,12 @@ namespace SecureDesktop.Forms
                 configBtn.Click += (s, e) =>
                 {
                     var view = new ConfigurationView(_db, _currentUser);
-                    view.CloseRequested += () => BeginInvoke(new Action(() => { LoadStats(); ShowHome(); }));
+                    view.CloseRequested += () => BeginInvoke(new Action(() =>
+                    {
+                        if (_isFirstRun) MarkFirstRunCompleted();
+                        LoadStats();
+                        ShowHome();
+                    }));
                     view.DataSaved += () => BeginInvoke(new Action(LoadStats));
                     ShowView(view, Loc.T("cfg.title"));
                 };
@@ -507,12 +612,14 @@ namespace SecureDesktop.Forms
             _lockInProgress = true;
             try
             {
-                this.WindowState = FormWindowState.Minimized;
+                // Do traya ZANIM pokażemy overlay, żeby dashboard nie migał.
+                HideToTray();
                 await System.Threading.Tasks.Task.Delay(500);
                 _lockService.LockAllScreens();
             }
             catch (Exception ex)
             {
+                RestoreFromTray();
                 MessageBox.Show(Loc.T("dash.msg.err") + ex.Message, Loc.T("common.error"),
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
@@ -539,12 +646,13 @@ namespace SecureDesktop.Forms
                     return;
                 }
 
-                this.WindowState = FormWindowState.Minimized;
+                HideToTray();
                 await System.Threading.Tasks.Task.Delay(900);
                 _lockService.LockWithPatterns(usable, CreatePatternRecognitionService());
             }
             catch (Exception ex)
             {
+                RestoreFromTray();
                 MessageBox.Show(Loc.T("dash.msg.err") + ex.Message, Loc.T("common.error"),
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
@@ -647,6 +755,8 @@ namespace SecureDesktop.Forms
         {
             try
             {
+                if (_isFirstRun) MarkFirstRunCompleted();
+
                 bool backupDone = HasBackupInThisSession();
 
                 new EventLogRepository(_db).Create(new EventLog
@@ -667,10 +777,27 @@ namespace SecureDesktop.Forms
             this.Close();
         }
 
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            if (_isFirstRun) MarkFirstRunCompleted();
+            base.OnFormClosing(e);
+        }
+
         protected override void Dispose(bool disposing)
         {
             if (disposing)
             {
+                try
+                {
+                    if (_trayIcon != null)
+                    {
+                        _trayIcon.Visible = false;
+                        _trayIcon.Dispose();
+                        _trayIcon = null;
+                    }
+                }
+                catch { }
+
                 try { _lockService.UnlockedByUser -= OnScreenUnlockedByUser; } catch { }
                 try { if (_lockService != null) _lockService.UnlockScreens(); } catch { }
             }
@@ -678,7 +805,7 @@ namespace SecureDesktop.Forms
         }
     }
 
-    // ============== HOME VIEW (bez zmian funkcjonalnych) ==============
+    // ============== HOME VIEW ==============
 
     internal class DashboardHomeView : UserControl
     {
