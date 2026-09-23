@@ -90,6 +90,9 @@ namespace SecureDesktop.Utils
             d["login.err.no_shift"] = "Konto nie ma przypisanej zmiany";
             d["login.err.generic"] = "Błąd: ";
 
+            d["log.backup_purge"] = "System automatycznie usunął {0} kopii backupu starszych niż {1} dni";
+            d["log.backup_purge_manual"] = "Administrator usunął {0} starych kopii backupu";
+
             d["common.ok"] = "OK";
             d["common.cancel"] = "Anuluj";
             d["common.error"] = "Błąd";
@@ -327,6 +330,9 @@ namespace SecureDesktop.Utils
             d["login.err.no_pass"] = "Shift has no password set";
             d["login.err.no_shift"] = "Account has no shift assigned";
             d["login.err.generic"] = "Error: ";
+
+            d["log.backup_purge"] = "System automatically removed {0} backups older than {1} days";
+            d["log.backup_purge_manual"] = "Administrator removed {0} old backup folders";
 
             d["common.ok"] = "OK";
             d["common.cancel"] = "Cancel";
