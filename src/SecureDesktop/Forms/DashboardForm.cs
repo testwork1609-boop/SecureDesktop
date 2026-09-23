@@ -70,7 +70,7 @@ namespace SecureDesktop.Forms
             catch { }
         }
 
-        private bool VerifyCurrentUserPassword(string password)
+            private bool VerifyCurrentUserPassword(string password)
         {
             try
             {
@@ -78,18 +78,20 @@ namespace SecureDesktop.Forms
                 var data = _db.GetData();
                 if (data == null) return false;
 
-                if (data.Users != null)
+                // 1) Preferowane: hasło zmiany przypisanej do zalogowanego użytkownika.
+                if (_currentUser.ShiftId.HasValue && data.Shifts != null)
                 {
-                    var user = data.Users.FirstOrDefault(u => u.Id == _currentUser.Id);
-                    if (user != null && !string.IsNullOrEmpty(user.PasswordHash) && !string.IsNullOrEmpty(user.Salt))
+                    var shift = data.Shifts.FirstOrDefault(s => s.Id == _currentUser.ShiftId.Value);
+                    if (shift != null && !string.IsNullOrEmpty(shift.PasswordHash) && !string.IsNullOrEmpty(shift.Salt))
                     {
-                        var hash = SecurityHelper.HashPassword(password, user.Salt);
-                        if (string.Equals(hash, user.PasswordHash, StringComparison.Ordinal))
+                        var hash = SecurityHelper.HashPassword(password, shift.Salt);
+                        if (string.Equals(hash, shift.PasswordHash, StringComparison.Ordinal))
                             return true;
                     }
                 }
 
-                if (data.Settings != null)
+                // 2) Fallback: legacy AdminPassword w Settings (dla admina).
+                if (_currentUser.IsAdmin && data.Settings != null)
                 {
                     string legacy;
                     if (data.Settings.TryGetValue("AdminPassword", out legacy) &&
