@@ -1,6 +1,7 @@
 using System;
 using System.Drawing;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using SecureDesktop.Database;
@@ -50,9 +51,41 @@ namespace SecureDesktop
                 try { if (!Directory.Exists(dir)) Directory.CreateDirectory(dir); } catch { }
             }
 
-            // === Automatyczne czyszczenie starych backupów przy starcie ===
             PurgeOldBackupsOnStartup();
 
+            // === Wykrycie pierwszej konfiguracji ===
+            bool isFirstRun = false;
+            try
+            {
+                var data = _globalDb.GetData();
+                if (data != null && data.Settings != null)
+                {
+                    string frc;
+                    if (!data.Settings.TryGetValue("FirstRunCompleted", out frc))
+                    {
+                        // Brak klucza (stara baza) - traktujemy jako NIE-pierwsze uruchomienie.
+                        data.Settings["FirstRunCompleted"] = "true";
+                        _globalDb.Save();
+                    }
+                    else
+                    {
+                        isFirstRun = (frc != "true");
+                    }
+                }
+            }
+            catch { }
+
+            if (isFirstRun)
+            {
+                MessageBox.Show(
+                    Loc.T("firstrun.message"),
+                    Loc.T("firstrun.title"),
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+                RunFirstTimeSetup();
+            }
+
+            // === Normalna pętla logowania ===
             while (true)
             {
                 using (var loginForm = new Forms.LoginForm(_globalDb))
@@ -65,7 +98,7 @@ namespace SecureDesktop
                         PerformBackupAfterLogin(_globalDb);
 
                         using (var dashboard = new Forms.DashboardForm(
-                            loginForm.LoggedInUser, _globalDb, loginForm.LoggedInSessionId))
+                            loginForm.LoggedInUser, _globalDb, loginForm.LoggedInSessionId, false))
                         {
                             dashboard.Icon = AppIcon;
                             Application.Run(dashboard);
@@ -80,10 +113,50 @@ namespace SecureDesktop
         }
 
         /// <summary>
-        /// Przy każdym uruchomieniu: odczytaj BackupPath i BackupRetentionDays
-        /// z Settings, następnie usuń TRWALE foldery starsze niż retention.
+        /// Pierwsze uruchomienie: auto-login jako admin, otwarcie panelu
+        /// konfiguracji. Po kliknięciu "Powrót do panelu" flaga zostaje
+        /// ustawiona i użytkownik przechodzi do normalnego panelu głównego.
         /// </summary>
-                private static void PurgeOldBackupsOnStartup()
+        private static void RunFirstTimeSetup()
+        {
+            try
+            {
+                var data = _globalDb.GetData();
+                if (data == null || data.Users == null) return;
+
+                var admin = data.Users.FirstOrDefault(u =>
+                    u.IdentificationNumber == "admin" && u.IsActive);
+                if (admin == null) return;
+
+                // Utwórz sesję dla admina
+                int sessionId = 0;
+                try
+                {
+                    var sessionRepo = new Database.Repositories.SessionRepository(_globalDb);
+                    var session = new Models.Session
+                    {
+                        UserId = admin.Id,
+                        IdentificationNumber = admin.IdentificationNumber,
+                        SessionToken = Utils.SecurityHelper.GenerateSessionToken()
+                    };
+                    sessionRepo.Create(session);
+                    sessionId = session.Id;
+                }
+                catch { }
+
+                using (var dashboard = new Forms.DashboardForm(admin, _globalDb, sessionId, true))
+                {
+                    dashboard.Icon = AppIcon;
+                    Application.Run(dashboard);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("RunFirstTimeSetup error: " + ex.Message);
+            }
+        }
+
+        private static void PurgeOldBackupsOnStartup()
         {
             try
             {
@@ -103,10 +176,9 @@ namespace SecureDesktop
                     if (int.TryParse(rd, out parsed) && parsed > 0)
                         retentionDays = parsed;
                     else if (int.TryParse(rd, out parsed) && parsed == 0)
-                        return; // 0 = wyłączone
+                        return;
                 }
 
-                // Ścieżka relatywna -> absolutna (względem katalogu exe).
                 if (!Path.IsPathRooted(backupPath))
                     backupPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, backupPath);
 
@@ -115,11 +187,6 @@ namespace SecureDesktop
                 var svc = new Services.BackupService();
                 int deleted = svc.PurgeOldBackups(backupPath, retentionDays);
 
-                System.Diagnostics.Debug.WriteLine(
-                    "PurgeOldBackupsOnStartup: usunieto " + deleted +
-                    " folderow starszych niz " + retentionDays + " dni (" + backupPath + ")");
-
-                // === Log zdarzenia do dziennika ===
                 if (deleted > 0)
                 {
                     try
@@ -135,10 +202,7 @@ namespace SecureDesktop
                             Description = Loc.T("log.backup_purge", deleted, retentionDays)
                         });
                     }
-                    catch (Exception exLog)
-                    {
-                        System.Diagnostics.Debug.WriteLine("PurgeOldBackupsOnStartup log error: " + exLog.Message);
-                    }
+                    catch { }
                 }
             }
             catch (Exception ex)
