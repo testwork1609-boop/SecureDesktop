@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" />
-  
+
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
@@ -10,8 +10,9 @@
     <AssemblyName>SecureDesktop</AssemblyName>
     <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <LangVersion>7.3</LangVersion>
   </PropertyGroup>
-  
+
   <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
     <PlatformTarget>AnyCPU</PlatformTarget>
     <DebugType>none</DebugType>
@@ -20,7 +21,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Prefer32Bit>true</Prefer32Bit>
   </PropertyGroup>
-  
+
   <ItemGroup>
     <Reference Include="System" />
     <Reference Include="System.Core" />
@@ -31,12 +32,13 @@
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="System.Net.Http" />
   </ItemGroup>
-  
+
   <ItemGroup>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="ClosedXML" Version="0.95.4" />
   </ItemGroup>
-  
-   <ItemGroup>
+
+  <ItemGroup>
     <Compile Include="Program.cs" />
     <Compile Include="Models\User.cs" />
     <Compile Include="Models\Pattern.cs" />
@@ -55,6 +57,7 @@
     <Compile Include="Services\BackupService.cs" />
     <Compile Include="Services\FileMonitorService.cs" />
     <Compile Include="Services\ConfigurationService.cs" />
+    <Compile Include="Services\UserExcelService.cs" />
     <Compile Include="Forms\LoginForm.cs" />
     <Compile Include="Forms\DashboardForm.cs" />
     <Compile Include="Forms\ScreenLockForm.cs" />
@@ -67,6 +70,6 @@
     <Compile Include="Core\SecurityManager.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
-  
+
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
