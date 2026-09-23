@@ -21,9 +21,19 @@ namespace SecureDesktop.Services
         public event EventHandler LockActivated;
         public event EventHandler LockDeactivated;
 
+        /// <summary>
+        /// Wywoływane po odblokowaniu ekranu, z użytkownikiem, który podał
+        /// poprawne dane logowania. DashboardForm używa tego do przełączenia
+        /// sesji, jeśli odblokował inny użytkownik.
+        /// </summary>
+        public event Action<User> UnlockedByUser;
+
         public bool IsLocked { get { return _isLocked; } }
 
-        public Func<string, bool> PasswordVerifier { get; set; }
+        /// <summary>
+        /// Callback weryfikujący dane logowania: (pin, hasło) → User lub null.
+        /// </summary>
+        public Func<string, string, User> CredentialsVerifier { get; set; }
 
         public ScreenLockService()
         {
@@ -69,14 +79,13 @@ namespace SecureDesktop.Services
             try
             {
                 var screenshots = CaptureAllScreens();
-                Log("LockAllScreens: screenshots=" + screenshots.Count + " screens=" + Screen.AllScreens.Length);
 
                 foreach (var screen in Screen.AllScreens)
                 {
                     Bitmap shot;
                     screenshots.TryGetValue(screen, out shot);
 
-                    var overlay = new ScreenLockForm(screen, shot, PasswordVerifier);
+                    var overlay = new ScreenLockForm(screen, shot, CredentialsVerifier);
                     overlay.UnlockAllRequested += OnUnlockAllRequested;
 
                     var local = overlay;
@@ -135,7 +144,7 @@ namespace SecureDesktop.Services
                     Bitmap shot;
                     screenshots.TryGetValue(screen, out shot);
 
-                    var overlay = new ScreenLockForm(screen, shot, PasswordVerifier);
+                    var overlay = new ScreenLockForm(screen, shot, CredentialsVerifier);
                     overlay.UnlockAllRequested += OnUnlockAllRequested;
 
                     var local = overlay;
@@ -171,10 +180,11 @@ namespace SecureDesktop.Services
             }
         }
 
-        private void OnUnlockAllRequested(object sender, EventArgs e)
+        private void OnUnlockAllRequested(object sender, UnlockAllEventArgs e)
         {
-            Log("OnUnlockAllRequested");
-            UnlockScreens();
+            Log("OnUnlockAllRequested for user " +
+                (e != null && e.User != null ? e.User.IdentificationNumber : "null"));
+            UnlockScreens(e != null ? e.User : null);
         }
 
         private Dictionary<Screen, Bitmap> CaptureAllScreens()
@@ -243,7 +253,7 @@ namespace SecureDesktop.Services
             }
         }
 
-        public void UnlockScreens()
+        public void UnlockScreens(User unlockedBy = null)
         {
             if (_unlockInProgress)
             {
@@ -257,9 +267,8 @@ namespace SecureDesktop.Services
             }
 
             _unlockInProgress = true;
-            // Cooldown: przez 1 sekundę po odblokowaniu nie można zablokować ponownie.
             _unlockCooldownUntil = DateTime.UtcNow.AddSeconds(1);
-            Log("UnlockScreens START, overlays=" + _overlays.Count + " cooldown until " + _unlockCooldownUntil.ToString("HH:mm:ss.fff"));
+            Log("UnlockScreens START, overlays=" + _overlays.Count);
 
             try
             {
@@ -288,7 +297,16 @@ namespace SecureDesktop.Services
                 {
                     _isLocked = false;
                     OnLockDeactivated();
-                    Log("LockDeactivated (manual)");
+                }
+
+                // Powiadom o użytkowniku, który odblokował (jeśli był).
+                if (unlockedBy != null)
+                {
+                    var h = UnlockedByUser;
+                    if (h != null)
+                    {
+                        try { h(unlockedBy); } catch (Exception ex) { Log("UnlockedByUser: " + ex.Message); }
+                    }
                 }
             }
             catch (Exception ex)
@@ -319,5 +337,14 @@ namespace SecureDesktop.Services
 
         protected virtual void OnLockActivated() { var h = LockActivated; if (h != null) h(this, EventArgs.Empty); }
         protected virtual void OnLockDeactivated() { var h = LockDeactivated; if (h != null) h(this, EventArgs.Empty); }
+    }
+
+    /// <summary>
+    /// Argumenty zdarzenia odblokowania — zawierają użytkownika,
+    /// który podał poprawne dane logowania.
+    /// </summary>
+    public class UnlockAllEventArgs : EventArgs
+    {
+        public User User { get; set; }
     }
 }
