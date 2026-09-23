@@ -4,6 +4,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using SecureDesktop.Database;
+using SecureDesktop.Utils;
 
 namespace SecureDesktop
 {
@@ -22,7 +23,7 @@ namespace SecureDesktop
         static void Main()
         {
             try { SetProcessDPIAware(); } catch { }
-            SecureDesktop.Utils.Loc.LoadFromDisk(); 
+            Loc.LoadFromDisk();
 
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
@@ -49,6 +50,9 @@ namespace SecureDesktop
                 try { if (!Directory.Exists(dir)) Directory.CreateDirectory(dir); } catch { }
             }
 
+            // === Automatyczne czyszczenie starych backupów przy starcie ===
+            PurgeOldBackupsOnStartup();
+
             while (true)
             {
                 using (var loginForm = new Forms.LoginForm(_globalDb))
@@ -67,8 +71,57 @@ namespace SecureDesktop
                             Application.Run(dashboard);
                         }
                     }
-                    else break;
+                    else
+                    {
+                        break;
+                    }
                 }
+            }
+        }
+
+        /// <summary>
+        /// Przy każdym uruchomieniu: odczytaj BackupPath i BackupRetentionDays
+        /// z Settings, następnie usuń TRWALE foldery starsze niż retention.
+        /// </summary>
+        private static void PurgeOldBackupsOnStartup()
+        {
+            try
+            {
+                var data = _globalDb.GetData();
+                if (data == null || data.Settings == null) return;
+
+                string backupPath = "Backup";
+                string bp;
+                if (data.Settings.TryGetValue("BackupPath", out bp) && !string.IsNullOrWhiteSpace(bp))
+                    backupPath = bp;
+
+                int retentionDays = 30;
+                string rd;
+                if (data.Settings.TryGetValue("BackupRetentionDays", out rd))
+                {
+                    int parsed;
+                    if (int.TryParse(rd, out parsed) && parsed > 0)
+                        retentionDays = parsed;
+                    else if (int.TryParse(rd, out parsed) && parsed == 0)
+                        return; // 0 = wyłączone
+                }
+
+                // Ścieżka relatywna -> absolutna (względem katalogu exe).
+                if (!Path.IsPathRooted(backupPath))
+                    backupPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, backupPath);
+
+                if (!Directory.Exists(backupPath)) return;
+
+                var svc = new Services.BackupService();
+                int deleted = svc.PurgeOldBackups(backupPath, retentionDays);
+
+                System.Diagnostics.Debug.WriteLine(
+                    "PurgeOldBackupsOnStartup: usunieto " + deleted +
+                    " folderow starszych niz " + retentionDays + " dni (" + backupPath + ")");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("PurgeOldBackupsOnStartup error: " + ex.Message);
             }
         }
 
@@ -106,12 +159,12 @@ namespace SecureDesktop
                 {
                     OperationName = "Backup",
                     Result = "Success",
-                    Description = $"Backup pliku: {monitoredFile} -> {backupPath}"
+                    Description = "Backup pliku: " + monitoredFile + " -> " + backupPath
                 });
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Backup error: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine("Backup error: " + ex.Message);
             }
         }
 
