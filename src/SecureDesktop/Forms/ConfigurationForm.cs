@@ -9,9 +9,7 @@ using SecureDesktop.Database;
 using SecureDesktop.Database.Repositories;
 using SecureDesktop.Models;
 using SecureDesktop.Utils;
-using SecureDesktop.Database;
-using SecureDesktop.Database.Repositories;
-using SecureDesktop.Models;
+
 
 namespace SecureDesktop.Forms
 {
