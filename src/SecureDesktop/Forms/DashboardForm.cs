@@ -15,10 +15,10 @@ namespace SecureDesktop.Forms
 {
     public class DashboardForm : Form
     {
-        private readonly User _currentUser;
+        private User _currentUser;
+        private int _sessionId;
         private readonly DatabaseInitializer _db;
         private readonly ScreenLockService _lockService;
-        private readonly int _sessionId;
         private readonly DateTime _sessionStartTime;
 
         private int _totalPatterns = 0;
@@ -36,7 +36,7 @@ namespace SecureDesktop.Forms
             _db = db;
             _sessionId = sessionId;
             _sessionStartTime = DateTime.Now;
-            _lockService = new ScreenLockService { PasswordVerifier = VerifyCurrentUserPassword };
+            _lockService = new ScreenLockService { CredentialsVerifier = VerifyAnyUserCredentials };
 
             _lockService.LockDeactivated += (s, e) =>
             {
@@ -52,6 +52,9 @@ namespace SecureDesktop.Forms
                 }
                 catch { }
             };
+
+            // Zmiana użytkownika po odblokowaniu ekranu innym PIN-em.
+            _lockService.UnlockedByUser += OnScreenUnlockedByUser;
 
             LoadStats();
             InitializeComponent();
@@ -104,49 +107,138 @@ namespace SecureDesktop.Forms
             catch { return false; }
         }
 
-                private bool VerifyCurrentUserPassword(string password)
+        /// <summary>
+        /// Weryfikacja danych logowania do odblokowania ekranu.
+        /// Sprawdza DOWOLNEGO aktywnego użytkownika po PIN-ie.
+        /// Kolejność: hasło indywidualne → hasło zmiany → legacy admin.
+        /// </summary>
+        private User VerifyAnyUserCredentials(string pin, string password)
         {
             try
             {
-                if (string.IsNullOrEmpty(password)) return false;
+                if (string.IsNullOrWhiteSpace(pin) || string.IsNullOrEmpty(password)) return null;
                 var data = _db.GetData();
-                if (data == null) return false;
+                if (data == null || data.Users == null) return null;
 
-                // 1) Hasło indywidualne (jeśli włączone).
-                if (_currentUser.UseIndividualPassword &&
-                    !string.IsNullOrEmpty(_currentUser.PasswordHash) &&
-                    !string.IsNullOrEmpty(_currentUser.Salt))
+                var user = data.Users.FirstOrDefault(u =>
+                    u.IsActive &&
+                    string.Equals(u.IdentificationNumber, pin.Trim(), StringComparison.Ordinal));
+                if (user == null) return null;
+
+                // 1) Hasło indywidualne.
+                if (user.UseIndividualPassword &&
+                    !string.IsNullOrEmpty(user.PasswordHash) &&
+                    !string.IsNullOrEmpty(user.Salt))
                 {
-                    var hashInd = SecurityHelper.HashPassword(password, _currentUser.Salt);
-                    if (string.Equals(hashInd, _currentUser.PasswordHash, StringComparison.Ordinal))
-                        return true;
+                    var hashInd = SecurityHelper.HashPassword(password, user.Salt);
+                    if (string.Equals(hashInd, user.PasswordHash, StringComparison.Ordinal))
+                        return user;
                 }
 
                 // 2) Hasło zmiany.
-                if (_currentUser.ShiftId.HasValue && data.Shifts != null)
+                if (user.ShiftId.HasValue && data.Shifts != null)
                 {
-                    var shift = data.Shifts.FirstOrDefault(s => s.Id == _currentUser.ShiftId.Value);
+                    var shift = data.Shifts.FirstOrDefault(s => s.Id == user.ShiftId.Value);
                     if (shift != null && !string.IsNullOrEmpty(shift.PasswordHash) && !string.IsNullOrEmpty(shift.Salt))
                     {
                         var hash = SecurityHelper.HashPassword(password, shift.Salt);
                         if (string.Equals(hash, shift.PasswordHash, StringComparison.Ordinal))
-                            return true;
+                            return user;
                     }
                 }
 
-                // 3) Fallback: legacy AdminPassword.
-                if (_currentUser.IsAdmin && data.Settings != null)
+                // 3) Fallback: legacy AdminPassword z Settings (dla admina).
+                if (user.IsAdmin && data.Settings != null)
                 {
                     string legacy;
                     if (data.Settings.TryGetValue("AdminPassword", out legacy) &&
                         !string.IsNullOrEmpty(legacy) &&
                         string.Equals(password, legacy, StringComparison.Ordinal))
-                        return true;
+                        return user;
                 }
 
-                return false;
+                return null;
             }
-            catch { return false; }
+            catch { return null; }
+        }
+
+        /// <summary>
+        /// Wywołane po odblokowaniu ekranu. Jeśli odblokował inny użytkownik
+        /// niż aktualnie zalogowany → przełączamy sesję.
+        /// </summary>
+        private void OnScreenUnlockedByUser(User unlockedBy)
+        {
+            if (unlockedBy == null) return;
+            if (_currentUser != null && unlockedBy.Id == _currentUser.Id) return; // ten sam user - nic nie rób
+
+            try
+            {
+                BeginInvoke(new Action(() => SwitchCurrentUser(unlockedBy)));
+            }
+            catch { }
+        }
+
+        private void SwitchCurrentUser(User newUser)
+        {
+            try
+            {
+                if (this.IsDisposed) return;
+
+                // 1) Zakończ starą sesję.
+                try { new SessionRepository(_db).EndSession(_sessionId); } catch { }
+
+                // 2) Ustaw nowego użytkownika.
+                var oldPin = _currentUser != null ? _currentUser.IdentificationNumber : "—";
+                _currentUser = newUser;
+
+                // 3) Nowa sesja.
+                try
+                {
+                    var session = new Session
+                    {
+                        UserId = newUser.Id,
+                        IdentificationNumber = newUser.IdentificationNumber,
+                        SessionToken = SecurityHelper.GenerateSessionToken()
+                    };
+                    var sessionRepo = new SessionRepository(_db);
+                    sessionRepo.Create(session);
+                    _sessionId = session.Id;
+                }
+                catch { _sessionId = 0; }
+
+                // 4) Log zdarzenia.
+                try
+                {
+                    new EventLogRepository(_db).Create(new EventLog
+                    {
+                        UserId = newUser.Id,
+                        IdentificationNumber = newUser.IdentificationNumber,
+                        OperationName = "UserSwitch",
+                        Result = "Success",
+                        Severity = "Info",
+                        Description = Loc.T("log.user_switched") + " (" + oldPin + " → " + newUser.IdentificationNumber + ")"
+                    });
+                }
+                catch { }
+
+                // 5) Odśwież UI.
+                UpdateUserLabelText();
+                LoadStats();
+                ShowHome();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("SwitchCurrentUser error: " + ex.Message);
+            }
+        }
+
+        private void UpdateUserLabelText()
+        {
+            if (_userLabel == null || _currentUser == null) return;
+            string roleSuffix = _currentUser.IsHeadAdmin
+                ? "  •  " + Loc.T("dash.user_headadmin")
+                : (_currentUser.IsAdmin ? "  •  " + Loc.T("dash.user_admin") : "  •  " + Loc.T("dash.user_user"));
+            _userLabel.Text = _currentUser.DisplayNameOrPin + roleSuffix;
         }
 
         private PatternRecognitionService CreatePatternRecognitionService()
@@ -223,19 +315,16 @@ namespace SecureDesktop.Forms
             };
             headerPanel.Controls.Add(_viewTitleLabel);
 
-            string roleSuffix = _currentUser.IsHeadAdmin
-                ? "  •  " + Loc.T("dash.user_headadmin")
-                : (_currentUser.IsAdmin ? "  •  " + Loc.T("dash.user_admin") : "  •  " + Loc.T("dash.user_user"));
-
             _userLabel = new Label
             {
-                Text = _currentUser.DisplayNameOrPin + roleSuffix,
+                Text = "",
                 Font = UiFonts.Body,
                 AutoSize = true,
                 ForeColor = UiTheme.TextSecondary,
                 BackColor = Color.Transparent,
                 Anchor = AnchorStyles.Top | AnchorStyles.Right
             };
+            UpdateUserLabelText();
             headerPanel.Controls.Add(_userLabel);
             headerPanel.Resize += (s, e) => _userLabel.Location = new Point(headerPanel.Width - _userLabel.Width - 32, 28);
 
@@ -582,11 +671,14 @@ namespace SecureDesktop.Forms
         {
             if (disposing)
             {
+                try { _lockService.UnlockedByUser -= OnScreenUnlockedByUser; } catch { }
                 try { if (_lockService != null) _lockService.UnlockScreens(); } catch { }
             }
             base.Dispose(disposing);
         }
     }
+
+    // ============== HOME VIEW (bez zmian funkcjonalnych) ==============
 
     internal class DashboardHomeView : UserControl
     {
