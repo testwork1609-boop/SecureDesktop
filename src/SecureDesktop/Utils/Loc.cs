@@ -90,6 +90,12 @@ namespace SecureDesktop.Utils
             d["login.err.no_shift"] = "Konto nie ma przypisanej zmiany";
             d["login.err.generic"] = "Błąd: ";
 
+            d["cfg.bk.retention"] = "Automatyczne usuwanie kopii starszych niż (dni):";
+            d["cfg.bk.retention_hint"] = "0 = wyłączone. Foldery backupu starsze niż podana liczba dni są TRWALE usuwane przy każdym starcie aplikacji (bez kosza).";
+            d["cfg.bk.btn_purge_now"] = "🗑   Wyczyść stare kopie teraz";
+            d["cfg.bk.purge_done"] = "Usunięto {0} starych folderów backupu.";
+            d["cfg.bk.purge_none"] = "Brak folderów starszych niż {0} dni.";
+
             d["dash.backup_dlg_title"] = "Wybierz plik do kopii zapasowej";
             d["dash.msg.backup_no_file"] = "Nie wybrano pliku do kopii zapasowej.";
             d["dash.backup_folder_hint"] = "Kopia zostanie zapisana w folderze:";
@@ -316,6 +322,12 @@ namespace SecureDesktop.Utils
             d["login.err.no_pass"] = "Shift has no password set";
             d["login.err.no_shift"] = "Account has no shift assigned";
             d["login.err.generic"] = "Error: ";
+
+            d["cfg.bk.retention"] = "Auto-delete backups older than (days):";
+            d["cfg.bk.retention_hint"] = "0 = disabled. Backup folders older than the given number of days are PERMANENTLY removed on every app startup (no recycle bin).";
+            d["cfg.bk.btn_purge_now"] = "🗑   Purge old backups now";
+            d["cfg.bk.purge_done"] = "Deleted {0} old backup folders.";
+            d["cfg.bk.purge_none"] = "No folders older than {0} days.";
 
             d["dash.backup_dlg_title"] = "Select file to back up";
             d["dash.msg.backup_no_file"] = "No file selected for backup.";
