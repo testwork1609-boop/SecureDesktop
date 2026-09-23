@@ -140,7 +140,7 @@ namespace SecureDesktop.Database
             SaveInternal();
         }
 
-        private void InsertDefaultData()
+               private void InsertDefaultData()
         {
             var salt = Convert.ToBase64String(Guid.NewGuid().ToByteArray());
             var hash = Convert.ToBase64String(
@@ -183,6 +183,7 @@ namespace SecureDesktop.Database
             _data.Settings["Theme"] = "Dark";
             _data.Settings["BackupPath"] = ".\\Backup";
             _data.Settings["AdminPassword"] = "admin";
+            _data.Settings["FirstRunCompleted"] = "false";
 
             _data.Tips.Add(new Models.Tip
             {
