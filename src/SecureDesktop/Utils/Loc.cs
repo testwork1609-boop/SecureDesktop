@@ -90,18 +90,6 @@ namespace SecureDesktop.Utils
             d["login.err.no_shift"] = "Konto nie ma przypisanej zmiany";
             d["login.err.generic"] = "Błąd: ";
 
-            d["cfg.bk.retention"] = "Automatyczne usuwanie kopii starszych niż (dni):";
-            d["cfg.bk.retention_hint"] = "0 = wyłączone. Foldery backupu starsze niż podana liczba dni są TRWALE usuwane przy każdym starcie aplikacji (bez kosza).";
-            d["cfg.bk.btn_purge_now"] = "🗑   Wyczyść stare kopie teraz";
-            d["cfg.bk.purge_done"] = "Usunięto {0} starych folderów backupu.";
-            d["cfg.bk.purge_none"] = "Brak folderów starszych niż {0} dni.";
-
-            d["dash.backup_dlg_title"] = "Wybierz plik do kopii zapasowej";
-            d["dash.msg.backup_no_file"] = "Nie wybrano pliku do kopii zapasowej.";
-            d["dash.backup_folder_hint"] = "Kopia zostanie zapisana w folderze:";
-            d["log.session_backup_ok"] = "W tej sesji wykonano kopię zapasową";
-            d["log.session_no_backup"] = "Brak kopii zapasowej w tej sesji";
-
             d["common.ok"] = "OK";
             d["common.cancel"] = "Anuluj";
             d["common.error"] = "Błąd";
@@ -109,17 +97,11 @@ namespace SecureDesktop.Utils
             d["common.success"] = "Sukces";
             d["common.confirm"] = "Potwierdzenie";
 
-            d["cfg.usr.btn_edit"] = "✏️   Edytuj";
-            d["cfg.usr.edit_dlg_title"] = "Edytuj użytkownika";
-            d["cfg.usr.dlg_save"] = "Zapisz";
-            d["cfg.usr.edit_err_exists"] = "Inny użytkownik ma już taki PIN.";
-            d["cfg.usr.edit_admin_locked"] = "Konto administratora: PIN i rola są zablokowane.";
-            d["cfg.usr.active"] = "Aktywne konto";
-
             d["dash.window_title"] = "SecureDesktop — Panel główny";
             d["dash.view_home"] = "Panel główny";
             d["dash.header_brand"] = "SecureDesktop";
             d["dash.user_admin"] = "Admin";
+            d["dash.user_headadmin"] = "HeadAdmin";
             d["dash.user_user"] = "User";
             d["dash.sb.home"] = "Panel główny";
             d["dash.sb.lock_all"] = "Blokuj cały ekran";
@@ -145,6 +127,11 @@ namespace SecureDesktop.Utils
             d["dash.msg.no_db"] = "Brak bazy danych.";
             d["dash.msg.err"] = "Błąd: ";
             d["dash.msg.patternlock_title"] = "Pattern Lock";
+            d["dash.backup_dlg_title"] = "Wybierz plik do kopii zapasowej";
+            d["dash.msg.backup_no_file"] = "Nie wybrano pliku do kopii zapasowej.";
+            d["dash.backup_folder_hint"] = "Kopia zostanie zapisana w folderze:";
+            d["log.session_backup_ok"] = "W tej sesji wykonano kopię zapasową";
+            d["log.session_no_backup"] = "Brak kopii zapasowej w tej sesji";
 
             d["cfg.title"] = "Konfiguracja";
             d["cfg.subtitle"] = "Ustawienia aplikacji, wzorce, kopie zapasowe i użytkownicy";
@@ -236,6 +223,11 @@ namespace SecureDesktop.Utils
             d["cfg.bk.btn_run"] = "💾   Wykonaj backup teraz";
             d["cfg.bk.err_no_file"] = "Wybierz plik do backupu.";
             d["cfg.bk.done"] = "Backup utworzony!";
+            d["cfg.bk.retention"] = "Automatyczne usuwanie kopii starszych niż (dni):";
+            d["cfg.bk.retention_hint"] = "0 = wyłączone. Foldery backupu starsze niż podana liczba dni są TRWALE usuwane przy każdym starcie aplikacji (bez kosza).";
+            d["cfg.bk.btn_purge_now"] = "🗑   Wyczyść stare kopie teraz";
+            d["cfg.bk.purge_done"] = "Usunięto {0} starych folderów backupu.";
+            d["cfg.bk.purge_none"] = "Brak folderów starszych niż {0} dni.";
 
             d["cfg.usr.title"] = "Zarządzanie użytkownikami";
             d["cfg.usr.col_id"] = "ID";
@@ -245,24 +237,36 @@ namespace SecureDesktop.Utils
             d["cfg.usr.col_shift"] = "Zmiana";
             d["cfg.usr.col_role"] = "Rola";
             d["cfg.usr.col_active"] = "Aktywny";
+            d["cfg.usr.role_headadmin"] = "HeadAdmin";
             d["cfg.usr.role_admin"] = "Administrator";
             d["cfg.usr.role_user"] = "Użytkownik";
             d["cfg.usr.yes"] = "Tak";
             d["cfg.usr.no"] = "Nie";
             d["cfg.usr.btn_add"] = "➕   Dodaj";
+            d["cfg.usr.btn_edit"] = "✏️   Edytuj";
             d["cfg.usr.btn_deactivate"] = "🗑   Dezaktywuj";
             d["cfg.usr.btn_toggle"] = "↺   Zmień rolę";
             d["cfg.usr.btn_import"] = "📥   Import z XLSX";
             d["cfg.usr.btn_export"] = "📤   Eksport do XLSX";
             d["cfg.usr.dlg_title"] = "Dodaj użytkownika";
+            d["cfg.usr.edit_dlg_title"] = "Edytuj użytkownika";
             d["cfg.usr.dlg_ident"] = "Numer identyfikacyjny (PIN)";
+            d["cfg.usr.dlg_first_name"] = "Imię";
+            d["cfg.usr.dlg_last_name"] = "Nazwisko";
+            d["cfg.usr.dlg_display"] = "Nazwa wyświetlana (auto)";
             d["cfg.usr.dlg_shift"] = "Zmiana";
+            d["cfg.usr.dlg_role"] = "Rola";
             d["cfg.usr.dlg_admin"] = "Uprawnienia administratora";
             d["cfg.usr.dlg_add"] = "Dodaj";
+            d["cfg.usr.dlg_save"] = "Zapisz";
             d["cfg.usr.dlg_cancel"] = "Anuluj";
+            d["cfg.usr.active"] = "Aktywne konto";
+            d["cfg.usr.role_hint"] = "HeadAdmin: pełny dostęp. Administrator: bez Użytkowników, Zmian i kasowania Historii.";
             d["cfg.usr.err_empty_ident"] = "Wprowadź numer identyfikacyjny.";
             d["cfg.usr.err_no_shift"] = "Wybierz zmianę.";
             d["cfg.usr.err_exists"] = "Użytkownik o takim numerze już istnieje.";
+            d["cfg.usr.edit_err_exists"] = "Inny użytkownik ma już taki PIN.";
+            d["cfg.usr.edit_admin_locked"] = "Konto administratora: PIN i rola są zablokowane.";
             d["cfg.usr.err_cant_del_admin"] = "Nie można usunąć domyślnego administratora.";
             d["cfg.usr.err_cant_change_admin"] = "Nie można zmienić roli domyślnego administratora.";
             d["cfg.usr.select_del"] = "Zaznacz użytkownika do usunięcia.";
@@ -294,6 +298,7 @@ namespace SecureDesktop.Utils
             d["hist.load_err"] = "Błąd wczytywania historii: ";
             d["hist.clear_confirm"] = "Czy na pewno usunąć CAŁĄ historię zdarzeń z bazy?";
             d["hist.clear_err"] = "Błąd czyszczenia: ";
+            d["hist.clear_forbidden"] = "Tylko HeadAdmin może czyścić historię zdarzeń.";
 
             d["lock.dlg_title"] = "Odblokuj ekran";
             d["lock.dlg_prompt"] = "Wprowadź hasło zmiany, aby odblokować";
@@ -323,25 +328,6 @@ namespace SecureDesktop.Utils
             d["login.err.no_shift"] = "Account has no shift assigned";
             d["login.err.generic"] = "Error: ";
 
-            d["cfg.bk.retention"] = "Auto-delete backups older than (days):";
-            d["cfg.bk.retention_hint"] = "0 = disabled. Backup folders older than the given number of days are PERMANENTLY removed on every app startup (no recycle bin).";
-            d["cfg.bk.btn_purge_now"] = "🗑   Purge old backups now";
-            d["cfg.bk.purge_done"] = "Deleted {0} old backup folders.";
-            d["cfg.bk.purge_none"] = "No folders older than {0} days.";
-
-            d["dash.backup_dlg_title"] = "Select file to back up";
-            d["dash.msg.backup_no_file"] = "No file selected for backup.";
-            d["dash.backup_folder_hint"] = "The backup will be saved in:";
-            d["log.session_backup_ok"] = "Backup was made in this session";
-            d["log.session_no_backup"] = "No backup in this session";
-
-            d["cfg.usr.btn_edit"] = "✏️   Edit";
-            d["cfg.usr.edit_dlg_title"] = "Edit user";
-            d["cfg.usr.dlg_save"] = "Save";
-            d["cfg.usr.edit_err_exists"] = "Another user already has this PIN.";
-            d["cfg.usr.edit_admin_locked"] = "Administrator account: PIN and role are locked.";
-            d["cfg.usr.active"] = "Active account";
-
             d["common.ok"] = "OK";
             d["common.cancel"] = "Cancel";
             d["common.error"] = "Error";
@@ -353,6 +339,7 @@ namespace SecureDesktop.Utils
             d["dash.view_home"] = "Dashboard";
             d["dash.header_brand"] = "SecureDesktop";
             d["dash.user_admin"] = "Admin";
+            d["dash.user_headadmin"] = "HeadAdmin";
             d["dash.user_user"] = "User";
             d["dash.sb.home"] = "Dashboard";
             d["dash.sb.lock_all"] = "Lock entire screen";
@@ -378,6 +365,11 @@ namespace SecureDesktop.Utils
             d["dash.msg.no_db"] = "Database file missing.";
             d["dash.msg.err"] = "Error: ";
             d["dash.msg.patternlock_title"] = "Pattern Lock";
+            d["dash.backup_dlg_title"] = "Select file to back up";
+            d["dash.msg.backup_no_file"] = "No file selected for backup.";
+            d["dash.backup_folder_hint"] = "The backup will be saved in:";
+            d["log.session_backup_ok"] = "Backup was made in this session";
+            d["log.session_no_backup"] = "No backup in this session";
 
             d["cfg.title"] = "Settings";
             d["cfg.subtitle"] = "Application settings, patterns, backups and users";
@@ -469,6 +461,11 @@ namespace SecureDesktop.Utils
             d["cfg.bk.btn_run"] = "💾   Run backup now";
             d["cfg.bk.err_no_file"] = "Choose a file to back up.";
             d["cfg.bk.done"] = "Backup created!";
+            d["cfg.bk.retention"] = "Auto-delete backups older than (days):";
+            d["cfg.bk.retention_hint"] = "0 = disabled. Backup folders older than the given number of days are PERMANENTLY removed on every app startup (no recycle bin).";
+            d["cfg.bk.btn_purge_now"] = "🗑   Purge old backups now";
+            d["cfg.bk.purge_done"] = "Deleted {0} old backup folders.";
+            d["cfg.bk.purge_none"] = "No folders older than {0} days.";
 
             d["cfg.usr.title"] = "User management";
             d["cfg.usr.col_id"] = "ID";
@@ -478,24 +475,36 @@ namespace SecureDesktop.Utils
             d["cfg.usr.col_shift"] = "Shift";
             d["cfg.usr.col_role"] = "Role";
             d["cfg.usr.col_active"] = "Active";
+            d["cfg.usr.role_headadmin"] = "HeadAdmin";
             d["cfg.usr.role_admin"] = "Administrator";
             d["cfg.usr.role_user"] = "User";
             d["cfg.usr.yes"] = "Yes";
             d["cfg.usr.no"] = "No";
             d["cfg.usr.btn_add"] = "➕   Add";
+            d["cfg.usr.btn_edit"] = "✏️   Edit";
             d["cfg.usr.btn_deactivate"] = "🗑   Deactivate";
             d["cfg.usr.btn_toggle"] = "↺   Change role";
             d["cfg.usr.btn_import"] = "📥   Import from XLSX";
             d["cfg.usr.btn_export"] = "📤   Export to XLSX";
             d["cfg.usr.dlg_title"] = "Add user";
+            d["cfg.usr.edit_dlg_title"] = "Edit user";
             d["cfg.usr.dlg_ident"] = "Identification number (PIN)";
+            d["cfg.usr.dlg_first_name"] = "First name";
+            d["cfg.usr.dlg_last_name"] = "Last name";
+            d["cfg.usr.dlg_display"] = "Display name (auto)";
             d["cfg.usr.dlg_shift"] = "Shift";
+            d["cfg.usr.dlg_role"] = "Role";
             d["cfg.usr.dlg_admin"] = "Administrator privileges";
             d["cfg.usr.dlg_add"] = "Add";
+            d["cfg.usr.dlg_save"] = "Save";
             d["cfg.usr.dlg_cancel"] = "Cancel";
+            d["cfg.usr.active"] = "Active account";
+            d["cfg.usr.role_hint"] = "HeadAdmin: full access. Administrator: no Users, no Shifts, cannot clear History.";
             d["cfg.usr.err_empty_ident"] = "Enter identification number.";
             d["cfg.usr.err_no_shift"] = "Choose a shift.";
             d["cfg.usr.err_exists"] = "User with that number already exists.";
+            d["cfg.usr.edit_err_exists"] = "Another user already has this PIN.";
+            d["cfg.usr.edit_admin_locked"] = "Administrator account: PIN and role are locked.";
             d["cfg.usr.err_cant_del_admin"] = "Cannot delete the default administrator.";
             d["cfg.usr.err_cant_change_admin"] = "Cannot change the default administrator's role.";
             d["cfg.usr.select_del"] = "Select a user to delete.";
@@ -527,6 +536,7 @@ namespace SecureDesktop.Utils
             d["hist.load_err"] = "Failed to load history: ";
             d["hist.clear_confirm"] = "Delete the ENTIRE event history?";
             d["hist.clear_err"] = "Clear error: ";
+            d["hist.clear_forbidden"] = "Only HeadAdmin can clear event history.";
 
             d["lock.dlg_title"] = "Unlock screen";
             d["lock.dlg_prompt"] = "Enter shift password to unlock";
