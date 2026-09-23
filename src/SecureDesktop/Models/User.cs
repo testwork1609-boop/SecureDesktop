@@ -6,8 +6,20 @@ namespace SecureDesktop.Models
     {
         public int Id { get; set; }
         public string IdentificationNumber { get; set; }
+
+        /// <summary>
+        /// Hash hasła indywidualnego. Używany TYLKO gdy
+        /// UseIndividualPassword == true. W przeciwnym razie hasło
+        /// weryfikowane jest przez Shift.PasswordHash + Shift.Salt.
+        /// </summary>
         public string PasswordHash { get; set; }
         public string Salt { get; set; }
+
+        /// <summary>
+        /// True = użytkownik ma własne hasło (niezależne od zmiany).
+        /// False = użytkownik loguje się hasłem przypisanej zmiany.
+        /// </summary>
+        public bool UseIndividualPassword { get; set; }
 
         public bool IsAdmin { get; set; }
         public bool IsHeadAdmin { get; set; }
