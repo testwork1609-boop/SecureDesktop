@@ -36,6 +36,7 @@ namespace SecureDesktop.Database.Repositories
             user.Id = data.NextUserId++;
             user.CreatedAt = DateTime.Now;
             user.IsActive = true;
+            if (user.IsHeadAdmin) user.IsAdmin = true;
             data.Users.Add(user);
             _db.Save();
         }
@@ -48,11 +49,13 @@ namespace SecureDesktop.Database.Repositories
             {
                 existing.IdentificationNumber = user.IdentificationNumber;
                 existing.IsAdmin = user.IsAdmin;
+                existing.IsHeadAdmin = user.IsHeadAdmin;
                 existing.IsActive = user.IsActive;
                 existing.ShiftId = user.ShiftId;
                 existing.FirstName = user.FirstName;
                 existing.LastName = user.LastName;
                 existing.DisplayName = user.DisplayName;
+                if (existing.IsHeadAdmin) existing.IsAdmin = true;
                 _db.Save();
             }
         }
