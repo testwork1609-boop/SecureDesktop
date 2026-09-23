@@ -12,18 +12,15 @@ namespace SecureDesktop.Services
 {
     public class PatternRecognitionService : IDisposable
     {
-        // Krótszy wymóg na pojawienie się ramki (szybka reakcja),
-        // dłuższy na zniknięcie (stabilność, brak migania).
-        private const int RequiredConsecutiveHits = 1;
-        private const int RequiredConsecutiveMisses = 8;
+        // Ile kolejnych klatek "found" wymagane, żeby uznać pattern za znaleziony.
+        private const int RequiredConsecutiveHits = 2;
+
+        // Ile kolejnych klatek "miss" wymagane, żeby uznać pattern za zgubiony.
+        private const int RequiredConsecutiveMisses = 4;
 
         // Anti-jitter: minimalna zmiana pozycji (w px), żeby uznać że pattern
-        // faktycznie się przesunął (a nie drga o piksel-dwa).
-        private const int PositionJitterPx = 6;
-
-        // Histereza progowa: gdy pattern jest aktualnie "found", używamy
-        // niższego progu, żeby drobne fluktuacje NCC nie zgłaszały "lost".
-        private const double HysteresisFactor = 0.88;
+        // faktycznie się przesunął.
+        private const int PositionJitterPx = 8;
 
         private readonly double _defaultMatchThreshold;
         private readonly int _intervalMs;
@@ -33,6 +30,7 @@ namespace SecureDesktop.Services
         private List<CachedPattern> _patterns;
         private readonly Dictionary<string, Rectangle> _lastLocations = new Dictionary<string, Rectangle>();
         private readonly Dictionary<string, double> _lastScores = new Dictionary<string, double>();
+        private readonly Dictionary<string, double> _bestEver = new Dictionary<string, double>();
         private readonly Dictionary<string, DateTime> _lastDiagLog = new Dictionary<string, DateTime>();
         private readonly Dictionary<string, int> _hitStreak = new Dictionary<string, int>();
         private readonly Dictionary<string, int> _missStreak = new Dictionary<string, int>();
@@ -76,6 +74,7 @@ namespace SecureDesktop.Services
                 if (_isRunning) return;
 
                 _patterns = new List<CachedPattern>();
+                _bestEver.Clear();
                 _lastDiagLog.Clear();
                 _hitStreak.Clear();
                 _missStreak.Clear();
@@ -83,21 +82,28 @@ namespace SecureDesktop.Services
                 _lastLocations.Clear();
                 _lastScores.Clear();
                 Log("=== START PatternRecognitionService ===");
+                Log("VirtualScreen = " + SystemInformation.VirtualScreen);
 
                 if (patterns != null)
                 {
                     foreach (var p in patterns)
                     {
                         if (p == null) continue;
-                        if (!p.IsActive) continue;
-                        if (p.ImageData == null || p.ImageData.Length == 0) continue;
+                        if (!p.IsActive) { Log("'" + p.Name + "': nieaktywny - pomijam"); continue; }
+                        if (p.ImageData == null || p.ImageData.Length == 0)
+                        {
+                            Log("'" + p.Name + "': brak ImageData - pomijam");
+                            continue;
+                        }
 
                         try
                         {
                             var cached = new CachedPattern(p, _defaultMatchThreshold);
                             _patterns.Add(cached);
                             Log("'" + p.Name + "': OK " + cached.Width + "x" + cached.Height +
-                                " std=" + cached.StdDev.ToString("F2") + " threshold=" + cached.Threshold.ToString("F2"));
+                                " punkty=" + cached.PointX.Length +
+                                " std=" + cached.StdDev.ToString("F2") +
+                                " threshold=" + cached.Threshold.ToString("F2"));
                         }
                         catch (Exception ex)
                         {
@@ -157,29 +163,23 @@ namespace SecureDesktop.Services
 
             Rectangle prev;
             bool hasPrev = _lastLocations.TryGetValue(key, out prev);
-            bool alreadyReportedFound = _reportedFound.ContainsKey(key) && _reportedFound[key];
-
-            // Histereza: gdy pattern jest aktualnie widoczny, używamy niższego
-            // progu na utrzymanie - drobne fluktuacje NCC nie powodują miss.
-            double effectiveThreshold = alreadyReportedFound
-                ? pattern.Threshold * HysteresisFactor
-                : pattern.Threshold;
 
             Rectangle searchArea = hasPrev
                 ? Inflate(prev, 150, screen.Size)
                 : new Rectangle(0, 0, screen.Width, screen.Height);
 
-            MatchResult match = FindBestMatch(screen, pattern, searchArea, effectiveThreshold);
+            MatchResult match = FindBestMatch(screen, pattern, searchArea);
 
-            // Fallback: pełny skan, jeśli w oknie nic nie znaleziono, a mamy zapamiętaną pozycję.
             if (!match.Found && hasPrev)
             {
+                Log("'" + key + "': nie znaleziono w oknie (best=" + pattern.LastScore.ToString("F3") + "), pełny skan");
                 match = FindBestMatch(screen, pattern,
-                    new Rectangle(0, 0, screen.Width, screen.Height),
-                    effectiveThreshold);
+                    new Rectangle(0, 0, screen.Width, screen.Height));
             }
 
-            // Diagnostyka raz na sekundę.
+            if (!_bestEver.ContainsKey(key) || pattern.LastScore > _bestEver[key])
+                _bestEver[key] = pattern.LastScore;
+
             DateTime lastLog;
             if (!_lastDiagLog.TryGetValue(key, out lastLog) ||
                 (DateTime.Now - lastLog).TotalSeconds >= 1.0)
@@ -187,13 +187,15 @@ namespace SecureDesktop.Services
                 int h = _hitStreak.ContainsKey(key) ? _hitStreak[key] : 0;
                 int m = _missStreak.ContainsKey(key) ? _missStreak[key] : 0;
                 Log("DIAG '" + key + "': best=" + pattern.LastScore.ToString("F3") +
-                    " eff=" + effectiveThreshold.ToString("F2") +
+                    " max_ever=" + _bestEver[key].ToString("F3") +
+                    " threshold=" + pattern.Threshold.ToString("F2") +
                     " found=" + match.Found + " hit=" + h + " miss=" + m);
                 _lastDiagLog[key] = DateTime.Now;
             }
 
             int hitCount = _hitStreak.ContainsKey(key) ? _hitStreak[key] : 0;
             int missCount = _missStreak.ContainsKey(key) ? _missStreak[key] : 0;
+            bool alreadyReportedFound = _reportedFound.ContainsKey(key) && _reportedFound[key];
 
             if (match.Found)
             {
@@ -306,17 +308,17 @@ namespace SecureDesktop.Services
             catch (Exception ex) { Log("CaptureScreen: " + ex.Message); return null; }
         }
 
-        private MatchResult FindBestMatch(Bitmap screen, CachedPattern pattern, Rectangle searchArea, double threshold)
+        private MatchResult FindBestMatch(Bitmap screen, CachedPattern pattern, Rectangle searchArea)
         {
             if (searchArea.Width < pattern.Width || searchArea.Height < pattern.Height)
                 return MatchResult.NotFound;
 
             BitmapData data = screen.LockBits(searchArea, ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
-            try { return FindBestMatchInArea(data, searchArea, pattern, threshold); }
+            try { return FindBestMatchInArea(data, searchArea, pattern); }
             finally { screen.UnlockBits(data); }
         }
 
-        internal unsafe MatchResult FindBestMatchInArea(BitmapData data, Rectangle searchArea, CachedPattern pattern, double threshold)
+        internal unsafe MatchResult FindBestMatchInArea(BitmapData data, Rectangle searchArea, CachedPattern pattern)
         {
             byte* ptr = (byte*)data.Scan0;
             int stride = data.Stride;
@@ -327,9 +329,9 @@ namespace SecureDesktop.Services
 
             if (maxX == 0 && maxY == 0)
             {
-                double s = ComputeNCC(ptr, stride, 0, 0, pattern);
+                double s = ComputeScore(ptr, stride, 0, 0, pattern);
                 pattern.LastScore = s;
-                if (s >= threshold)
+                if (s >= pattern.Threshold)
                     return new MatchResult { Found = true, X = searchArea.X, Y = searchArea.Y, Score = s };
                 return MatchResult.NotFound;
             }
@@ -351,7 +353,7 @@ namespace SecureDesktop.Services
                 int localX = 0;
                 for (int x = 0; x <= maxX; x += coarseStep)
                 {
-                    double s = ComputeNCC(ptr, stride, x, y, pattern);
+                    double s = ComputeScore(ptr, stride, x, y, pattern);
                     if (s > localBest) { localBest = s; localX = x; }
                 }
                 rowScore[ri] = localBest;
@@ -381,20 +383,17 @@ namespace SecureDesktop.Services
             for (int y = r0y; y <= r1y; y++)
                 for (int x = r0x; x <= r1x; x++)
                 {
-                    double s = ComputeNCC(ptr, stride, x, y, pattern);
+                    double s = ComputeScore(ptr, stride, x, y, pattern);
                     if (s > bestScore) { bestScore = s; bestX = x; bestY = y; }
                 }
 
             pattern.LastScore = bestScore;
 
-            if (bestScore >= threshold)
+            if (bestScore >= pattern.Threshold)
                 return new MatchResult { Found = true, X = searchArea.X + bestX, Y = searchArea.Y + bestY, Score = bestScore };
             return MatchResult.NotFound;
         }
 
-        /// <summary>
-        /// Znajduje top-N kandydatów (z NMS).
-        /// </summary>
         private unsafe List<PatternCandidate> FindTopCandidates(BitmapData data, Rectangle searchArea,
             CachedPattern pattern, int topN)
         {
@@ -415,7 +414,7 @@ namespace SecureDesktop.Services
             {
                 for (int x = 0; x <= maxX; x += coarseStep)
                 {
-                    double s = ComputeNCC(ptr, stride, x, y, pattern);
+                    double s = ComputeScore(ptr, stride, x, y, pattern);
                     candidates.Add(new PatternCandidate
                     {
                         X = searchArea.X + x,
@@ -447,22 +446,25 @@ namespace SecureDesktop.Services
             return result;
         }
 
-                private unsafe double ComputeNCC(byte* ptr, int stride, int offsetX, int offsetY, CachedPattern pattern)
+        /// <summary>
+        /// Porównanie RGB piksel-po-pikselu z tolerancją per-kanał.
+        /// Dla każdego punktu wzorca sprawdzamy, czy R, G i B w screenie
+        /// mieszczą się w tolerancji. Score = % trafień (0..1).
+        ///
+        /// Zalety nad NCC i porównaniem jasności:
+        ///  - Dla idealnego dopasowania (identyczne piksele) -> 1.0
+        ///  - Dla fałszywego (inny odcień/kolor) -> niski score
+        ///  - Dyskryminacja oparta na kolorach, nie tylko na jasności
+        /// </summary>
+        private unsafe double ComputeScore(byte* ptr, int stride, int offsetX, int offsetY, CachedPattern pattern)
         {
-            // Porównanie RGB piksel-po-pikselu z tolerancją per-kanał.
-            // Dla każdego punktu sprawdzamy, czy R, G i B mieszczą się
-            // w tolerancji. Score = % trafień (0..1).
-            //
-            // Zalety nad NCC i szarością:
-            //  - Dla idealnego dopasowania (identyczne piksele) -> 1.0
-            //  - Dla fałszywego (inny odcień/kolor) -> niski score
-            //  - Dyskryminacja oparta na kolorach, nie tylko na jasności
-
-            const int tolR = 30;   // tolerancja kanału R (0-255)
-            const int tolG = 30;   // tolerancja kanału G
-            const int tolB = 30;   // tolerancja kanału B
+            const int tolR = 30;
+            const int tolG = 30;
+            const int tolB = 30;
 
             int n = pattern.PointX.Length;
+            if (n == 0) return 0;
+
             int good = 0;
 
             for (int i = 0; i < n; i++)
@@ -590,6 +592,12 @@ namespace SecureDesktop.Services
         public int[] PointX;
         public int[] PointY;
         public double[] PointGray;
+
+        // Kolory R/G/B dla porównania RGB.
+        public byte[] PointR;
+        public byte[] PointG;
+        public byte[] PointB;
+
         public double Mean;
         public double StdDev;
         public double Threshold;
@@ -624,6 +632,9 @@ namespace SecureDesktop.Services
                 var xs = new List<int>();
                 var ys = new List<int>();
                 var gs = new List<double>();
+                var rs = new List<byte>();
+                var ggs = new List<byte>();
+                var bs = new List<byte>();
 
                 BitmapData data = bmp.LockBits(
                     new Rectangle(0, 0, Width, Height),
@@ -640,10 +651,16 @@ namespace SecureDesktop.Services
                             for (int x = 0; x < Width; x += step)
                             {
                                 byte* pixel = p + (long)y * stride + (x * 3);
-                                double gv = 0.299 * pixel[2] + 0.587 * pixel[1] + 0.114 * pixel[0];
+                                byte b = pixel[0];
+                                byte g = pixel[1];
+                                byte r = pixel[2];
+                                double gv = 0.299 * r + 0.587 * g + 0.114 * b;
                                 xs.Add(x);
                                 ys.Add(y);
                                 gs.Add(gv);
+                                rs.Add(r);
+                                ggs.Add(g);
+                                bs.Add(b);
                             }
                     }
                 }
@@ -652,6 +669,9 @@ namespace SecureDesktop.Services
                 PointX = xs.ToArray();
                 PointY = ys.ToArray();
                 PointGray = gs.ToArray();
+                PointR = rs.ToArray();
+                PointG = ggs.ToArray();
+                PointB = bs.ToArray();
 
                 int n = PointGray.Length;
                 double sum = 0, sumSq = 0;
