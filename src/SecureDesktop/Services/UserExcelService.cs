@@ -78,7 +78,6 @@ namespace SecureDesktop.Services
                         return result;
                     }
 
-                    // Pomijamy pierwszy wiersz (nagłówek).
                     int rowNum = 0;
                     foreach (var row in usedRows)
                     {
