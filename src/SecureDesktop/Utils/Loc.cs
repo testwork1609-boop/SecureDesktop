@@ -90,6 +90,12 @@ namespace SecureDesktop.Utils
             d["login.err.no_shift"] = "Konto nie ma przypisanej zmiany";
             d["login.err.generic"] = "Błąd: ";
 
+            d["dash.backup_dlg_title"] = "Wybierz plik do kopii zapasowej";
+            d["dash.msg.backup_no_file"] = "Nie wybrano pliku do kopii zapasowej.";
+            d["dash.backup_folder_hint"] = "Kopia zostanie zapisana w folderze:";
+            d["log.session_backup_ok"] = "W tej sesji wykonano kopię zapasową";
+            d["log.session_no_backup"] = "Brak kopii zapasowej w tej sesji";
+
             d["common.ok"] = "OK";
             d["common.cancel"] = "Anuluj";
             d["common.error"] = "Błąd";
@@ -310,6 +316,12 @@ namespace SecureDesktop.Utils
             d["login.err.no_pass"] = "Shift has no password set";
             d["login.err.no_shift"] = "Account has no shift assigned";
             d["login.err.generic"] = "Error: ";
+
+            d["dash.backup_dlg_title"] = "Select file to back up";
+            d["dash.msg.backup_no_file"] = "No file selected for backup.";
+            d["dash.backup_folder_hint"] = "The backup will be saved in:";
+            d["log.session_backup_ok"] = "Backup was made in this session";
+            d["log.session_no_backup"] = "No backup in this session";
 
             d["cfg.usr.btn_edit"] = "✏️   Edit";
             d["cfg.usr.edit_dlg_title"] = "Edit user";
