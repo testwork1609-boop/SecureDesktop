@@ -1,75 +1,32 @@
-<?xml version="1.0" encoding="utf-8"?>
-<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" />
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
-    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
     <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
     <RootNamespace>SecureDesktop</RootNamespace>
     <AssemblyName>SecureDesktop</AssemblyName>
-    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <LangVersion>7.3</LangVersion>
-  </PropertyGroup>
 
-  <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
+    <!-- KLUCZOWE: kopiuje zależności ClosedXML do bin\Release\ -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+
+    <!-- Wyłączamy auto-attr, bo mamy własny Properties\AssemblyInfo.cs -->
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+
+    <!-- x86 dla zgodności z Windows 32/64-bit -->
     <PlatformTarget>AnyCPU</PlatformTarget>
-    <DebugType>none</DebugType>
-    <Optimize>true</Optimize>
-    <OutputPath>bin\Release\</OutputPath>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Prefer32Bit>true</Prefer32Bit>
-  </PropertyGroup>
 
-  <ItemGroup>
-    <Reference Include="System" />
-    <Reference Include="System.Core" />
-    <Reference Include="System.Data" />
-    <Reference Include="System.Drawing" />
-    <Reference Include="System.Windows.Forms" />
-    <Reference Include="System.Xml" />
-    <Reference Include="Microsoft.CSharp" />
-    <Reference Include="System.Net.Http" />
-  </ItemGroup>
+    <!-- Automatyczne binding redirects dla zależności -->
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
+  </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="ClosedXML" Version="0.95.4" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Compile Include="Program.cs" />
-    <Compile Include="Models\User.cs" />
-    <Compile Include="Models\Pattern.cs" />
-    <Compile Include="Models\Session.cs" />
-    <Compile Include="Models\EventLog.cs" />
-    <Compile Include="Models\Tip.cs" />
-    <Compile Include="Models\Shift.cs" />
-    <Compile Include="Database\DatabaseInitializer.cs" />
-    <Compile Include="Database\Repositories\UserRepository.cs" />
-    <Compile Include="Database\Repositories\SessionRepository.cs" />
-    <Compile Include="Database\Repositories\PatternRepository.cs" />
-    <Compile Include="Database\Repositories\EventLogRepository.cs" />
-    <Compile Include="Database\Repositories\ShiftRepository.cs" />
-    <Compile Include="Services\PatternRecognitionService.cs" />
-    <Compile Include="Services\ScreenLockService.cs" />
-    <Compile Include="Services\BackupService.cs" />
-    <Compile Include="Services\FileMonitorService.cs" />
-    <Compile Include="Services\ConfigurationService.cs" />
-    <Compile Include="Services\UserExcelService.cs" />
-    <Compile Include="Forms\LoginForm.cs" />
-    <Compile Include="Forms\DashboardForm.cs" />
-    <Compile Include="Forms\ScreenLockForm.cs" />
-    <Compile Include="Forms\ConfigurationForm.cs" />
-    <Compile Include="Forms\EventHistoryForm.cs" />
-    <Compile Include="Utils\SecurityHelper.cs" />
-    <Compile Include="Utils\UiFonts.cs" />
-    <Compile Include="Utils\UiTheme.cs" />
-    <Compile Include="Utils\Loc.cs" />
-    <Compile Include="Core\SecurityManager.cs" />
-    <Compile Include="Properties\AssemblyInfo.cs" />
-  </ItemGroup>
-
-  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
