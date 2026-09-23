@@ -267,7 +267,7 @@ namespace SecureDesktop.Forms
             this.Shown += (s, e) => _idBox.Focus();
         }
 
-        private void LoginAction(object sender, EventArgs e)
+                private void LoginAction(object sender, EventArgs e)
         {
             try
             {
@@ -283,8 +283,18 @@ namespace SecureDesktop.Forms
                 var data = _db.GetData();
                 bool passwordOk = false;
 
-                // 1) Preferowane: hasło zmiany przypisanej do użytkownika.
-                if (user.ShiftId.HasValue && data != null && data.Shifts != null)
+                // 1) Hasło indywidualne (jeśli włączone u użytkownika).
+                if (user.UseIndividualPassword &&
+                    !string.IsNullOrEmpty(user.PasswordHash) &&
+                    !string.IsNullOrEmpty(user.Salt))
+                {
+                    var hashInd = SecurityHelper.HashPassword(_passBox.Text, user.Salt);
+                    if (string.Equals(hashInd, user.PasswordHash, StringComparison.Ordinal))
+                        passwordOk = true;
+                }
+
+                // 2) Hasło zmiany (jeśli nie udało się indywidualne).
+                if (!passwordOk && user.ShiftId.HasValue && data != null && data.Shifts != null)
                 {
                     var shift = data.Shifts.FirstOrDefault(s => s.Id == user.ShiftId.Value);
                     if (shift != null && !string.IsNullOrEmpty(shift.PasswordHash) && !string.IsNullOrEmpty(shift.Salt))
@@ -293,14 +303,14 @@ namespace SecureDesktop.Forms
                         if (string.Equals(hash, shift.PasswordHash, StringComparison.Ordinal))
                             passwordOk = true;
                     }
-                    else if (shift != null)
+                    else if (shift != null && !user.UseIndividualPassword)
                     {
                         ShowError(Loc.T("login.err.no_pass"));
                         return;
                     }
                 }
 
-                // 2) Fallback: legacy AdminPassword z Settings (dla admina bez zmiany).
+                // 3) Fallback: legacy AdminPassword z Settings.
                 if (!passwordOk && data != null && data.Settings != null && user.IsAdmin)
                 {
                     string legacy;
