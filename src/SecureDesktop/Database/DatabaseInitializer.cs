@@ -52,6 +52,7 @@ namespace SecureDesktop.Database
 
                     EnsureCollections();
                     MigrateLegacyPasswordSetting();
+                    MigrateDefaultShifts();
                 }
                 catch (Exception ex)
                 {
@@ -60,10 +61,6 @@ namespace SecureDesktop.Database
             }
         }
 
-        /// <summary>
-        /// Zabezpieczenie dla starych database.json (bez pola Tips).
-        /// Newtonsoft zostawia null przy braku klucza w JSON mimo initializera.
-        /// </summary>
         private void EnsureCollections()
         {
             if (_data == null) _data = new DatabaseData();
@@ -72,6 +69,7 @@ namespace SecureDesktop.Database
             if (_data.EventLogs == null) _data.EventLogs = new List<Models.EventLog>();
             if (_data.Patterns == null) _data.Patterns = new List<Models.Pattern>();
             if (_data.Tips == null) _data.Tips = new List<Models.Tip>();
+            if (_data.Shifts == null) _data.Shifts = new List<Models.Shift>();
             if (_data.Settings == null) _data.Settings = new Dictionary<string, string>();
 
             if (_data.NextTipId < 1)
@@ -80,6 +78,52 @@ namespace SecureDesktop.Database
                 _data.NextPatternId = (_data.Patterns.Count > 0 ? _data.Patterns.Max(p => p.Id) : 0) + 1;
             if (_data.NextUserId < 1)
                 _data.NextUserId = (_data.Users.Count > 0 ? _data.Users.Max(u => u.Id) : 0) + 1;
+            if (_data.NextShiftId < 1)
+                _data.NextShiftId = (_data.Shifts.Count > 0 ? _data.Shifts.Max(s => s.Id) : 0) + 1;
+        }
+
+        /// <summary>
+        /// Jeśli baza nie ma jeszcze zmian, tworzy 4 domyślne (A, B, C, A1)
+        /// z hasłem "admin". Wszystkich użytkowników bez ShiftId przypisuje
+        /// do pierwszej zmiany.
+        /// </summary>
+        private void MigrateDefaultShifts()
+        {
+            if (_data.Shifts == null) _data.Shifts = new List<Models.Shift>();
+
+            if (_data.Shifts.Count == 0)
+            {
+                string[] names = { "Zmiana A", "Zmiana B", "Zmiana C", "Zmiana A1" };
+                foreach (var name in names)
+                {
+                    var salt = Utils.SecurityHelper.GenerateSalt();
+                    var hash = Utils.SecurityHelper.HashPassword("admin", salt);
+                    _data.Shifts.Add(new Models.Shift
+                    {
+                        Id = _data.NextShiftId++,
+                        Name = name,
+                        Salt = salt,
+                        PasswordHash = hash,
+                        CreatedAt = DateTime.Now,
+                        IsActive = true
+                    });
+                }
+            }
+
+            if (_data.Shifts.Count > 0 && _data.Users != null)
+            {
+                int defaultShiftId = _data.Shifts[0].Id;
+                bool changed = false;
+                foreach (var u in _data.Users)
+                {
+                    if (!u.ShiftId.HasValue)
+                    {
+                        u.ShiftId = defaultShiftId;
+                        changed = true;
+                    }
+                }
+                if (changed) SaveInternal();
+            }
         }
 
         private void MigrateLegacyPasswordSetting()
@@ -99,7 +143,7 @@ namespace SecureDesktop.Database
                 }
             }
 
-            _data.Settings.Remove("AdminPassword");
+            // Nie usuwamy - zostaje jako fallback dla admina bez zmiany.
             SaveInternal();
         }
 
@@ -108,9 +152,24 @@ namespace SecureDesktop.Database
             var salt = Convert.ToBase64String(Guid.NewGuid().ToByteArray());
             var hash = Convert.ToBase64String(
                 System.Security.Cryptography.SHA256.Create().ComputeHash(
-                    System.Text.Encoding.UTF8.GetBytes("admin" + salt)
-                )
-            );
+                    System.Text.Encoding.UTF8.GetBytes("admin" + salt)));
+
+            // Domyślne zmiany
+            string[] names = { "Zmiana A", "Zmiana B", "Zmiana C", "Zmiana A1" };
+            foreach (var name in names)
+            {
+                var sSalt = Utils.SecurityHelper.GenerateSalt();
+                var sHash = Utils.SecurityHelper.HashPassword("admin", sSalt);
+                _data.Shifts.Add(new Models.Shift
+                {
+                    Id = _data.NextShiftId++,
+                    Name = name,
+                    Salt = sSalt,
+                    PasswordHash = sHash,
+                    CreatedAt = DateTime.Now,
+                    IsActive = true
+                });
+            }
 
             _data.Users.Add(new Models.User
             {
@@ -120,7 +179,8 @@ namespace SecureDesktop.Database
                 Salt = salt,
                 IsAdmin = true,
                 CreatedAt = DateTime.Now,
-                IsActive = true
+                IsActive = true,
+                ShiftId = _data.Shifts[0].Id
             });
 
             _data.Settings["PatternMatchThreshold"] = "0.95";
@@ -129,6 +189,7 @@ namespace SecureDesktop.Database
             _data.Settings["MinimizeToTray"] = "true";
             _data.Settings["Theme"] = "Dark";
             _data.Settings["BackupPath"] = ".\\Backup";
+            _data.Settings["AdminPassword"] = "admin";
 
             _data.Tips.Add(new Models.Tip
             {
@@ -195,6 +256,7 @@ namespace SecureDesktop.Database
         public List<Models.EventLog> EventLogs { get; set; } = new List<Models.EventLog>();
         public List<Models.Pattern> Patterns { get; set; } = new List<Models.Pattern>();
         public List<Models.Tip> Tips { get; set; } = new List<Models.Tip>();
+        public List<Models.Shift> Shifts { get; set; } = new List<Models.Shift>();
         public Dictionary<string, string> Settings { get; set; } = new Dictionary<string, string>();
 
         public int NextUserId { get; set; } = 2;
@@ -202,5 +264,6 @@ namespace SecureDesktop.Database
         public int NextEventId { get; set; } = 1;
         public int NextPatternId { get; set; } = 1;
         public int NextTipId { get; set; } = 1;
+        public int NextShiftId { get; set; } = 1;
     }
 }
