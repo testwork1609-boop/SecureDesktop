@@ -19,6 +19,7 @@ namespace SecureDesktop.Forms
         private TextBox _checkpointPathBox;
         private TextBox _checkpointArgsBox;
         private TextBox _monitorPathBox;
+        private NumericUpDown _retentionBox;
         private ListBox _patternListBox;
         private NumericUpDown _thresholdBox;
         private NumericUpDown _intervalBox;
@@ -990,7 +991,7 @@ namespace SecureDesktop.Forms
 
         // ============== BACKUP ==============
 
-        private void BuildBackupTab(TabPage tab)
+                private void BuildBackupTab(TabPage tab)
         {
             int y = 20;
 
@@ -1034,6 +1035,26 @@ namespace SecureDesktop.Forms
             tab.Controls.Add(monitorBrowseBtn);
             y += 56;
 
+            // === Automatyczne usuwanie starych kopii ===
+            tab.Controls.Add(MakeFieldLabel(Loc.T("cfg.bk.retention"), 0, y));
+            y += 24;
+
+            _retentionBox = MakeNumeric(0, y, 90, 0, 3650, 30);
+            _retentionBox.Increment = 1;
+            tab.Controls.Add(_retentionBox);
+            y += 36;
+
+            tab.Controls.Add(new Label
+            {
+                Text = Loc.T("cfg.bk.retention_hint"),
+                Font = UiFonts.Small,
+                ForeColor = UiTheme.TextMuted,
+                Location = new Point(0, y),
+                Size = new Size(600, 40),
+                AutoSize = false
+            });
+            y += 52;
+
             var backupNowBtn = RoundedButton.Primary(Loc.T("cfg.bk.btn_run"), 260, 44);
             backupNowBtn.Location = new Point(0, y);
             backupNowBtn.Click += (s, ev) =>
@@ -1054,6 +1075,42 @@ namespace SecureDesktop.Forms
                 catch (Exception ex) { MessageBox.Show(Loc.T("dash.msg.err") + ex.Message, Loc.T("common.error"), MessageBoxButtons.OK, MessageBoxIcon.Error); }
             };
             tab.Controls.Add(backupNowBtn);
+
+            var purgeNowBtn = RoundedButton.SoftRed(Loc.T("cfg.bk.btn_purge_now"), 260, 44);
+            purgeNowBtn.Location = new Point(276, y);
+            purgeNowBtn.Click += (s, ev) =>
+            {
+                try
+                {
+                    int days = (int)_retentionBox.Value;
+                    if (days <= 0)
+                    {
+                        MessageBox.Show(Loc.T("cfg.bk.retention_hint"), Loc.T("common.info"),
+                            MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        return;
+                    }
+
+                    string folder = _backupPathBox.Text;
+                    if (!Path.IsPathRooted(folder))
+                        folder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, folder);
+
+                    var svc = new Services.BackupService();
+                    int deleted = svc.PurgeOldBackups(folder, days);
+
+                    if (deleted > 0)
+                        MessageBox.Show(string.Format(Loc.T("cfg.bk.purge_done"), deleted),
+                            Loc.T("common.success"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    else
+                        MessageBox.Show(string.Format(Loc.T("cfg.bk.purge_none"), days),
+                            Loc.T("common.info"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(Loc.T("common.error") + ": " + ex.Message, Loc.T("common.error"),
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            };
+            tab.Controls.Add(purgeNowBtn);
         }
 
         // ============== UŻYTKOWNICY ==============
@@ -1537,8 +1594,12 @@ namespace SecureDesktop.Forms
                 if (data.Settings.TryGetValue("PatternThreshold", out s) && _thresholdBox != null && int.TryParse(s, out iv))
                     _thresholdBox.Value = Math.Max(_thresholdBox.Minimum, Math.Min(_thresholdBox.Maximum, iv));
 
-                if (data.Settings.TryGetValue("SearchInterval", out s) && _intervalBox != null && int.TryParse(s, out iv))
+                                if (data.Settings.TryGetValue("SearchInterval", out s) && _intervalBox != null && int.TryParse(s, out iv))
                     _intervalBox.Value = Math.Max(_intervalBox.Minimum, Math.Min(_intervalBox.Maximum, iv));
+
+                if (data.Settings.TryGetValue("BackupRetentionDays", out s) && _retentionBox != null &&
+                    int.TryParse(s, out iv))
+                    _retentionBox.Value = Math.Max(_retentionBox.Minimum, Math.Min(_retentionBox.Maximum, iv));
             }
             catch (Exception ex) { System.Diagnostics.Debug.WriteLine("LoadSettings: " + ex.Message); }
         }
@@ -1749,7 +1810,9 @@ namespace SecureDesktop.Forms
                 data.Settings["CheckpointPath"] = _checkpointPathBox.Text;
                 data.Settings["CheckpointArgs"] = _checkpointArgsBox.Text;
                 data.Settings["PatternThreshold"] = _thresholdBox.Value.ToString();
-                data.Settings["SearchInterval"] = _intervalBox.Value.ToString();
+                                data.Settings["SearchInterval"] = _intervalBox.Value.ToString();
+                if (_retentionBox != null)
+                    data.Settings["BackupRetentionDays"] = _retentionBox.Value.ToString();
 
                 if (!string.IsNullOrWhiteSpace(_adminPasswordBox.Text))
                 {
