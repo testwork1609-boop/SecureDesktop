@@ -97,6 +97,13 @@ namespace SecureDesktop.Utils
             d["common.success"] = "Sukces";
             d["common.confirm"] = "Potwierdzenie";
 
+            d["cfg.usr.btn_edit"] = "✏️   Edytuj";
+            d["cfg.usr.edit_dlg_title"] = "Edytuj użytkownika";
+            d["cfg.usr.dlg_save"] = "Zapisz";
+            d["cfg.usr.edit_err_exists"] = "Inny użytkownik ma już taki PIN.";
+            d["cfg.usr.edit_admin_locked"] = "Konto administratora: PIN i rola są zablokowane.";
+            d["cfg.usr.active"] = "Aktywne konto";
+
             d["dash.window_title"] = "SecureDesktop — Panel główny";
             d["dash.view_home"] = "Panel główny";
             d["dash.header_brand"] = "SecureDesktop";
@@ -303,6 +310,13 @@ namespace SecureDesktop.Utils
             d["login.err.no_pass"] = "Shift has no password set";
             d["login.err.no_shift"] = "Account has no shift assigned";
             d["login.err.generic"] = "Error: ";
+
+            d["cfg.usr.btn_edit"] = "✏️   Edit";
+            d["cfg.usr.edit_dlg_title"] = "Edit user";
+            d["cfg.usr.dlg_save"] = "Save";
+            d["cfg.usr.edit_err_exists"] = "Another user already has this PIN.";
+            d["cfg.usr.edit_admin_locked"] = "Administrator account: PIN and role are locked.";
+            d["cfg.usr.active"] = "Active account";
 
             d["common.ok"] = "OK";
             d["common.cancel"] = "Cancel";
