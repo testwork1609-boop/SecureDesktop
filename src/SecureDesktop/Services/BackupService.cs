@@ -1,6 +1,5 @@
 using System;
 using System.IO;
-using System.Linq;
 
 namespace SecureDesktop.Services
 {
@@ -11,8 +10,7 @@ namespace SecureDesktop.Services
         private static readonly object CleanupLock = new object();
 
         /// <summary>
-        /// Klasyczny backup (używany przez Program.cs przy logowaniu, dla pliku monitorowanego).
-        /// Format: Backup/yyyy-MM-dd/HH-mm-ss/nazwa_pliku
+        /// Klasyczny backup. Format: Backup/yyyy-MM-dd/HH-mm-ss/nazwa_pliku
         /// </summary>
         public string CreateBackup(string sourcePath, string backupRoot)
         {
@@ -31,9 +29,6 @@ namespace SecureDesktop.Services
                 string destPath = Path.Combine(backupDir, fileName);
 
                 File.Copy(sourcePath, destPath, false);
-
-                TryCleanOldBackupsThrottled(backupRoot, 30);
-
                 return destPath;
             }
             catch (Exception ex)
@@ -45,8 +40,6 @@ namespace SecureDesktop.Services
         /// <summary>
         /// Backup użytkownika — folder w formacie:
         ///     {backupRoot}/{yyyy-MM-dd_HH-mm-ss}_{PIN}/{nazwa_pliku}
-        ///
-        /// Przykład: Backup\2025-09-23_14-32-15_1234\faktura.xlsx
         /// </summary>
         public string CreateUserBackup(string sourcePath, string backupRoot, string userPin)
         {
@@ -66,7 +59,8 @@ namespace SecureDesktop.Services
 
                 File.Copy(sourcePath, destPath, false);
 
-                TryCleanOldBackupsThrottled(backupRoot, 30);
+                // Przy okazji pojedynczego backupu - throttlowane czyszczenie.
+                TryCleanOldBackupsThrottled(backupRoot, GetConfiguredRetentionOrDefault());
 
                 return destPath;
             }
@@ -74,6 +68,13 @@ namespace SecureDesktop.Services
             {
                 throw new Exception("Backup failed: " + ex.Message, ex);
             }
+        }
+
+        private static int GetConfiguredRetentionOrDefault()
+        {
+            // Domyślne 30 dni. Właściwa wartość jest brana z Settings i przekazywana
+            // z Program.cs przez PurgeOldBackups(); tutaj tylko bezpieczna wartość.
+            return 30;
         }
 
         private static string SanitizeFileName(string name)
@@ -84,6 +85,65 @@ namespace SecureDesktop.Services
             return name;
         }
 
+        /// <summary>
+        /// Trwale usuwa foldery backupu starsze niż retentionDays.
+        ///
+        /// Directory.Delete(path, true) w .NET Framework kasuje pliki FIZYCZNIE,
+        /// bez wysyłania ich do kosza systemowego (inaczej niż przez Eksplorator).
+        ///
+        /// Obsługuje oba formaty folderów:
+        ///     yyyy-MM-dd                (stary)
+        ///     yyyy-MM-dd_HH-mm-ss_PIN   (nowy)
+        ///
+        /// Zwraca liczbę usuniętych folderów.
+        /// </summary>
+        public int PurgeOldBackups(string backupRoot, int retentionDays)
+        {
+            int deleted = 0;
+
+            try
+            {
+                if (string.IsNullOrWhiteSpace(backupRoot)) return 0;
+                if (retentionDays <= 0) return 0; // 0 = wyłączone
+                if (!Directory.Exists(backupRoot)) return 0;
+
+                var cutoffDate = DateTime.Now.Date.AddDays(-retentionDays);
+
+                foreach (var dir in Directory.GetDirectories(backupRoot))
+                {
+                    try
+                    {
+                        string folderName = Path.GetFileName(dir);
+                        if (string.IsNullOrEmpty(folderName) || folderName.Length < 10) continue;
+
+                        string datePart = folderName.Substring(0, 10);
+                        DateTime folderDate;
+                        if (!DateTime.TryParseExact(datePart, "yyyy-MM-dd", null,
+                            System.Globalization.DateTimeStyles.None, out folderDate))
+                            continue;
+
+                        if (folderDate < cutoffDate)
+                        {
+                            Directory.Delete(dir, true);
+                            deleted++;
+                            System.Diagnostics.Debug.WriteLine("PurgeOldBackups: usunieto " + dir);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine(
+                            "PurgeOldBackups: nie mozna usunac " + dir + " - " + ex.Message);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("PurgeOldBackups error: " + ex.Message);
+            }
+
+            return deleted;
+        }
+
         private void TryCleanOldBackupsThrottled(string backupRoot, int maxDays)
         {
             lock (CleanupLock)
@@ -92,43 +152,15 @@ namespace SecureDesktop.Services
                     return;
                 _lastCleanupUtc = DateTime.UtcNow;
             }
-            CleanOldBackups(backupRoot, maxDays);
+            PurgeOldBackups(backupRoot, maxDays);
         }
 
+        /// <summary>
+        /// Backward-compat — stara nazwa, deleguje do PurgeOldBackups.
+        /// </summary>
         public void CleanOldBackups(string backupRoot, int maxDays)
         {
-            try
-            {
-                if (!Directory.Exists(backupRoot)) return;
-
-                var cutoffDate = DateTime.Now.AddDays(-maxDays);
-
-                // Stary format: yyyy-MM-dd
-                foreach (var dateDir in Directory.GetDirectories(backupRoot))
-                {
-                    string folderName = Path.GetFileName(dateDir);
-                    DateTime folderDate;
-
-                    // Nowy format: yyyy-MM-dd_HH-mm-ss_PIN — bierzemy pierwsze 10 znaków
-                    if (folderName.Length >= 10)
-                    {
-                        string datePart = folderName.Substring(0, 10);
-                        if (DateTime.TryParseExact(datePart, "yyyy-MM-dd", null,
-                            System.Globalization.DateTimeStyles.None, out folderDate))
-                        {
-                            if (folderDate < cutoffDate)
-                            {
-                                try { Directory.Delete(dateDir, true); }
-                                catch (Exception ex) { System.Diagnostics.Debug.WriteLine("Delete " + dateDir + ": " + ex.Message); }
-                            }
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine("CleanOldBackups error: " + ex.Message);
-            }
+            PurgeOldBackups(backupRoot, maxDays);
         }
 
         public FileInfo GetFileInfo(string filePath)
