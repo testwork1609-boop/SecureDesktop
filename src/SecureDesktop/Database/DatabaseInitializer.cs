@@ -82,11 +82,6 @@ namespace SecureDesktop.Database
                 _data.NextShiftId = (_data.Shifts.Count > 0 ? _data.Shifts.Max(s => s.Id) : 0) + 1;
         }
 
-        /// <summary>
-        /// Jeśli baza nie ma jeszcze zmian, tworzy 4 domyślne (A, B, C, A1)
-        /// z hasłem "admin". Wszystkich użytkowników bez ShiftId przypisuje
-        /// do pierwszej zmiany.
-        /// </summary>
         private void MigrateDefaultShifts()
         {
             if (_data.Shifts == null) _data.Shifts = new List<Models.Shift>();
@@ -142,8 +137,6 @@ namespace SecureDesktop.Database
                             System.Text.Encoding.UTF8.GetBytes(legacy + admin.Salt)));
                 }
             }
-
-            // Nie usuwamy - zostaje jako fallback dla admina bez zmiany.
             SaveInternal();
         }
 
@@ -154,7 +147,6 @@ namespace SecureDesktop.Database
                 System.Security.Cryptography.SHA256.Create().ComputeHash(
                     System.Text.Encoding.UTF8.GetBytes("admin" + salt)));
 
-            // Domyślne zmiany
             string[] names = { "Zmiana A", "Zmiana B", "Zmiana C", "Zmiana A1" };
             foreach (var name in names)
             {
@@ -178,6 +170,7 @@ namespace SecureDesktop.Database
                 PasswordHash = hash,
                 Salt = salt,
                 IsAdmin = true,
+                IsHeadAdmin = true,
                 CreatedAt = DateTime.Now,
                 IsActive = true,
                 ShiftId = _data.Shifts[0].Id
