@@ -19,6 +19,7 @@ namespace SecureDesktop.Forms
         private readonly DatabaseInitializer _db;
         private readonly ScreenLockService _lockService;
         private readonly int _sessionId;
+        private readonly DateTime _sessionStartTime;
 
         private int _totalPatterns = 0;
         private int _activePatterns = 0;
@@ -34,6 +35,7 @@ namespace SecureDesktop.Forms
             _currentUser = user;
             _db = db;
             _sessionId = sessionId;
+            _sessionStartTime = DateTime.Now;
             _lockService = new ScreenLockService { PasswordVerifier = VerifyCurrentUserPassword };
 
             _lockService.LockDeactivated += (s, e) =>
@@ -85,6 +87,21 @@ namespace SecureDesktop.Forms
                 return last == null ? (DateTime?)null : last.Timestamp;
             }
             catch { return null; }
+        }
+
+        private bool HasBackupInThisSession()
+        {
+            try
+            {
+                var data = _db.GetData();
+                if (data == null || data.EventLogs == null) return false;
+                return data.EventLogs.Any(e =>
+                    e.UserId == _currentUser.Id &&
+                    string.Equals(e.OperationName, "Backup", StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(e.Result, "Success", StringComparison.OrdinalIgnoreCase) &&
+                    e.Timestamp >= _sessionStartTime);
+            }
+            catch { return false; }
         }
 
         private bool VerifyCurrentUserPassword(string password)
@@ -195,9 +212,10 @@ namespace SecureDesktop.Forms
             };
             headerPanel.Controls.Add(_viewTitleLabel);
 
+            // Header user label — teraz DisplayName (np. "Ja**Ko**") zamiast PIN-u.
             _userLabel = new Label
             {
-                Text = _currentUser.IdentificationNumber + "  •  " + (_currentUser.IsAdmin ? Loc.T("dash.user_admin") : Loc.T("dash.user_user")),
+                Text = _currentUser.DisplayNameOrPin + "  •  " + (_currentUser.IsAdmin ? Loc.T("dash.user_admin") : Loc.T("dash.user_user")),
                 Font = UiFonts.Body,
                 AutoSize = true,
                 ForeColor = UiTheme.TextSecondary,
@@ -236,8 +254,7 @@ namespace SecureDesktop.Forms
             checkpointBtn.Click += OnCheckpoint;
             y += 56;
 
-            // === BACKUP — widoczny dla WSZYSTKICH ===
-            // Dla zwykłego użytkownika bursztynowy (rzuca się w oczy).
+            // === BACKUP — widoczny dla wszystkich. Dla zwykłego usera bursztynowy. ===
             var backupBtn = CreateBackupSidebarButton(y);
             backupBtn.Click += OnBackupNow;
             y += 48;
@@ -248,7 +265,7 @@ namespace SecureDesktop.Forms
             sidebarPanel.Controls.Add(checkpointBtn);
             sidebarPanel.Controls.Add(backupBtn);
 
-            // === Sekcja administratora (tylko dla admina) ===
+            // === Sekcja admina ===
             if (_currentUser.IsAdmin)
             {
                 sidebarPanel.Controls.Add(new Panel { Location = new Point(20, y), Size = new Size(210, 1), BackColor = UiTheme.Border });
@@ -286,7 +303,7 @@ namespace SecureDesktop.Forms
                 sidebarPanel.Controls.Add(historyBtn);
             }
 
-            // === Logout (dół) ===
+            // === Logout ===
             var logoutHost = new Panel { Dock = DockStyle.Bottom, Height = 66, BackColor = UiTheme.Surface, Padding = new Padding(16, 10, 16, 10) };
             var logoutBtn = new RoundedButton
             {
@@ -305,7 +322,6 @@ namespace SecureDesktop.Forms
             logoutHost.Controls.Add(logoutBtn);
             sidebarPanel.Controls.Add(logoutHost);
 
-            // === Content host ===
             _contentHost = new Panel { Dock = DockStyle.Fill, BackColor = UiTheme.Bg, Padding = new Padding(28) };
 
             this.Controls.Add(_contentHost);
@@ -333,8 +349,6 @@ namespace SecureDesktop.Forms
 
         private RoundedButton CreateBackupSidebarButton(int yPos)
         {
-            // Bursztynowe kolory - dla zwykłego użytkownika, żeby backup
-            // rzucał się w oczy i przypominał o wykonaniu przed pracą.
             var amberSoft = Color.FromArgb(254, 243, 199);
             var amberSoftHover = Color.FromArgb(253, 230, 138);
             var amberPressed = Color.FromArgb(252, 211, 77);
@@ -374,7 +388,6 @@ namespace SecureDesktop.Forms
         {
             LoadStats();
             List<Tip> tips;
-            DateTime? lastBackup;
             try
             {
                 var data = _db.GetData();
@@ -384,9 +397,8 @@ namespace SecureDesktop.Forms
             }
             catch { tips = new List<Tip>(); }
 
-            lastBackup = GetLastBackupTime();
-
-            var home = new DashboardHomeView(_currentUser, _totalPatterns, _activePatterns, _totalEvents, tips, lastBackup, OnBackupNow);
+            var home = new DashboardHomeView(_currentUser, _totalPatterns, _activePatterns, _totalEvents,
+                tips, GetLastBackupTime(), OnBackupNow);
             ShowView(home, Loc.T("dash.view_home"));
         }
 
@@ -473,50 +485,50 @@ namespace SecureDesktop.Forms
             }
         }
 
+        // === BACKUP ===
+        // Zawsze pyta użytkownika o plik. Tworzy folder
+        // {BackupPath}/{yyyy-MM-dd_HH-mm-ss}_{PIN}/{nazwa_pliku}.
         private void OnBackupNow(object sender, EventArgs e)
         {
             try
             {
-                var data = _db.GetData();
-                string sourcePath = null;
-
-                // 1) Priorytet: plik monitorowany z konfiguracji.
-                if (data != null && data.Settings != null)
+                // 1) Folder docelowy z konfiguracji.
+                string backupFolder = "Backup";
+                try
                 {
-                    string mf;
-                    if (data.Settings.TryGetValue("MonitoredFile", out mf) &&
-                        !string.IsNullOrWhiteSpace(mf) && File.Exists(mf))
+                    var data = _db.GetData();
+                    if (data != null && data.Settings != null)
                     {
-                        sourcePath = mf;
+                        string bp;
+                        if (data.Settings.TryGetValue("BackupPath", out bp) && !string.IsNullOrWhiteSpace(bp))
+                            backupFolder = bp;
                     }
                 }
+                catch { }
 
-                // 2) Fallback: baza danych.
-                if (sourcePath == null)
+                // 2) Wybór pliku przez użytkownika.
+                string sourcePath = null;
+                using (var dlg = new OpenFileDialog())
                 {
-                    var dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
-                    if (File.Exists(dbPath)) sourcePath = dbPath;
+                    dlg.Title = Loc.T("dash.backup_dlg_title");
+                    dlg.Filter = Loc.IsEnglish ? "All files|*.*" : "Wszystkie pliki|*.*";
+                    dlg.InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+                    if (dlg.ShowDialog(this) != DialogResult.OK) return;
+                    sourcePath = dlg.FileName;
                 }
 
-                if (sourcePath == null)
+                if (string.IsNullOrWhiteSpace(sourcePath) || !File.Exists(sourcePath))
                 {
-                    MessageBox.Show(Loc.T("dash.msg.no_db"), Loc.T("common.info"),
+                    MessageBox.Show(Loc.T("dash.msg.backup_no_file"), Loc.T("common.info"),
                         MessageBoxButtons.OK, MessageBoxIcon.Information);
                     return;
                 }
 
-                string backupFolder = "Backup";
-                if (data != null && data.Settings != null)
-                {
-                    string bp;
-                    if (data.Settings.TryGetValue("BackupPath", out bp) && !string.IsNullOrWhiteSpace(bp))
-                        backupFolder = bp;
-                }
+                // 3) Utwórz backup w folderze z PIN-em użytkownika.
+                var svc = new BackupService();
+                string destPath = svc.CreateUserBackup(sourcePath, backupFolder, _currentUser.IdentificationNumber);
 
-                var backupService = new BackupService();
-                string result = backupService.CreateBackup(sourcePath, backupFolder);
-
-                // Zapisz event do historii (żeby "ostatni backup" działał).
+                // 4) Zdarzenie do dziennika (żeby admin widział w raporcie).
                 try
                 {
                     new EventLogRepository(_db).Create(new EventLog
@@ -525,15 +537,18 @@ namespace SecureDesktop.Forms
                         IdentificationNumber = _currentUser.IdentificationNumber,
                         OperationName = "Backup",
                         Result = "Success",
-                        Description = "Backup pliku: " + sourcePath + " -> " + result
+                        Severity = "Info",
+                        Description = "Backup pliku: " + sourcePath + " -> " + destPath
                     });
                 }
                 catch { }
 
-                // Odśwież widok, żeby pokazać nowy "ostatni backup".
+                // 5) Odśwież home (żeby "Ostatni backup" się zaktualizował).
                 ShowHome();
 
-                MessageBox.Show(Loc.T("dash.msg.backup_done") + "\n\n" + result,
+                MessageBox.Show(
+                    Loc.T("dash.msg.backup_done") + "\n\n" +
+                    Loc.T("dash.backup_folder_hint") + "\n" + destPath,
                     Loc.T("common.success"), MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
@@ -547,13 +562,21 @@ namespace SecureDesktop.Forms
         {
             try
             {
+                // Zapisz do dziennika czy w tej sesji była kopia zapasowa.
+                bool backupDone = HasBackupInThisSession();
+
                 new EventLogRepository(_db).Create(new EventLog
                 {
                     UserId = _currentUser.Id,
                     IdentificationNumber = _currentUser.IdentificationNumber,
                     OperationName = "Logout",
-                    Result = "Success"
+                    Result = backupDone ? "Success" : "Warning",
+                    Severity = backupDone ? "Info" : "Warning",
+                    Description = backupDone
+                        ? Loc.T("log.session_backup_ok")
+                        : Loc.T("log.session_no_backup")
                 });
+
                 new SessionRepository(_db).EndSession(_sessionId);
             }
             catch { }
@@ -594,9 +617,10 @@ namespace SecureDesktop.Forms
             };
             UiTheme.MakeCard(welcomeCard, 12);
 
+            // Powitanie — używamy DisplayName (np. "Ja**Ko**") jeśli istnieje.
             welcomeCard.Controls.Add(new Label
             {
-                Text = Loc.T("dash.home.greeting", user.IdentificationNumber),
+                Text = Loc.T("dash.home.greeting", user.DisplayNameOrPin),
                 Font = UiFonts.H1,
                 Location = new Point(28, 24),
                 AutoSize = true,
@@ -618,7 +642,6 @@ namespace SecureDesktop.Forms
 
             if (user.IsAdmin)
             {
-                // === Stats dla admina ===
                 var statsRow = new Panel
                 {
                     Location = new Point(0, nextTop),
@@ -640,7 +663,7 @@ namespace SecureDesktop.Forms
             }
             else
             {
-                // === Bursztynowa karta backupu dla zwykłego użytkownika ===
+                // === Bursztynowa karta backupu ===
                 var backupCard = new Panel
                 {
                     Location = new Point(0, nextTop),
@@ -649,8 +672,6 @@ namespace SecureDesktop.Forms
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
                 };
                 UiTheme.MakeCard(backupCard, 12);
-
-                // Bursztynowe tło - nakładamy po MakeCard
                 backupCard.Paint += (s, e) =>
                 {
                     e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
@@ -663,7 +684,6 @@ namespace SecureDesktop.Forms
                 };
                 backupCard.Invalidate();
 
-                // Ikona
                 backupCard.Controls.Add(new Label
                 {
                     Text = "💾",
@@ -674,7 +694,6 @@ namespace SecureDesktop.Forms
                     BackColor = Color.Transparent
                 });
 
-                // Tytuł
                 backupCard.Controls.Add(new Label
                 {
                     Text = Loc.IsEnglish
@@ -687,12 +706,11 @@ namespace SecureDesktop.Forms
                     BackColor = Color.Transparent
                 });
 
-                // Opis
                 backupCard.Controls.Add(new Label
                 {
                     Text = Loc.IsEnglish
-                        ? "It's recommended to create a backup of the monitored file before starting work.\nClick the button below to create a copy now."
-                        : "Zalecamy wykonanie kopii zapasowej monitorowanego pliku przed rozpoczęciem pracy.\nKliknij przycisk poniżej, aby teraz utworzyć kopię.",
+                        ? "Select the file you want to back up. The copy will be saved\nin the configured backup folder, in a subfolder named with the date and your PIN."
+                        : "Wskaż plik, którego kopię chcesz wykonać. Kopia zostanie zapisana\nw folderze backupu z konfiguracji, w podfolderze z datą i Twoim PIN-em.",
                     Font = UiFonts.Body,
                     Location = new Point(92, 60),
                     Size = new Size(640, 60),
@@ -700,7 +718,6 @@ namespace SecureDesktop.Forms
                     BackColor = Color.Transparent
                 });
 
-                // Ostatni backup
                 string lastBackupText = lastBackup.HasValue
                     ? (Loc.IsEnglish
                         ? "Last backup: " + lastBackup.Value.ToString("yyyy-MM-dd HH:mm")
@@ -719,7 +736,6 @@ namespace SecureDesktop.Forms
                     BackColor = Color.Transparent
                 });
 
-                // Przycisk - bursztynowy, wyróżniony
                 var btnBackup = new RoundedButton
                 {
                     Text = "💾   " + (Loc.IsEnglish ? "Run backup now" : "Wykonaj backup teraz"),
