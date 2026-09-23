@@ -11,7 +11,7 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -21,7 +21,7 @@ jobs:
 
     - name: Restore NuGet
       shell: cmd
-      run: nuget restore SecureDesktop.sln
+      run: msbuild SecureDesktop.sln /t:Restore /p:Configuration=Release /v:minimal
 
     - name: Build application (32-bit compatible)
       shell: cmd
@@ -29,7 +29,7 @@ jobs:
         echo ========================================
         echo  BUDOWANIE APLIKACJI (32/64-bit)
         echo ========================================
-        msbuild SecureDesktop.sln /t:Build /p:Configuration=Release /p:Platform="Any CPU" /restore /v:minimal /nologo
+        msbuild SecureDesktop.sln /t:Build /p:Configuration=Release /p:Platform="Any CPU" /v:minimal /nologo
 
     - name: Verify build output
       shell: cmd
@@ -43,8 +43,8 @@ jobs:
       with:
         name: SecureDesktop-32bit-Compatible
         path: |
-          src\SecureDesktop\bin\Release\SecureDesktop.exe
-          src\SecureDesktop\bin\Release\Newtonsoft.Json.dll
+          src\SecureDesktop\bin\Release\*.exe
+          src\SecureDesktop\bin\Release\*.dll
         retention-days: 30
 
     - name: Create Release
@@ -61,7 +61,7 @@ jobs:
           
           **Logowanie:** admin / admin
         files: |
-          src\SecureDesktop\bin\Release\SecureDesktop.exe
-          src\SecureDesktop\bin\Release\Newtonsoft.Json.dll
+          src\SecureDesktop\bin\Release\*.exe
+          src\SecureDesktop\bin\Release\*.dll
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
