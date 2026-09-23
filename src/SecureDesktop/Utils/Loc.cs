@@ -90,6 +90,13 @@ namespace SecureDesktop.Utils
             d["login.err.no_shift"] = "Konto nie ma przypisanej zmiany";
             d["login.err.generic"] = "Błąd: ";
 
+            d["firstrun.title"] = "Pierwsza konfiguracja";
+            d["firstrun.message"] = "To jest pierwsza konfiguracja programu SecureDesktop.\n\nZa chwilę przejdziesz do panelu konfiguracji, gdzie ustawisz hasła zmian, wzorce blokady, użytkowników i kopie zapasowe.\n\nPo zakończeniu kliknij \"Powrót do panelu\".";
+
+            d["tray.locked"] = "SecureDesktop — ekran zablokowany";
+            d["tray.exit"] = "Zakończ program";
+            d["tray.exit_confirm"] = "Zamknąć program mimo zablokowanego ekranu?";
+
             d["lock.dlg_pin"] = "Numer identyfikacyjny (PIN)";
             d["lock.dlg_pass"] = "Hasło";
             d["lock.err_empty"] = "Podaj PIN i hasło.";
@@ -343,6 +350,13 @@ namespace SecureDesktop.Utils
             d["login.err.no_pass"] = "Shift has no password set";
             d["login.err.no_shift"] = "Account has no shift assigned";
             d["login.err.generic"] = "Error: ";
+
+            d["firstrun.title"] = "First-time setup";
+            d["firstrun.message"] = "This is the first-time setup of SecureDesktop.\n\nYou will be redirected to the settings panel to configure shift passwords, lock patterns, users and backups.\n\nWhen done, click \"Back to dashboard\".";
+
+            d["tray.locked"] = "SecureDesktop — screen locked";
+            d["tray.exit"] = "Exit application";
+            d["tray.exit_confirm"] = "Exit the application even though the screen is locked?";
 
             d["lock.dlg_pin"] = "Identification number (PIN)";
             d["lock.dlg_pass"] = "Password";
