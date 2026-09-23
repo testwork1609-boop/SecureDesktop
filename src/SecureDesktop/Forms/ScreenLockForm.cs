@@ -5,6 +5,7 @@ using System.Drawing.Drawing2D;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
+using SecureDesktop.Models;
 using SecureDesktop.Utils;
 
 namespace SecureDesktop.Forms
@@ -28,7 +29,7 @@ namespace SecureDesktop.Forms
 
         private readonly Screen _screen;
         private readonly Dictionary<string, Rectangle> _unlockRegions;
-        private readonly Func<string, bool> _verifyPassword;
+        private readonly Func<string, string, User> _verifyCredentials;
         private readonly Bitmap _sourceScreenshot;
         private LockButtonForm _lockButton;
         private bool _dialogOpen;
@@ -36,7 +37,7 @@ namespace SecureDesktop.Forms
 
         private static readonly object _logLock = new object();
 
-        public event EventHandler UnlockAllRequested;
+        public event EventHandler<UnlockAllEventArgs> UnlockAllRequested;
 
         public Rectangle ScreenBounds { get { return _screen.Bounds; } }
 
@@ -55,12 +56,12 @@ namespace SecureDesktop.Forms
             catch { }
         }
 
-        public ScreenLockForm(Screen screen, Bitmap sourceScreenshot, Func<string, bool> verifyPassword = null)
+        public ScreenLockForm(Screen screen, Bitmap sourceScreenshot, Func<string, string, User> verifyCredentials = null)
         {
             _screen = screen;
             _sourceScreenshot = sourceScreenshot;
             _unlockRegions = new Dictionary<string, Rectangle>();
-            _verifyPassword = verifyPassword ?? (pwd => false);
+            _verifyCredentials = verifyCredentials ?? ((pin, pwd) => null);
             InitializeComponent();
         }
 
@@ -190,14 +191,14 @@ namespace SecureDesktop.Forms
             if (_lockButton != null && !_lockButton.IsDisposed)
                 _lockButton.Hide();
 
-            bool passwordOk = false;
+            User verifiedUser = null;
 
             try
             {
                 using (var dialog = new Form
                 {
                     Text = Loc.T("lock.dlg_title"),
-                    Size = new Size(380, 250),
+                    Size = new Size(420, 340),
                     StartPosition = FormStartPosition.CenterScreen,
                     FormBorderStyle = FormBorderStyle.FixedDialog,
                     MaximizeBox = false,
@@ -215,17 +216,42 @@ namespace SecureDesktop.Forms
                         Location = new Point(75, 22),
                         AutoSize = true
                     };
+
+                    var pinLabel = new Label
+                    {
+                        Text = Loc.T("lock.dlg_pin"),
+                        Font = UiFonts.Segoe9Bold,
+                        ForeColor = Color.FromArgb(80, 80, 80),
+                        Location = new Point(30, 70),
+                        AutoSize = true
+                    };
+                    var pinBox = new TextBox
+                    {
+                        Location = new Point(30, 92),
+                        Size = new Size(360, 30),
+                        Font = UiFonts.Segoe12
+                    };
+
+                    var passLabel = new Label
+                    {
+                        Text = Loc.T("lock.dlg_pass"),
+                        Font = UiFonts.Segoe9Bold,
+                        ForeColor = Color.FromArgb(80, 80, 80),
+                        Location = new Point(30, 132),
+                        AutoSize = true
+                    };
                     var passBox = new TextBox
                     {
-                        Location = new Point(30, 85),
-                        Size = new Size(310, 30),
+                        Location = new Point(30, 154),
+                        Size = new Size(360, 30),
                         PasswordChar = '●',
                         Font = UiFonts.Segoe12
                     };
+
                     var errorLabel = new Label
                     {
-                        Location = new Point(30, 122),
-                        Size = new Size(310, 20),
+                        Location = new Point(30, 192),
+                        Size = new Size(360, 20),
                         ForeColor = Color.Red,
                         Visible = false
                     };
@@ -233,8 +259,8 @@ namespace SecureDesktop.Forms
                     var unlockBtn = new Button
                     {
                         Text = Loc.T("lock.btn_unlock"),
-                        Location = new Point(80, 155),
-                        Size = new Size(100, 38),
+                        Location = new Point(100, 222),
+                        Size = new Size(110, 40),
                         BackColor = Color.FromArgb(45, 165, 90),
                         ForeColor = Color.White,
                         FlatStyle = FlatStyle.Flat,
@@ -245,20 +271,28 @@ namespace SecureDesktop.Forms
                     var cancelBtn = new Button
                     {
                         Text = Loc.T("lock.btn_cancel"),
-                        Location = new Point(200, 155),
-                        Size = new Size(100, 38),
+                        Location = new Point(220, 222),
+                        Size = new Size(110, 40),
                         BackColor = Color.White,
                         FlatStyle = FlatStyle.Flat
                     };
 
-                    dialog.AcceptButton = unlockBtn;
-                    dialog.CancelButton = cancelBtn;
-
-                    unlockBtn.Click += (s, args) =>
+                    Action unlockAction = () =>
                     {
-                        if (_verifyPassword(passBox.Text))
+                        string pin = (pinBox.Text ?? "").Trim();
+                        string pwd = passBox.Text ?? "";
+
+                        if (string.IsNullOrEmpty(pin) || string.IsNullOrEmpty(pwd))
                         {
-                            passwordOk = true;
+                            errorLabel.Text = Loc.T("lock.err_empty");
+                            errorLabel.Visible = true;
+                            return;
+                        }
+
+                        var user = _verifyCredentials(pin, pwd);
+                        if (user != null)
+                        {
+                            verifiedUser = user;
                             dialog.DialogResult = DialogResult.OK;
                             dialog.Close();
                         }
@@ -271,23 +305,31 @@ namespace SecureDesktop.Forms
                         }
                     };
 
+                    unlockBtn.Click += (s, args) => unlockAction();
                     cancelBtn.Click += (s, args) => dialog.Close();
 
-                    dialog.Controls.AddRange(new Control[] { icon, title, passBox, errorLabel, unlockBtn, cancelBtn });
-                    dialog.Shown += (s, args) => passBox.Focus();
+                    dialog.AcceptButton = unlockBtn;
+                    dialog.CancelButton = cancelBtn;
+
+                    dialog.Controls.AddRange(new Control[]
+                    {
+                        icon, title, pinLabel, pinBox, passLabel, passBox, errorLabel, unlockBtn, cancelBtn
+                    });
+                    dialog.Shown += (s, args) => pinBox.Focus();
                     dialog.ShowDialog(this);
                 }
             }
             catch (Exception ex) { Log("ShowDialog exception: " + ex.Message); }
             finally { _dialogOpen = false; }
 
-            if (passwordOk)
+            if (verifiedUser != null)
             {
-                Log("Password OK - requesting unlock of ALL overlays");
+                Log("Login OK for " + verifiedUser.IdentificationNumber + " - requesting unlock of ALL overlays");
                 var h = UnlockAllRequested;
                 if (h != null)
                 {
-                    try { h(this, EventArgs.Empty); } catch (Exception ex) { Log("UnlockAllRequested: " + ex.Message); }
+                    try { h(this, new UnlockAllEventArgs { User = verifiedUser }); }
+                    catch (Exception ex) { Log("UnlockAllRequested: " + ex.Message); }
                 }
                 else
                 {
@@ -330,11 +372,6 @@ namespace SecureDesktop.Forms
 
     /// <summary>
     /// Osobne, małe, w 100% widoczne okienko z kłódką w prawym górnym rogu.
-    ///
-    /// Zamiast TransparencyKey używamy Region — forma jest fizycznie przycięta
-    /// do kształtu (elipsa + prostokąt na etykietę). Dzięki temu nie ma
-    /// różowej poświaty na krawędziach, którą dawał antyaliasowany okrąg
-    /// na tle magenta + TransparencyKey.
     /// </summary>
     internal class LockButtonForm : Form
     {
@@ -344,7 +381,7 @@ namespace SecureDesktop.Forms
         private const int FormHeight = 140;
         private const int CircleSize = 72;
         private const int CircleTop = 10;
-        private const int LabelTop = CircleTop + CircleSize + 8; // 90
+        private const int LabelTop = CircleTop + CircleSize + 8;
 
         private const int ScreenMarginX = 40;
         private const int ScreenMarginY = 40;
@@ -361,7 +398,6 @@ namespace SecureDesktop.Forms
                 screen.Bounds.Right - FormWidth - ScreenMarginX,
                 screen.Bounds.Top + ScreenMarginY);
 
-            // Bez TransparencyKey — Region przycina okno.
             this.BackColor = UiTheme.Bg;
             this.DoubleBuffered = true;
             this.Cursor = Cursors.Hand;
@@ -375,10 +411,6 @@ namespace SecureDesktop.Forms
             ApplyRegion();
         }
 
-        /// <summary>
-        /// Ustawia Region formy jako sumę: elipsa (kółko kłódki) + prostokąt
-        /// (obszar etykiety pod kołem). Wszystko poza tym nie istnieje.
-        /// </summary>
         private void ApplyRegion()
         {
             try
@@ -389,17 +421,13 @@ namespace SecureDesktop.Forms
 
                 using (var path = new GraphicsPath())
                 {
-                    // Kółko
                     path.AddEllipse(cx - r, cy - r, CircleSize, CircleSize);
 
-                    // Prostokąt pod etykietę — szeroki na ~180, wysoki na 30 px,
-                    // wyśrodkowany pod kółkiem.
                     int labelW = 180;
                     int labelH = 32;
                     int labelX = cx - labelW / 2;
                     int labelY = LabelTop;
 
-                    // Zaokrąglony prostokąt na etykietę.
                     int rad = 10;
                     int d = rad * 2;
                     var rect = new Rectangle(labelX, labelY, labelW, labelH);
@@ -426,19 +454,15 @@ namespace SecureDesktop.Forms
             int cy = CircleTop + CircleSize / 2;
             int r = CircleSize / 2;
 
-            // Zewnętrzny biały pierścień.
             using (var brush = new SolidBrush(Color.White))
                 e.Graphics.FillEllipse(brush, cx - r, cy - r, CircleSize, CircleSize);
 
-            // Ciemniejsza obwódka (delikatna).
             using (var pen = new Pen(Color.FromArgb(30, 120, 60), 2))
                 e.Graphics.DrawEllipse(pen, cx - r + 2, cy - r + 2, CircleSize - 4, CircleSize - 4);
 
-            // Zielone koło.
             using (var brush = new SolidBrush(Color.FromArgb(45, 165, 90)))
                 e.Graphics.FillEllipse(brush, cx - r + 5, cy - r + 5, CircleSize - 10, CircleSize - 10);
 
-            // Biała kłódka.
             using (var brush = new SolidBrush(Color.White))
             {
                 e.Graphics.FillRectangle(brush, cx - 11, cy - 1, 22, 18);
@@ -451,7 +475,6 @@ namespace SecureDesktop.Forms
                 }
             }
 
-            // Etykieta pod kółkiem — czarna pigułka z białym tekstem.
             string text = Loc.T("lock.hint");
             using (var font = new Font("Segoe UI", 9, FontStyle.Bold))
             {
