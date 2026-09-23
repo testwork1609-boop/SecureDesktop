@@ -1,6 +1,7 @@
 using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Linq;
 using System.Windows.Forms;
 using SecureDesktop.Database;
 using SecureDesktop.Database.Repositories;
@@ -85,14 +86,6 @@ namespace SecureDesktop.Forms
                     this.Region = new Region(path);
             };
 
-            // ========================================================
-            // Kolejność dodawania kontrolek ma znaczenie (WinForms):
-            // ostatnio dodana = na wierzchu. Dlatego najpierw dodajemy
-            // elementy, które mają być NA SPODZIE, a na końcu te,
-            // które mają być NA WIERZCHU (flagi, X).
-            // ========================================================
-
-            // 1) CARD (najniżej) — główna karta logowania
             var card = new Panel
             {
                 Location = new Point(44, 80),
@@ -230,9 +223,6 @@ namespace SecureDesktop.Forms
             };
             card.Controls.Add(_hintLabel);
 
-            // 2) DRAG BAR — pasek do przeciągania okna. Wąski pas na górze (0-44 px).
-            // Dodawany PO karcie, więc jest NAD kartą (karta i tak zaczyna się od y=80,
-            // więc nie ma konfliktu). Ale flagi i X dodane PÓŹNIEJ będą NAD nim.
             var dragBar = new Panel
             {
                 Location = new Point(0, 0),
@@ -249,7 +239,6 @@ namespace SecureDesktop.Forms
             };
             this.Controls.Add(dragBar);
 
-            // 3) FLAGI językowe (lewy górny róg)
             _langPl = new LanguageButton { LangCode = "pl", Location = new Point(16, 8), Size = new Size(48, 30) };
             _langPl.Click += (s, e) => Loc.SetLanguage("pl");
             this.Controls.Add(_langPl);
@@ -258,7 +247,6 @@ namespace SecureDesktop.Forms
             _langGb.Click += (s, e) => Loc.SetLanguage("en");
             this.Controls.Add(_langGb);
 
-            // 4) PRZYCISK X (prawy górny róg) — NAJWIĘKSZY z-order, na samej górze.
             var closeBtn = new CloseButton
             {
                 Location = new Point(480 - 44, 6),
@@ -267,13 +255,11 @@ namespace SecureDesktop.Forms
             closeBtn.Click += (s, e) => Application.Exit();
             this.Controls.Add(closeBtn);
 
-            // Dla pewności — flagi i X na wierzch.
             _langPl.BringToFront();
             _langGb.BringToFront();
             closeBtn.BringToFront();
             dragBar.SendToBack();
 
-            // Enter / klawiatura
             this.KeyDown += (s, e) => { if (e.KeyCode == Keys.Enter) LoginAction(s, e); };
             _idBox.KeyDown += (s, e) => { if (e.KeyCode == Keys.Enter) { _passBox.Focus(); e.SuppressKeyPress = true; } };
             _passBox.KeyDown += (s, e) => { if (e.KeyCode == Keys.Enter) { LoginAction(s, e); e.SuppressKeyPress = true; } };
@@ -294,14 +280,39 @@ namespace SecureDesktop.Forms
                 var user = _userRepo.GetByIdentificationNumber(_idBox.Text.Trim());
                 if (user == null) { ShowError(Loc.T("login.err.invalid")); return; }
 
-                if (string.IsNullOrEmpty(user.PasswordHash) || string.IsNullOrEmpty(user.Salt))
+                var data = _db.GetData();
+                bool passwordOk = false;
+
+                // 1) Preferowane: hasło zmiany przypisanej do użytkownika.
+                if (user.ShiftId.HasValue && data != null && data.Shifts != null)
                 {
-                    ShowError(Loc.T("login.err.no_pass"));
-                    return;
+                    var shift = data.Shifts.FirstOrDefault(s => s.Id == user.ShiftId.Value);
+                    if (shift != null && !string.IsNullOrEmpty(shift.PasswordHash) && !string.IsNullOrEmpty(shift.Salt))
+                    {
+                        var hash = SecurityHelper.HashPassword(_passBox.Text, shift.Salt);
+                        if (string.Equals(hash, shift.PasswordHash, StringComparison.Ordinal))
+                            passwordOk = true;
+                    }
+                    else if (shift != null)
+                    {
+                        ShowError(Loc.T("login.err.no_pass"));
+                        return;
+                    }
                 }
 
-                var hash = SecurityHelper.HashPassword(_passBox.Text, user.Salt);
-                if (!string.Equals(hash, user.PasswordHash, StringComparison.Ordinal))
+                // 2) Fallback: legacy AdminPassword z Settings (dla admina bez zmiany).
+                if (!passwordOk && data != null && data.Settings != null && user.IsAdmin)
+                {
+                    string legacy;
+                    if (data.Settings.TryGetValue("AdminPassword", out legacy) &&
+                        !string.IsNullOrEmpty(legacy) &&
+                        string.Equals(_passBox.Text, legacy, StringComparison.Ordinal))
+                    {
+                        passwordOk = true;
+                    }
+                }
+
+                if (!passwordOk)
                 {
                     ShowError(Loc.T("login.err.invalid"));
                     return;
