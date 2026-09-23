@@ -90,6 +90,14 @@ namespace SecureDesktop.Utils
             d["login.err.no_shift"] = "Konto nie ma przypisanej zmiany";
             d["login.err.generic"] = "Błąd: ";
 
+            d["cfg.usr.dlg_individual"] = "Hasło indywidualne";
+            d["cfg.usr.dlg_individual_hint"] = "Gdy zaznaczone, użytkownik loguje się własnym hasłem (niezależnym od hasła zmiany).";
+            d["cfg.usr.dlg_new_pass"] = "Nowe hasło";
+            d["cfg.usr.dlg_confirm_pass"] = "Powtórz hasło";
+            d["cfg.usr.err_pass_empty"] = "Podaj hasło indywidualne.";
+            d["cfg.usr.err_pass_mismatch"] = "Hasła nie są identyczne.";
+            d["cfg.usr.err_pass_short"] = "Hasło musi mieć co najmniej 4 znaki.";
+
             d["log.backup_purge"] = "System automatycznie usunął {0} kopii backupu starszych niż {1} dni";
             d["log.backup_purge_manual"] = "Administrator usunął {0} starych kopii backupu";
 
@@ -330,6 +338,14 @@ namespace SecureDesktop.Utils
             d["login.err.no_pass"] = "Shift has no password set";
             d["login.err.no_shift"] = "Account has no shift assigned";
             d["login.err.generic"] = "Error: ";
+
+            d["cfg.usr.dlg_individual"] = "Individual password";
+            d["cfg.usr.dlg_individual_hint"] = "When checked, the user logs in with their own password (independent from the shift password).";
+            d["cfg.usr.dlg_new_pass"] = "New password";
+            d["cfg.usr.dlg_confirm_pass"] = "Confirm password";
+            d["cfg.usr.err_pass_empty"] = "Enter the individual password.";
+            d["cfg.usr.err_pass_mismatch"] = "Passwords do not match.";
+            d["cfg.usr.err_pass_short"] = "Password must be at least 4 characters.";
 
             d["log.backup_purge"] = "System automatically removed {0} backups older than {1} days";
             d["log.backup_purge_manual"] = "Administrator removed {0} old backup folders";
