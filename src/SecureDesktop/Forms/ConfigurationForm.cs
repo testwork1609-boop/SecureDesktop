@@ -1376,7 +1376,7 @@ namespace SecureDesktop.Forms
 
         // ============== EDYCJA UŻYTKOWNIKA ==============
 
-        private void EditUser(object sender, EventArgs e)
+                private void EditUser(object sender, EventArgs e)
         {
             if (_userListView.SelectedItems.Count == 0)
             {
@@ -1400,7 +1400,7 @@ namespace SecureDesktop.Forms
             using (var dialog = new Form
             {
                 Text = Loc.T("cfg.usr.edit_dlg_title"),
-                Size = new Size(440, 560),
+                Size = new Size(460, 700),
                 StartPosition = FormStartPosition.CenterParent,
                 BackColor = UiTheme.Bg,
                 Font = UiFonts.Body,
@@ -1414,7 +1414,7 @@ namespace SecureDesktop.Forms
                 // === PIN ===
                 dialog.Controls.Add(MakeFieldLabel(Loc.T("cfg.usr.dlg_ident"), 24, y));
                 y += 24;
-                var idBox = MakeTextBox(24, y, 376);
+                var idBox = MakeTextBox(24, y, 396);
                 idBox.Text = user.IdentificationNumber ?? "";
                 idBox.ReadOnly = isDefaultAdmin;
                 if (isDefaultAdmin) idBox.BackColor = UiTheme.SurfaceAlt;
@@ -1424,7 +1424,7 @@ namespace SecureDesktop.Forms
                 // === Imię ===
                 dialog.Controls.Add(MakeFieldLabel(Loc.T("cfg.usr.dlg_first_name"), 24, y));
                 y += 24;
-                var fnBox = MakeTextBox(24, y, 376);
+                var fnBox = MakeTextBox(24, y, 396);
                 fnBox.Text = user.FirstName ?? "";
                 dialog.Controls.Add(fnBox);
                 y += 40;
@@ -1432,15 +1432,15 @@ namespace SecureDesktop.Forms
                 // === Nazwisko ===
                 dialog.Controls.Add(MakeFieldLabel(Loc.T("cfg.usr.dlg_last_name"), 24, y));
                 y += 24;
-                var lnBox = MakeTextBox(24, y, 376);
+                var lnBox = MakeTextBox(24, y, 396);
                 lnBox.Text = user.LastName ?? "";
                 dialog.Controls.Add(lnBox);
                 y += 40;
 
-                // === DisplayName (auto, read-only podgląd) ===
+                // === DisplayName (podgląd auto) ===
                 dialog.Controls.Add(MakeFieldLabel(Loc.T("cfg.usr.dlg_display"), 24, y));
                 y += 24;
-                var displayBox = MakeTextBox(24, y, 376);
+                var displayBox = MakeTextBox(24, y, 396);
                 displayBox.ReadOnly = true;
                 displayBox.BackColor = UiTheme.SurfaceAlt;
                 displayBox.Text = BuildMaskedDisplayName(user.FirstName, user.LastName);
@@ -1448,7 +1448,6 @@ namespace SecureDesktop.Forms
                 dialog.Controls.Add(displayBox);
                 y += 40;
 
-                // Auto-aktualizacja DisplayName przy zmianie Imienia/Nazwiska
                 Action refreshDisplay = () =>
                 {
                     string masked = BuildMaskedDisplayName(fnBox.Text, lnBox.Text);
@@ -1463,7 +1462,7 @@ namespace SecureDesktop.Forms
                 var shiftCombo = new ComboBox
                 {
                     Location = new Point(24, y),
-                    Size = new Size(376, 30),
+                    Size = new Size(396, 30),
                     DropDownStyle = ComboBoxStyle.DropDownList,
                     Font = UiFonts.BodyLarge,
                     BackColor = UiTheme.Surface
@@ -1484,7 +1483,7 @@ namespace SecureDesktop.Forms
                 var roleCombo = new ComboBox
                 {
                     Location = new Point(24, y),
-                    Size = new Size(376, 30),
+                    Size = new Size(396, 30),
                     DropDownStyle = ComboBoxStyle.DropDownList,
                     Font = UiFonts.BodyLarge,
                     BackColor = UiTheme.Surface,
@@ -1512,25 +1511,72 @@ namespace SecureDesktop.Forms
                     Enabled = !isDefaultAdmin
                 };
                 dialog.Controls.Add(activeCheck);
-                y += 32;
+                y += 34;
 
-                if (isDefaultAdmin)
+                // === Hasło indywidualne ===
+                var indPassCheck = new CheckBox
                 {
-                    dialog.Controls.Add(new Label
+                    Text = Loc.T("cfg.usr.dlg_individual"),
+                    Font = UiFonts.Body,
+                    Location = new Point(24, y),
+                    AutoSize = true,
+                    FlatStyle = FlatStyle.Flat,
+                    ForeColor = UiTheme.TextPrimary,
+                    Checked = user.UseIndividualPassword
+                };
+                dialog.Controls.Add(indPassCheck);
+                y += 24;
+
+                dialog.Controls.Add(new Label
+                {
+                    Text = Loc.T("cfg.usr.dlg_individual_hint"),
+                    Font = UiFonts.Small,
+                    ForeColor = UiTheme.TextMuted,
+                    Location = new Point(24, y),
+                    Size = new Size(396, 32),
+                    AutoSize = false
+                });
+                y += 36;
+
+                // === Pola haseł (pokazywane warunkowo) ===
+                var passLabel = MakeFieldLabel(Loc.T("cfg.usr.dlg_new_pass"), 24, y);
+                passLabel.Visible = indPassCheck.Checked;
+                dialog.Controls.Add(passLabel);
+                y += 24;
+
+                var passBox = MakeTextBox(24, y, 396, password: true);
+                passBox.Visible = indPassCheck.Checked;
+                dialog.Controls.Add(passBox);
+                y += 40;
+
+                var passConfirmLabel = MakeFieldLabel(Loc.T("cfg.usr.dlg_confirm_pass"), 24, y);
+                passConfirmLabel.Visible = indPassCheck.Checked;
+                dialog.Controls.Add(passConfirmLabel);
+                y += 24;
+
+                var passConfirmBox = MakeTextBox(24, y, 396, password: true);
+                passConfirmBox.Visible = indPassCheck.Checked;
+                dialog.Controls.Add(passConfirmBox);
+                y += 44;
+
+                // Toggle widoczności pól haseł
+                indPassCheck.CheckedChanged += (s, args) =>
+                {
+                    bool vis = indPassCheck.Checked;
+                    passLabel.Visible = vis;
+                    passBox.Visible = vis;
+                    passConfirmLabel.Visible = vis;
+                    passConfirmBox.Visible = vis;
+                    if (!vis)
                     {
-                        Text = Loc.T("cfg.usr.edit_admin_locked"),
-                        Font = UiFonts.Small,
-                        ForeColor = UiTheme.TextMuted,
-                        Location = new Point(24, y),
-                        AutoSize = true
-                    });
-                    y += 24;
-                }
+                        passBox.Text = "";
+                        passConfirmBox.Text = "";
+                    }
+                };
 
-                y += 8;
-
-                var saveBtn = RoundedButton.Primary(Loc.T("cfg.usr.dlg_save"), 130, 42);
-                saveBtn.Location = new Point(130, y);
+                // === Save/Cancel ===
+                var saveBtn = RoundedButton.Primary(Loc.T("cfg.usr.dlg_save"), 150, 42);
+                saveBtn.Location = new Point(140, y);
                 saveBtn.Click += (s, args) =>
                 {
                     string newPin = (idBox.Text ?? "").Trim();
@@ -1558,6 +1604,43 @@ namespace SecureDesktop.Forms
                         }
                     }
 
+                    // === Walidacja hasła indywidualnego ===
+                    bool newUseInd = indPassCheck.Checked;
+                    string newPassPlain = (passBox.Text ?? "");
+                    string newPassConfirm = (passConfirmBox.Text ?? "");
+
+                    bool hasExistingInd = user.UseIndividualPassword &&
+                                          !string.IsNullOrEmpty(user.PasswordHash) &&
+                                          !string.IsNullOrEmpty(user.Salt);
+
+                    if (newUseInd)
+                    {
+                        // Jeśli użytkownik wpisał nowe hasło — waliduj.
+                        if (!string.IsNullOrEmpty(newPassPlain) || !string.IsNullOrEmpty(newPassConfirm))
+                        {
+                            if (newPassPlain.Length < 4)
+                            {
+                                MessageBox.Show(Loc.T("cfg.usr.err_pass_short"), Loc.T("common.info"),
+                                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                                return;
+                            }
+                            if (!string.Equals(newPassPlain, newPassConfirm, StringComparison.Ordinal))
+                            {
+                                MessageBox.Show(Loc.T("cfg.usr.err_pass_mismatch"), Loc.T("common.info"),
+                                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                                return;
+                            }
+                        }
+                        else if (!hasExistingInd)
+                        {
+                            // Zaznaczone, brak hasła w polach, brak istniejącego hasła → wymagane.
+                            MessageBox.Show(Loc.T("cfg.usr.err_pass_empty"), Loc.T("common.info"),
+                                MessageBoxButtons.OK, MessageBoxIcon.Information);
+                            return;
+                        }
+                    }
+
+                    // === Zapis ===
                     var selectedShift = shifts[shiftCombo.SelectedIndex];
 
                     user.IdentificationNumber = newPin;
@@ -1575,6 +1658,25 @@ namespace SecureDesktop.Forms
                         user.IsActive = activeCheck.Checked;
                     }
 
+                    // Hasło indywidualne
+                    if (newUseInd)
+                    {
+                        user.UseIndividualPassword = true;
+                        if (!string.IsNullOrEmpty(newPassPlain))
+                        {
+                            // Ustaw nowe hasło.
+                            user.Salt = SecurityHelper.GenerateSalt();
+                            user.PasswordHash = SecurityHelper.HashPassword(newPassPlain, user.Salt);
+                        }
+                        // else: zostaw istniejący hash/salt (już w user.*)
+                    }
+                    else
+                    {
+                        user.UseIndividualPassword = false;
+                        user.PasswordHash = null;
+                        user.Salt = null;
+                    }
+
                     _userRepo.UpdateUser(user);
                     RefreshUserList();
                     var h = DataSaved;
@@ -1582,8 +1684,8 @@ namespace SecureDesktop.Forms
                     dialog.Close();
                 };
 
-                var cancelBtn = RoundedButton.Ghost(Loc.T("cfg.usr.dlg_cancel"), 130, 42);
-                cancelBtn.Location = new Point(270, y);
+                var cancelBtn = RoundedButton.Ghost(Loc.T("cfg.usr.dlg_cancel"), 150, 42);
+                cancelBtn.Location = new Point(300, y);
                 cancelBtn.Click += (s, args) => dialog.Close();
 
                 dialog.Controls.Add(saveBtn);
