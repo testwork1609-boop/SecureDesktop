@@ -12,6 +12,10 @@
     <!-- KLUCZOWE: kopiuje zależności ClosedXML do bin\Release\ -->
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
 
+    <!-- KLUCZOWE: NIE dodawaj podfolderu \net48\ do ścieżki wyjścia -->
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+
     <!-- Wyłączamy auto-attr, bo mamy własny Properties\AssemblyInfo.cs -->
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
 
