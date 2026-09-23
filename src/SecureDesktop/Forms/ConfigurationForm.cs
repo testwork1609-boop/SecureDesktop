@@ -29,6 +29,7 @@ namespace SecureDesktop.Forms
         private PictureBox _patternPreviewBox;
         private List<Pattern> _patterns;
         private readonly DatabaseInitializer _db;
+        private readonly User _currentUser;
         private readonly UserRepository _userRepo;
         private readonly ShiftRepository _shiftRepo;
         private ListView _userListView;
@@ -52,9 +53,15 @@ namespace SecureDesktop.Forms
         public event Action CloseRequested;
         public event Action DataSaved;
 
-        public ConfigurationView(DatabaseInitializer db)
+        private bool IsHeadAdmin
+        {
+            get { return _currentUser != null && _currentUser.IsHeadAdmin; }
+        }
+
+        public ConfigurationView(DatabaseInitializer db, User currentUser = null)
         {
             _db = db;
+            _currentUser = currentUser;
             _userRepo = new UserRepository(_db);
             _shiftRepo = new ShiftRepository(_db);
             _patterns = new List<Pattern>();
@@ -68,7 +75,7 @@ namespace SecureDesktop.Forms
             InitializeComponent();
             LoadPatternsFromDatabase();
             LoadTipsFromDatabase();
-            LoadShiftsFromDatabase();
+            if (IsHeadAdmin) LoadShiftsFromDatabase();
             LoadSettingsIntoControls();
         }
 
@@ -105,26 +112,33 @@ namespace SecureDesktop.Forms
             var tabGeneral = MakeTab(Loc.T("cfg.tab.general"));
             var tabPatterns = MakeTab(Loc.T("cfg.tab.patterns"));
             var tabTips = MakeTab(Loc.T("cfg.tab.tips"));
-            var tabShifts = MakeTab(Loc.T("cfg.tab.shifts"));
             var tabCheckpoint = MakeTab(Loc.T("cfg.tab.checkpoint"));
             var tabBackup = MakeTab(Loc.T("cfg.tab.backup"));
-            var tabUsers = MakeTab(Loc.T("cfg.tab.users"));
 
             tabControl.TabPages.Add(tabGeneral);
             tabControl.TabPages.Add(tabPatterns);
             tabControl.TabPages.Add(tabTips);
-            tabControl.TabPages.Add(tabShifts);
-            tabControl.TabPages.Add(tabCheckpoint);
-            tabControl.TabPages.Add(tabBackup);
-            tabControl.TabPages.Add(tabUsers);
 
             BuildGeneralTab(tabGeneral);
             BuildPatternsTab(tabPatterns);
             BuildTipsTab(tabTips);
-            BuildShiftsTab(tabShifts);
+
+            // Zakładki zastrzeżone dla HeadAdmin.
+            if (IsHeadAdmin)
+            {
+                var tabShifts = MakeTab(Loc.T("cfg.tab.shifts"));
+                var tabUsers = MakeTab(Loc.T("cfg.tab.users"));
+                tabControl.TabPages.Add(tabShifts);
+                tabControl.TabPages.Add(tabUsers);
+                BuildShiftsTab(tabShifts);
+                BuildUsersTab(tabUsers);
+            }
+
+            tabControl.TabPages.Add(tabCheckpoint);
+            tabControl.TabPages.Add(tabBackup);
+
             BuildCheckpointTab(tabCheckpoint);
             BuildBackupTab(tabBackup);
-            BuildUsersTab(tabUsers);
 
             var bottomPanel = new Panel
             {
@@ -199,6 +213,16 @@ namespace SecureDesktop.Forms
                 ForeColor = UiTheme.TextPrimary,
                 BorderStyle = BorderStyle.FixedSingle
             };
+        }
+
+        private static string BuildMaskedDisplayName(string firstName, string lastName)
+        {
+            string f = (firstName ?? "").Trim();
+            string l = (lastName ?? "").Trim();
+            string f2 = f.Length >= 2 ? f.Substring(0, 2) : f;
+            string l2 = l.Length >= 2 ? l.Substring(0, 2) : l;
+            if (string.IsNullOrEmpty(f2) && string.IsNullOrEmpty(l2)) return "";
+            return f2 + "**" + l2 + "**";
         }
 
         // ============== OGÓLNE ==============
@@ -991,7 +1015,7 @@ namespace SecureDesktop.Forms
 
         // ============== BACKUP ==============
 
-                private void BuildBackupTab(TabPage tab)
+        private void BuildBackupTab(TabPage tab)
         {
             int y = 20;
 
@@ -1035,7 +1059,6 @@ namespace SecureDesktop.Forms
             tab.Controls.Add(monitorBrowseBtn);
             y += 56;
 
-            // === Automatyczne usuwanie starych kopii ===
             tab.Controls.Add(MakeFieldLabel(Loc.T("cfg.bk.retention"), 0, y));
             y += 24;
 
@@ -1139,11 +1162,11 @@ namespace SecureDesktop.Forms
                 Font = UiFonts.Body
             };
             _userListView.Columns.Add(Loc.T("cfg.usr.col_id"), 40);
-            _userListView.Columns.Add(Loc.T("cfg.usr.col_display"), 160);
-            _userListView.Columns.Add(Loc.T("cfg.usr.col_pin"), 130);
-            _userListView.Columns.Add(Loc.T("cfg.usr.col_shift"), 120);
-            _userListView.Columns.Add(Loc.T("cfg.usr.col_role"), 100);
-            _userListView.Columns.Add(Loc.T("cfg.usr.col_active"), 70);
+            _userListView.Columns.Add(Loc.T("cfg.usr.col_display"), 150);
+            _userListView.Columns.Add(Loc.T("cfg.usr.col_pin"), 110);
+            _userListView.Columns.Add(Loc.T("cfg.usr.col_shift"), 110);
+            _userListView.Columns.Add(Loc.T("cfg.usr.col_role"), 110);
+            _userListView.Columns.Add(Loc.T("cfg.usr.col_active"), 60);
             _userListView.DoubleClick += (s, e) => EditUser(s, e);
             RefreshUserList();
             tab.Controls.Add(_userListView);
@@ -1190,740 +1213,12 @@ namespace SecureDesktop.Forms
                 var shift = u.ShiftId.HasValue ? shifts.FirstOrDefault(s => s.Id == u.ShiftId.Value) : null;
                 string display = !string.IsNullOrWhiteSpace(u.DisplayName) ? u.DisplayName : u.IdentificationNumber;
 
+                string roleTxt = u.IsHeadAdmin ? Loc.T("cfg.usr.role_headadmin")
+                                : (u.IsAdmin ? Loc.T("cfg.usr.role_admin") : Loc.T("cfg.usr.role_user"));
+
                 var item = new ListViewItem(u.Id.ToString());
                 item.SubItems.Add(display);
                 item.SubItems.Add(u.IdentificationNumber);
                 item.SubItems.Add(shift != null ? shift.Name : "—");
-                item.SubItems.Add(u.IsAdmin ? Loc.T("cfg.usr.role_admin") : Loc.T("cfg.usr.role_user"));
-                item.SubItems.Add(u.IsActive ? Loc.T("cfg.usr.yes") : Loc.T("cfg.usr.no"));
-                _userListView.Items.Add(item);
-            }
-        }
-
-        private void AddUser(object sender, EventArgs e)
-        {
-            var shifts = _shiftRepo != null ? _shiftRepo.GetAllShifts() : new List<Shift>();
-            if (shifts.Count == 0)
-            {
-                MessageBox.Show(Loc.T("cfg.usr.no_shifts"), Loc.T("common.info"), MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
-            }
-
-            using (var dialog = new Form
-            {
-                Text = Loc.T("cfg.usr.dlg_title"),
-                Size = new Size(420, 360),
-                StartPosition = FormStartPosition.CenterParent,
-                BackColor = UiTheme.Bg,
-                Font = UiFonts.Body,
-                FormBorderStyle = FormBorderStyle.FixedDialog,
-                MaximizeBox = false,
-                MinimizeBox = false
-            })
-            {
-                var idLabel = MakeFieldLabel(Loc.T("cfg.usr.dlg_ident"), 24, 24);
-                var idBox = MakeTextBox(24, 48, 356);
-
-                var shiftLabel = MakeFieldLabel(Loc.T("cfg.usr.dlg_shift"), 24, 92);
-                var shiftCombo = new ComboBox
-                {
-                    Location = new Point(24, 116),
-                    Size = new Size(356, 30),
-                    DropDownStyle = ComboBoxStyle.DropDownList,
-                    Font = UiFonts.BodyLarge,
-                    BackColor = UiTheme.Surface
-                };
-                foreach (var s in shifts) shiftCombo.Items.Add(s.Name);
-                shiftCombo.SelectedIndex = 0;
-
-                var adminCheck = new CheckBox
-                {
-                    Text = Loc.T("cfg.usr.dlg_admin"),
-                    Font = UiFonts.Body,
-                    Location = new Point(24, 162),
-                    AutoSize = true,
-                    FlatStyle = FlatStyle.Flat,
-                    ForeColor = UiTheme.TextPrimary
-                };
-
-                var okBtn = RoundedButton.Primary(Loc.T("cfg.usr.dlg_add"), 130, 42);
-                okBtn.Location = new Point(120, 230);
-                okBtn.Click += (s, args) =>
-                {
-                    if (string.IsNullOrWhiteSpace(idBox.Text))
-                    {
-                        MessageBox.Show(Loc.T("cfg.usr.err_empty_ident"), Loc.T("common.info"), MessageBoxButtons.OK, MessageBoxIcon.Information);
-                        return;
-                    }
-                    if (shiftCombo.SelectedIndex < 0)
-                    {
-                        MessageBox.Show(Loc.T("cfg.usr.err_no_shift"), Loc.T("common.info"), MessageBoxButtons.OK, MessageBoxIcon.Information);
-                        return;
-                    }
-                    if (_userRepo.GetByIdentificationNumber(idBox.Text) != null)
-                    {
-                        MessageBox.Show(Loc.T("cfg.usr.err_exists"), Loc.T("common.error"), MessageBoxButtons.OK, MessageBoxIcon.Error);
-                        return;
-                    }
-
-                    var selectedShift = shifts[shiftCombo.SelectedIndex];
-                    _userRepo.AddUser(new User
-                    {
-                        IdentificationNumber = idBox.Text.Trim(),
-                        Salt = "",
-                        PasswordHash = "",
-                        IsAdmin = adminCheck.Checked,
-                        IsActive = true,
-                        ShiftId = selectedShift.Id
-                    });
-                    RefreshUserList();
-                    dialog.Close();
-                };
-
-                var cancelBtn = RoundedButton.Ghost(Loc.T("cfg.usr.dlg_cancel"), 120, 42);
-                cancelBtn.Location = new Point(260, 230);
-                cancelBtn.Click += (s, args) => dialog.Close();
-
-                dialog.Controls.AddRange(new Control[] { idLabel, idBox, shiftLabel, shiftCombo, adminCheck, okBtn, cancelBtn });
-                dialog.ShowDialog(this);
-            }
-        }
-
-        // ============== EDYCJA UŻYTKOWNIKA ==============
-
-        private void EditUser(object sender, EventArgs e)
-        {
-            if (_userListView.SelectedItems.Count == 0)
-            {
-                MessageBox.Show(Loc.T("cfg.usr.select_role"), Loc.T("common.info"), MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
-            }
-
-            int userId = int.Parse(_userListView.SelectedItems[0].Text);
-            var user = _userRepo.GetById(userId);
-            if (user == null) return;
-
-            var shifts = _shiftRepo != null ? _shiftRepo.GetAllShifts() : new List<Shift>();
-            if (shifts.Count == 0)
-            {
-                MessageBox.Show(Loc.T("cfg.usr.no_shifts"), Loc.T("common.info"), MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
-            }
-
-            bool isDefaultAdmin = string.Equals(user.IdentificationNumber, "admin", StringComparison.OrdinalIgnoreCase);
-
-            using (var dialog = new Form
-            {
-                Text = Loc.T("cfg.usr.edit_dlg_title"),
-                Size = new Size(420, 380),
-                StartPosition = FormStartPosition.CenterParent,
-                BackColor = UiTheme.Bg,
-                Font = UiFonts.Body,
-                FormBorderStyle = FormBorderStyle.FixedDialog,
-                MaximizeBox = false,
-                MinimizeBox = false
-            })
-            {
-                var idLabel = MakeFieldLabel(Loc.T("cfg.usr.dlg_ident"), 24, 24);
-                var idBox = MakeTextBox(24, 48, 356);
-                idBox.Text = user.IdentificationNumber ?? "";
-                idBox.ReadOnly = isDefaultAdmin;
-                if (isDefaultAdmin)
-                    idBox.BackColor = UiTheme.SurfaceAlt;
-                dialog.Controls.Add(idLabel);
-                dialog.Controls.Add(idBox);
-
-                var shiftLabel = MakeFieldLabel(Loc.T("cfg.usr.dlg_shift"), 24, 92);
-                var shiftCombo = new ComboBox
-                {
-                    Location = new Point(24, 116),
-                    Size = new Size(356, 30),
-                    DropDownStyle = ComboBoxStyle.DropDownList,
-                    Font = UiFonts.BodyLarge,
-                    BackColor = UiTheme.Surface
-                };
-                foreach (var s in shifts) shiftCombo.Items.Add(s.Name);
-                if (user.ShiftId.HasValue)
-                {
-                    int idx = shifts.FindIndex(s => s.Id == user.ShiftId.Value);
-                    if (idx >= 0) shiftCombo.SelectedIndex = idx;
-                    else shiftCombo.SelectedIndex = 0;
-                }
-                else shiftCombo.SelectedIndex = 0;
-                dialog.Controls.Add(shiftLabel);
-                dialog.Controls.Add(shiftCombo);
-
-                var adminCheck = new CheckBox
-                {
-                    Text = Loc.T("cfg.usr.dlg_admin"),
-                    Font = UiFonts.Body,
-                    Location = new Point(24, 162),
-                    AutoSize = true,
-                    FlatStyle = FlatStyle.Flat,
-                    ForeColor = UiTheme.TextPrimary,
-                    Checked = user.IsAdmin,
-                    Enabled = !isDefaultAdmin
-                };
-                dialog.Controls.Add(adminCheck);
-
-                var activeCheck = new CheckBox
-                {
-                    Text = Loc.T("cfg.usr.active"),
-                    Font = UiFonts.Body,
-                    Location = new Point(24, 194),
-                    AutoSize = true,
-                    FlatStyle = FlatStyle.Flat,
-                    ForeColor = UiTheme.TextPrimary,
-                    Checked = user.IsActive,
-                    Enabled = !isDefaultAdmin
-                };
-                dialog.Controls.Add(activeCheck);
-
-                if (isDefaultAdmin)
-                {
-                    var lockInfo = new Label
-                    {
-                        Text = Loc.T("cfg.usr.edit_admin_locked"),
-                        Font = UiFonts.Small,
-                        ForeColor = UiTheme.TextMuted,
-                        Location = new Point(24, 226),
-                        AutoSize = true
-                    };
-                    dialog.Controls.Add(lockInfo);
-                }
-
-                var saveBtn = RoundedButton.Primary(Loc.T("cfg.usr.dlg_save"), 130, 42);
-                saveBtn.Location = new Point(120, 258);
-                saveBtn.Click += (s, args) =>
-                {
-                    string newPin = (idBox.Text ?? "").Trim();
-                    if (string.IsNullOrWhiteSpace(newPin))
-                    {
-                        MessageBox.Show(Loc.T("cfg.usr.err_empty_ident"), Loc.T("common.info"), MessageBoxButtons.OK, MessageBoxIcon.Information);
-                        return;
-                    }
-                    if (shiftCombo.SelectedIndex < 0)
-                    {
-                        MessageBox.Show(Loc.T("cfg.usr.err_no_shift"), Loc.T("common.info"), MessageBoxButtons.OK, MessageBoxIcon.Information);
-                        return;
-                    }
-
-                    // Unikalność PIN (poza samym sobą).
-                    if (!string.Equals(newPin, user.IdentificationNumber, StringComparison.Ordinal))
-                    {
-                        var clash = _userRepo.GetAllUsers()
-                            .FirstOrDefault(u => u.Id != user.Id &&
-                                                 string.Equals(u.IdentificationNumber, newPin, StringComparison.Ordinal));
-                        if (clash != null)
-                        {
-                            MessageBox.Show(Loc.T("cfg.usr.edit_err_exists"), Loc.T("common.error"),
-                                MessageBoxButtons.OK, MessageBoxIcon.Error);
-                            return;
-                        }
-                    }
-
-                    var selectedShift = shifts[shiftCombo.SelectedIndex];
-
-                    user.IdentificationNumber = newPin;
-                    user.ShiftId = selectedShift.Id;
-                    if (!isDefaultAdmin)
-                    {
-                        user.IsAdmin = adminCheck.Checked;
-                        user.IsActive = activeCheck.Checked;
-                    }
-
-                    _userRepo.UpdateUser(user);
-                    RefreshUserList();
-                    var h = DataSaved;
-                    if (h != null) h();
-                    dialog.Close();
-                };
-
-                var cancelBtn = RoundedButton.Ghost(Loc.T("cfg.usr.dlg_cancel"), 120, 42);
-                cancelBtn.Location = new Point(260, 258);
-                cancelBtn.Click += (s, args) => dialog.Close();
-
-                dialog.Controls.Add(saveBtn);
-                dialog.Controls.Add(cancelBtn);
-
-                dialog.AcceptButton = null;
-                dialog.ShowDialog(this);
-            }
-        }
-
-        private void DeleteUser(object sender, EventArgs e)
-        {
-            if (_userListView.SelectedItems.Count == 0)
-            {
-                MessageBox.Show(Loc.T("cfg.usr.select_del"), Loc.T("common.info"), MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
-            }
-            var userId = int.Parse(_userListView.SelectedItems[0].Text);
-            var user = _userRepo.GetAllUsers().FirstOrDefault(u => u.Id == userId);
-            if (user == null) return;
-            if (user.IdentificationNumber == "admin")
-            {
-                MessageBox.Show(Loc.T("cfg.usr.err_cant_del_admin"), Loc.T("common.error"), MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
-            }
-
-            if (MessageBox.Show(Loc.T("cfg.usr.del_confirm", user.IdentificationNumber),
-                Loc.T("common.confirm"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
-            {
-                _userRepo.DeleteUser(userId);
-                RefreshUserList();
-            }
-        }
-
-        private void ToggleUserRole(object sender, EventArgs e)
-        {
-            if (_userListView.SelectedItems.Count == 0)
-            {
-                MessageBox.Show(Loc.T("cfg.usr.select_role"), Loc.T("common.info"), MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
-            }
-            var userId = int.Parse(_userListView.SelectedItems[0].Text);
-            var user = _userRepo.GetAllUsers().FirstOrDefault(u => u.Id == userId);
-            if (user == null) return;
-            if (user.IdentificationNumber == "admin")
-            {
-                MessageBox.Show(Loc.T("cfg.usr.err_cant_change_admin"), Loc.T("common.error"), MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
-            }
-
-            user.IsAdmin = !user.IsAdmin;
-            _userRepo.UpdateUser(user);
-            RefreshUserList();
-            MessageBox.Show(Loc.T("cfg.usr.role_changed", (user.IsAdmin ? Loc.T("cfg.usr.role_admin") : Loc.T("cfg.usr.role_user"))),
-                Loc.T("common.success"), MessageBoxButtons.OK, MessageBoxIcon.Information);
-        }
-
-        // ============== IMPORT / EXPORT XLSX ==============
-
-        private void ImportUsersFromXlsx(object sender, EventArgs e)
-        {
-            string filePath = null;
-            using (var dlg = new OpenFileDialog())
-            {
-                dlg.Title = Loc.T("cfg.usr.import_dlg_title");
-                dlg.Filter = Loc.T("cfg.usr.import_filter");
-                if (dlg.ShowDialog(this) != DialogResult.OK) return;
-                filePath = dlg.FileName;
-            }
-
-            Services.ImportResult res = null;
-            try
-            {
-                res = Services.UserExcelService.ImportFromXlsx(filePath, _db);
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(Loc.T("common.error") + ": " + ex.Message,
-                    Loc.T("common.error"), MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
-            }
-
-            RefreshUserList();
-            var h = DataSaved;
-            if (h != null) h();
-
-            string msg = string.Format(Loc.T("cfg.usr.import_done"), res.Added, res.Updated, res.Skipped);
-
-            if (res.Errors != null && res.Errors.Count > 0)
-            {
-                string errors = string.Join("\n", res.Errors.Take(20));
-                if (res.Errors.Count > 20) errors += "\n... (+" + (res.Errors.Count - 20) + ")";
-                MessageBox.Show(msg + string.Format(Loc.T("cfg.usr.import_errors"), errors),
-                    Loc.T("cfg.usr.import_err_title"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            }
-            else
-            {
-                MessageBox.Show(msg, Loc.T("common.success"), MessageBoxButtons.OK, MessageBoxIcon.Information);
-            }
-        }
-
-        private void ExportUsersToXlsx(object sender, EventArgs e)
-        {
-            string filePath = null;
-            using (var dlg = new SaveFileDialog())
-            {
-                dlg.Title = Loc.T("cfg.usr.export_dlg_title");
-                dlg.Filter = Loc.T("cfg.usr.import_filter");
-                dlg.FileName = "users_" + DateTime.Now.ToString("yyyy-MM-dd") + ".xlsx";
-                if (dlg.ShowDialog(this) != DialogResult.OK) return;
-                filePath = dlg.FileName;
-            }
-
-            try
-            {
-                var res = Services.UserExcelService.ExportToXlsx(filePath, _db);
-                MessageBox.Show(string.Format(Loc.T("cfg.usr.export_done"), res.Written, res.Path),
-                    Loc.T("common.success"), MessageBoxButtons.OK, MessageBoxIcon.Information);
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(Loc.T("common.error") + ": " + ex.Message,
-                    Loc.T("common.error"), MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
-        // ============== DANE ==============
-
-        private void LoadSettingsIntoControls()
-        {
-            try
-            {
-                if (_db == null) return;
-                var data = _db.GetData();
-                if (data == null || data.Settings == null) return;
-
-                bool b;
-                string s;
-                int iv;
-
-                if (data.Settings.TryGetValue("AutoStart", out s) && _autoStartCheck != null)
-                    _autoStartCheck.Checked = bool.TryParse(s, out b) && b;
-                if (data.Settings.TryGetValue("MinimizeToTray", out s) && _trayCheck != null)
-                    _trayCheck.Checked = bool.TryParse(s, out b) && b;
-
-                if (data.Settings.TryGetValue("BackupPath", out s) && _backupPathBox != null) _backupPathBox.Text = s;
-                if (data.Settings.TryGetValue("MonitoredFile", out s) && _monitorPathBox != null) _monitorPathBox.Text = s;
-                if (data.Settings.TryGetValue("CheckpointPath", out s) && _checkpointPathBox != null) _checkpointPathBox.Text = s;
-                if (data.Settings.TryGetValue("CheckpointArgs", out s) && _checkpointArgsBox != null) _checkpointArgsBox.Text = s;
-
-                if (data.Settings.TryGetValue("PatternThreshold", out s) && _thresholdBox != null && int.TryParse(s, out iv))
-                    _thresholdBox.Value = Math.Max(_thresholdBox.Minimum, Math.Min(_thresholdBox.Maximum, iv));
-
-                                if (data.Settings.TryGetValue("SearchInterval", out s) && _intervalBox != null && int.TryParse(s, out iv))
-                    _intervalBox.Value = Math.Max(_intervalBox.Minimum, Math.Min(_intervalBox.Maximum, iv));
-
-                if (data.Settings.TryGetValue("BackupRetentionDays", out s) && _retentionBox != null &&
-                    int.TryParse(s, out iv))
-                    _retentionBox.Value = Math.Max(_retentionBox.Minimum, Math.Min(_retentionBox.Maximum, iv));
-            }
-            catch (Exception ex) { System.Diagnostics.Debug.WriteLine("LoadSettings: " + ex.Message); }
-        }
-
-        private void LoadPatternsFromDatabase()
-        {
-            try
-            {
-                var data = _db.GetData();
-                if (data != null && data.Patterns != null && data.Patterns.Count > 0)
-                    _patterns = data.Patterns;
-                else
-                {
-                    _patterns = new List<Pattern>
-                    {
-                        new Pattern
-                        {
-                            Id = 1,
-                            Name = Loc.IsEnglish ? "Sample pattern" : "Przykładowy wzorzec",
-                            Description = Loc.IsEnglish ? "Click 'Capture from screen' to add your own" : "Kliknij 'Zaznacz z ekranu' aby dodać własny",
-                            IsActive = false, CreatedAt = DateTime.Now,
-                            MarginTop = 10, MarginBottom = 10, MarginLeft = 10, MarginRight = 10
-                        }
-                    };
-                    if (_db != null) { _db.GetData().Patterns = _patterns; _db.Save(); }
-                }
-            }
-            catch (Exception ex)
-            {
-                _patterns = new List<Pattern>();
-                System.Diagnostics.Debug.WriteLine("Load patterns error: " + ex.Message);
-            }
-            RefreshPatternList();
-        }
-
-        private void SavePatternsToDatabase()
-        {
-            try
-            {
-                if (_db != null)
-                {
-                    _db.GetData().Patterns = _patterns;
-                    if (_patterns.Count > 0)
-                        _db.GetData().NextPatternId = _patterns.Max(p => p.Id) + 1;
-                    _db.Save();
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(Loc.T("cfg.msg.save_patterns_err") + ex.Message, Loc.T("common.error"), MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
-        private void RefreshPatternList()
-        {
-            if (_patternListBox == null) return;
-            _patternListBox.Items.Clear();
-            foreach (var p in _patterns)
-            {
-                string status = p.IsActive ? "✓" : "✗";
-                string name = (p.Name ?? "—").PadRight(25);
-                string threshold = " [" + (int)Math.Round(p.MatchThreshold * 100.0) + "%]";
-                _patternListBox.Items.Add(status + "  " + name + threshold);
-            }
-        }
-
-        private void AddPatternFromScreen(object sender, EventArgs e)
-        {
-            var parentForm = this.FindForm();
-            if (parentForm != null) parentForm.WindowState = FormWindowState.Minimized;
-            System.Threading.Thread.Sleep(400);
-
-            try
-            {
-                var screenBounds = Screen.PrimaryScreen.Bounds;
-                using (var screenshot = new Bitmap(screenBounds.Width, screenBounds.Height))
-                {
-                    using (var g = Graphics.FromImage(screenshot))
-                        g.CopyFromScreen(screenBounds.X, screenBounds.Y, 0, 0, screenBounds.Size);
-
-                    using (var selectionForm = new ScreenSelectionForm(screenshot))
-                    {
-                        if (selectionForm.ShowDialog() == DialogResult.OK)
-                        {
-                            var selectedImage = selectionForm.SelectedImage;
-                            if (selectedImage != null) PromptAndSavePattern(selectedImage);
-                        }
-                    }
-                }
-            }
-            finally
-            {
-                if (parentForm != null)
-                {
-                    parentForm.WindowState = FormWindowState.Normal;
-                    parentForm.Activate();
-                }
-            }
-        }
-
-        private void PromptAndSavePattern(Image selectedImage)
-        {
-            using (var nameDialog = new Form
-            {
-                Text = Loc.T("cfg.pat.dlg_title"),
-                Size = new Size(400, 240),
-                StartPosition = FormStartPosition.CenterScreen,
-                BackColor = UiTheme.Bg,
-                Font = UiFonts.Body,
-                FormBorderStyle = FormBorderStyle.FixedDialog,
-                TopMost = true,
-                MaximizeBox = false,
-                MinimizeBox = false
-            })
-            {
-                var nameLabel = new Label
-                {
-                    Text = Loc.T("cfg.pat.dlg_label"),
-                    Font = UiFonts.CaptionBold,
-                    ForeColor = UiTheme.TextSecondary,
-                    Location = new Point(24, 24),
-                    AutoSize = true
-                };
-                var nameBox = MakeTextBox(24, 48, 336);
-                var okBtn = RoundedButton.Primary(Loc.T("cfg.pat.dlg_btn"), 120, 42);
-                okBtn.Location = new Point(120, 108);
-                okBtn.Click += (s2, args) =>
-                {
-                    if (string.IsNullOrWhiteSpace(nameBox.Text))
-                    {
-                        MessageBox.Show(Loc.T("cfg.pat.dlg_err_no_name"), Loc.T("common.info"), MessageBoxButtons.OK, MessageBoxIcon.Information);
-                        return;
-                    }
-
-                    byte[] imageData;
-                    using (var ms = new MemoryStream())
-                    {
-                        selectedImage.Save(ms, ImageFormat.Png);
-                        imageData = ms.ToArray();
-                    }
-
-                    _patterns.Add(new Pattern
-                    {
-                        Id = _patterns.Count > 0 ? _patterns.Max(p => p.Id) + 1 : 1,
-                        Name = nameBox.Text.Trim(),
-                        Description = Loc.T("cfg.pat.desc_prefix") + DateTime.Now.ToString("yyyy-MM-dd HH:mm"),
-                        ImageData = imageData,
-                        MarginTop = (int)_marginBox.Value,
-                        MarginBottom = (int)_marginBox.Value,
-                        MarginLeft = (int)_marginBox.Value,
-                        MarginRight = (int)_marginBox.Value,
-                        MatchThreshold = (double)_thresholdBox.Value / 100.0,
-                        IsActive = true,
-                        CreatedAt = DateTime.Now
-                    });
-                    SavePatternsToDatabase();
-                    RefreshPatternList();
-                    nameDialog.Close();
-                };
-                nameDialog.Controls.AddRange(new Control[] { nameLabel, nameBox, okBtn });
-                nameDialog.ShowDialog();
-            }
-        }
-
-        private void DeleteSelectedPattern(object sender, EventArgs e)
-        {
-            if (_patternListBox.SelectedIndex >= 0)
-            {
-                if (MessageBox.Show(Loc.T("cfg.pat.del_confirm"), Loc.T("common.confirm"),
-                    MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
-                {
-                    _patterns.RemoveAt(_patternListBox.SelectedIndex);
-                    if (_patternPreviewBox.Image != null)
-                    {
-                        _patternPreviewBox.Image.Dispose();
-                        _patternPreviewBox.Image = null;
-                    }
-                    SavePatternsToDatabase();
-                    RefreshPatternList();
-                }
-            }
-            else MessageBox.Show(Loc.T("cfg.pat.del_select"), Loc.T("common.info"), MessageBoxButtons.OK, MessageBoxIcon.Information);
-        }
-
-        private void SaveAllSettings(object sender, EventArgs e)
-        {
-            try
-            {
-                if (_db == null)
-                {
-                    MessageBox.Show(Loc.T("cfg.msg.no_db"), Loc.T("common.error"), MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    return;
-                }
-
-                var data = _db.GetData();
-                data.Patterns = _patterns;
-                if (_patterns.Count > 0)
-                    data.NextPatternId = _patterns.Max(p => p.Id) + 1;
-
-                data.Tips = _tips;
-                if (_tips.Count > 0)
-                    data.NextTipId = _tips.Max(t => t.Id) + 1;
-
-                data.Settings["AutoStart"] = (_autoStartCheck != null && _autoStartCheck.Checked).ToString();
-                data.Settings["MinimizeToTray"] = (_trayCheck == null || _trayCheck.Checked).ToString();
-                data.Settings["BackupPath"] = _backupPathBox.Text;
-                if (_monitorPathBox != null) data.Settings["MonitoredFile"] = _monitorPathBox.Text;
-                data.Settings["CheckpointPath"] = _checkpointPathBox.Text;
-                data.Settings["CheckpointArgs"] = _checkpointArgsBox.Text;
-                data.Settings["PatternThreshold"] = _thresholdBox.Value.ToString();
-                                data.Settings["SearchInterval"] = _intervalBox.Value.ToString();
-                if (_retentionBox != null)
-                    data.Settings["BackupRetentionDays"] = _retentionBox.Value.ToString();
-
-                if (!string.IsNullOrWhiteSpace(_adminPasswordBox.Text))
-                {
-                    var admin = data.Users.FirstOrDefault(u => u.IdentificationNumber == "admin");
-                    if (admin != null)
-                    {
-                        admin.Salt = SecurityHelper.GenerateSalt();
-                        admin.PasswordHash = SecurityHelper.HashPassword(_adminPasswordBox.Text, admin.Salt);
-                    }
-                    _adminPasswordBox.Text = "";
-                }
-
-                _db.Save();
-                var saved = DataSaved;
-                if (saved != null) saved();
-                MessageBox.Show(Loc.T("cfg.msg.saved"), Loc.T("common.success"), MessageBoxButtons.OK, MessageBoxIcon.Information);
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(Loc.T("cfg.msg.save_err") + ex.Message, Loc.T("common.error"), MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-    }
-
-    // ============== SCREEN SELECTION FORM ==============
-
-    public class ScreenSelectionForm : Form
-    {
-        private Point _startPoint;
-        private Point _endPoint;
-        private Rectangle _selectedRect;
-        private bool _isSelecting;
-        private readonly Bitmap _screenshot;
-        private Image _resultImage;
-
-        public Image SelectedImage { get { return _resultImage; } }
-
-        public ScreenSelectionForm(Bitmap screenshot)
-        {
-            _screenshot = screenshot;
-            this.FormBorderStyle = FormBorderStyle.None;
-            this.StartPosition = FormStartPosition.Manual;
-            this.Bounds = Screen.PrimaryScreen.Bounds;
-            this.TopMost = true;
-            this.Cursor = Cursors.Cross;
-            this.DoubleBuffered = true;
-            this.BackgroundImage = screenshot;
-            this.BackgroundImageLayout = ImageLayout.None;
-            this.Opacity = 0.95;
-
-            var infoLabel = new Label
-            {
-                Text = Loc.T("sel.hint"),
-                Font = UiFonts.H2,
-                ForeColor = Color.White,
-                BackColor = Color.FromArgb(200, 0, 0, 0),
-                Location = new Point(0, 0),
-                Size = new Size(this.Width, 56),
-                TextAlign = ContentAlignment.MiddleCenter
-            };
-            this.Controls.Add(infoLabel);
-
-            this.MouseDown += (s, e) => { _startPoint = e.Location; _isSelecting = true; };
-            this.MouseMove += (s, e) => { if (_isSelecting) { _endPoint = e.Location; this.Invalidate(); } };
-            this.MouseUp += (s, e) => { _isSelecting = false; _endPoint = e.Location; this.Invalidate(); };
-
-            this.KeyDown += (s, e) =>
-            {
-                if (e.KeyCode == Keys.Enter && _selectedRect.Width > 4 && _selectedRect.Height > 4)
-                {
-                    _resultImage = _screenshot.Clone(_selectedRect, _screenshot.PixelFormat);
-                    this.DialogResult = DialogResult.OK;
-                    this.Close();
-                }
-                else if (e.KeyCode == Keys.Escape)
-                {
-                    this.DialogResult = DialogResult.Cancel;
-                    this.Close();
-                }
-            };
-        }
-
-        protected override void OnPaint(PaintEventArgs e)
-        {
-            base.OnPaint(e);
-            if (_startPoint != Point.Empty && _endPoint != Point.Empty)
-            {
-                int x = Math.Min(_startPoint.X, _endPoint.X);
-                int y = Math.Min(_startPoint.Y, _endPoint.Y);
-                int w = Math.Abs(_endPoint.X - _startPoint.X);
-                int h = Math.Abs(_endPoint.Y - _startPoint.Y);
-
-                _selectedRect = new Rectangle(x, y, w, h);
-
-                using (var brush = new SolidBrush(Color.FromArgb(120, 0, 0, 0)))
-                {
-                    e.Graphics.FillRectangle(brush, 0, 0, this.Width, y);
-                    e.Graphics.FillRectangle(brush, 0, y + h, this.Width, this.Height - y - h);
-                    e.Graphics.FillRectangle(brush, 0, y, x, h);
-                    e.Graphics.FillRectangle(brush, x + w, y, this.Width - x - w, h);
-                }
-
-                using (var pen = new Pen(UiTheme.Primary, 3))
-                    e.Graphics.DrawRectangle(pen, _selectedRect);
-
-                var sizeText = w + " × " + h + " px";
-                var textSize = e.Graphics.MeasureString(sizeText, UiFonts.H3);
-                e.Graphics.DrawString(sizeText, UiFonts.H3, Brushes.White,
-                    x + (w - (int)textSize.Width) / 2,
-                    y < 30 ? y + h + 8 : y - 30);
-            }
-        }
-    }
-}
+                item.SubItems.Add(roleTxt);
+                item.SubItems.Add(u.IsActive ? Loc.T("cfg.usr.y
