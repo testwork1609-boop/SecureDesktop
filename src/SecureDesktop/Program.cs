@@ -83,7 +83,7 @@ namespace SecureDesktop
         /// Przy każdym uruchomieniu: odczytaj BackupPath i BackupRetentionDays
         /// z Settings, następnie usuń TRWALE foldery starsze niż retention.
         /// </summary>
-        private static void PurgeOldBackupsOnStartup()
+                private static void PurgeOldBackupsOnStartup()
         {
             try
             {
@@ -118,6 +118,28 @@ namespace SecureDesktop
                 System.Diagnostics.Debug.WriteLine(
                     "PurgeOldBackupsOnStartup: usunieto " + deleted +
                     " folderow starszych niz " + retentionDays + " dni (" + backupPath + ")");
+
+                // === Log zdarzenia do dziennika ===
+                if (deleted > 0)
+                {
+                    try
+                    {
+                        var eventRepo = new Database.Repositories.EventLogRepository(_globalDb);
+                        eventRepo.Create(new Models.EventLog
+                        {
+                            UserId = null,
+                            IdentificationNumber = "SYSTEM",
+                            OperationName = "BackupPurge",
+                            Result = "Success",
+                            Severity = "Info",
+                            Description = Loc.T("log.backup_purge", deleted, retentionDays)
+                        });
+                    }
+                    catch (Exception exLog)
+                    {
+                        System.Diagnostics.Debug.WriteLine("PurgeOldBackupsOnStartup log error: " + exLog.Message);
+                    }
+                }
             }
             catch (Exception ex)
             {
