@@ -29,6 +29,7 @@ namespace SecureDesktop.Forms
         private List<Pattern> _patterns;
         private readonly DatabaseInitializer _db;
         private readonly UserRepository _userRepo;
+        private readonly ShiftRepository _shiftRepo;
         private ListView _userListView;
 
         // Tips
@@ -39,6 +40,14 @@ namespace SecureDesktop.Forms
         private Label _tipEditingLabel;
         private int _editingTipId = -1;
 
+        // Shifts
+        private List<Shift> _shifts;
+        private ListBox _shiftsListBox;
+        private TextBox _shiftNameBox;
+        private TextBox _shiftPassBox;
+        private Label _shiftEditingLabel;
+        private int _editingShiftId = -1;
+
         public event Action CloseRequested;
         public event Action DataSaved;
 
@@ -46,8 +55,10 @@ namespace SecureDesktop.Forms
         {
             _db = db;
             _userRepo = new UserRepository(_db);
+            _shiftRepo = new ShiftRepository(_db);
             _patterns = new List<Pattern>();
             _tips = new List<Tip>();
+            _shifts = new List<Shift>();
             this.BackColor = UiTheme.Bg;
             this.ForeColor = UiTheme.TextPrimary;
             this.Font = UiFonts.Body;
@@ -56,10 +67,9 @@ namespace SecureDesktop.Forms
             InitializeComponent();
             LoadPatternsFromDatabase();
             LoadTipsFromDatabase();
+            LoadShiftsFromDatabase();
             LoadSettingsIntoControls();
         }
-
-        // ============== UI ==============
 
         private void InitializeComponent()
         {
@@ -94,6 +104,7 @@ namespace SecureDesktop.Forms
             var tabGeneral = MakeTab(Loc.T("cfg.tab.general"));
             var tabPatterns = MakeTab(Loc.T("cfg.tab.patterns"));
             var tabTips = MakeTab(Loc.T("cfg.tab.tips"));
+            var tabShifts = MakeTab(Loc.T("cfg.tab.shifts"));
             var tabCheckpoint = MakeTab(Loc.T("cfg.tab.checkpoint"));
             var tabBackup = MakeTab(Loc.T("cfg.tab.backup"));
             var tabUsers = MakeTab(Loc.T("cfg.tab.users"));
@@ -101,6 +112,7 @@ namespace SecureDesktop.Forms
             tabControl.TabPages.Add(tabGeneral);
             tabControl.TabPages.Add(tabPatterns);
             tabControl.TabPages.Add(tabTips);
+            tabControl.TabPages.Add(tabShifts);
             tabControl.TabPages.Add(tabCheckpoint);
             tabControl.TabPages.Add(tabBackup);
             tabControl.TabPages.Add(tabUsers);
@@ -108,6 +120,7 @@ namespace SecureDesktop.Forms
             BuildGeneralTab(tabGeneral);
             BuildPatternsTab(tabPatterns);
             BuildTipsTab(tabTips);
+            BuildShiftsTab(tabShifts);
             BuildCheckpointTab(tabCheckpoint);
             BuildBackupTab(tabBackup);
             BuildUsersTab(tabUsers);
@@ -436,6 +449,199 @@ namespace SecureDesktop.Forms
             tab.Controls.Add(resetTipBtn);
         }
 
+        // ============== ZMIANY ==============
+
+        private void BuildShiftsTab(TabPage tab)
+        {
+            tab.Controls.Add(new Label
+            {
+                Text = Loc.T("cfg.shifts.title"),
+                Font = UiFonts.H3,
+                ForeColor = UiTheme.TextPrimary,
+                Location = new Point(0, 0),
+                AutoSize = true
+            });
+
+            tab.Controls.Add(new Label
+            {
+                Text = Loc.T("cfg.shifts.hint"),
+                Font = UiFonts.Small,
+                ForeColor = UiTheme.TextMuted,
+                Location = new Point(0, 26),
+                AutoSize = true
+            });
+
+            _shiftsListBox = new ListBox
+            {
+                Location = new Point(0, 52),
+                Size = new Size(380, 316),
+                Font = UiFonts.Body,
+                BorderStyle = BorderStyle.None,
+                BackColor = UiTheme.Surface,
+                ForeColor = UiTheme.TextPrimary
+            };
+            _shiftsListBox.SelectedIndexChanged += (s, e) => LoadSelectedShiftIntoForm();
+            tab.Controls.Add(_shiftsListBox);
+
+            var newBtn = RoundedButton.SoftGreen(Loc.T("cfg.shifts.btn_new"), 184, 40);
+            newBtn.Location = new Point(0, 380);
+            newBtn.Click += (s, e) => StartNewShift();
+            tab.Controls.Add(newBtn);
+
+            var deleteBtn = RoundedButton.SoftRed(Loc.T("cfg.shifts.btn_del"), 184, 40);
+            deleteBtn.Location = new Point(196, 380);
+            deleteBtn.Click += DeleteSelectedShift;
+            tab.Controls.Add(deleteBtn);
+
+            _shiftEditingLabel = new Label
+            {
+                Text = Loc.T("cfg.shifts.editing_new"),
+                Font = UiFonts.H3,
+                ForeColor = UiTheme.TextPrimary,
+                Location = new Point(420, 0),
+                AutoSize = true
+            };
+            tab.Controls.Add(_shiftEditingLabel);
+
+            tab.Controls.Add(MakeFieldLabel(Loc.T("cfg.shifts.field_name"), 420, 36));
+            _shiftNameBox = MakeTextBox(420, 58, 340);
+            tab.Controls.Add(_shiftNameBox);
+
+            tab.Controls.Add(MakeFieldLabel(Loc.T("cfg.shifts.field_pass"), 420, 100));
+            _shiftPassBox = MakeTextBox(420, 122, 340, password: true);
+            tab.Controls.Add(_shiftPassBox);
+
+            tab.Controls.Add(new Label
+            {
+                Text = Loc.T("cfg.shifts.pass_hint"),
+                Font = UiFonts.Small,
+                ForeColor = UiTheme.TextMuted,
+                Location = new Point(420, 158),
+                AutoSize = true
+            });
+
+            var saveShiftBtn = RoundedButton.Primary(Loc.T("cfg.shifts.btn_save"), 220, 42);
+            saveShiftBtn.Location = new Point(420, 200);
+            saveShiftBtn.Click += (s, e) => SaveCurrentShift();
+            tab.Controls.Add(saveShiftBtn);
+
+            var resetShiftBtn = RoundedButton.Ghost(Loc.T("cfg.shifts.btn_clear"), 112, 42);
+            resetShiftBtn.Location = new Point(648, 200);
+            resetShiftBtn.Click += (s, e) => StartNewShift();
+            tab.Controls.Add(resetShiftBtn);
+        }
+
+        private void LoadShiftsFromDatabase()
+        {
+            try
+            {
+                _shifts = _shiftRepo.GetAllShifts();
+            }
+            catch (Exception ex)
+            {
+                _shifts = new List<Shift>();
+                System.Diagnostics.Debug.WriteLine("Load shifts error: " + ex.Message);
+            }
+            RefreshShiftsList();
+        }
+
+        private void RefreshShiftsList()
+        {
+            if (_shiftsListBox == null) return;
+            _shiftsListBox.Items.Clear();
+            foreach (var s in _shifts)
+                _shiftsListBox.Items.Add(s.Name ?? "(—)");
+        }
+
+        private void StartNewShift()
+        {
+            _editingShiftId = -1;
+            _shiftsListBox.ClearSelected();
+            _shiftNameBox.Text = "";
+            _shiftPassBox.Text = "";
+            _shiftEditingLabel.Text = Loc.T("cfg.shifts.editing_new");
+        }
+
+        private void LoadSelectedShiftIntoForm()
+        {
+            if (_shiftsListBox.SelectedIndex < 0 || _shiftsListBox.SelectedIndex >= _shifts.Count) return;
+            var s = _shifts[_shiftsListBox.SelectedIndex];
+            _editingShiftId = s.Id;
+            _shiftNameBox.Text = s.Name ?? "";
+            _shiftPassBox.Text = "";
+            _shiftEditingLabel.Text = Loc.T("cfg.shifts.editing_edit");
+        }
+
+        private void SaveCurrentShift()
+        {
+            string name = (_shiftNameBox.Text ?? "").Trim();
+            string pass = _shiftPassBox.Text ?? "";
+
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                MessageBox.Show(Loc.T("cfg.shifts.err_no_name"), Loc.T("common.info"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            if (_editingShiftId == -1)
+            {
+                if (string.IsNullOrEmpty(pass))
+                {
+                    MessageBox.Show(Loc.T("cfg.shifts.err_no_pass_new"), Loc.T("common.info"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+                var newShift = new Shift { Name = name };
+                newShift.Salt = SecurityHelper.GenerateSalt();
+                newShift.PasswordHash = SecurityHelper.HashPassword(pass, newShift.Salt);
+                _shiftRepo.AddShift(newShift);
+            }
+            else
+            {
+                var existing = _shifts.FirstOrDefault(x => x.Id == _editingShiftId);
+                if (existing != null)
+                {
+                    existing.Name = name;
+                    _shiftRepo.UpdateShift(existing);
+                    if (!string.IsNullOrEmpty(pass))
+                        _shiftRepo.SetPassword(existing.Id, pass);
+                }
+            }
+
+            LoadShiftsFromDatabase();
+            StartNewShift();
+            var h = DataSaved;
+            if (h != null) h();
+            MessageBox.Show(Loc.T("cfg.shifts.saved"), Loc.T("common.success"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+        private void DeleteSelectedShift(object sender, EventArgs e)
+        {
+            if (_shiftsListBox.SelectedIndex < 0 || _shiftsListBox.SelectedIndex >= _shifts.Count)
+            {
+                MessageBox.Show(Loc.T("cfg.shifts.select_to_delete"), Loc.T("common.info"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            if (MessageBox.Show(Loc.T("cfg.shifts.del_confirm"), Loc.T("common.confirm"),
+                MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                return;
+
+            try
+            {
+                _shiftRepo.DeleteShift(_shifts[_shiftsListBox.SelectedIndex].Id);
+                LoadShiftsFromDatabase();
+                StartNewShift();
+                var h = DataSaved;
+                if (h != null) h();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message, Loc.T("common.error"), MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        // ============== TIPS HELPERS ==============
+
         private void LoadTipsFromDatabase()
         {
             try
@@ -615,17 +821,10 @@ namespace SecureDesktop.Forms
             else if (result.Score >= 0.6) verdict = Loc.T("cfg.pat.verdict_similar");
             else verdict = Loc.T("cfg.pat.verdict_notvisible");
 
-            string headerLine = Loc.T("cfg.pat.test_header",
-                pattern.Name,
-                result.PatternWidth,
-                result.PatternHeight,
-                result.StdDev.ToString("F1"));
-
-            string scoresLine = "Top-1: " + result.Score.ToString("F3") +
-                                "   Top-2: " + result.SecondScore.ToString("F3") +
+            string headerLine = Loc.T("cfg.pat.test_header", pattern.Name, result.PatternWidth, result.PatternHeight, result.StdDev.ToString("F1"));
+            string scoresLine = "Top-1: " + result.Score.ToString("F3") + "   Top-2: " + result.SecondScore.ToString("F3") +
                                 "   Top-3: " + result.ThirdScore.ToString("F3") +
                                 "   " + (Loc.IsEnglish ? "Threshold" : "Próg") + ": " + result.Threshold.ToString("F2");
-
             string msg = headerLine + "\n" + scoresLine + "\n" + verdict;
 
             using (var preview = new Form
@@ -882,10 +1081,11 @@ namespace SecureDesktop.Forms
                 BorderStyle = BorderStyle.FixedSingle,
                 Font = UiFonts.Body
             };
-            _userListView.Columns.Add(Loc.T("cfg.usr.col_id"), 60);
-            _userListView.Columns.Add(Loc.T("cfg.usr.col_ident"), 240);
-            _userListView.Columns.Add(Loc.T("cfg.usr.col_role"), 130);
-            _userListView.Columns.Add(Loc.T("cfg.usr.col_active"), 90);
+            _userListView.Columns.Add(Loc.T("cfg.usr.col_id"), 40);
+            _userListView.Columns.Add(Loc.T("cfg.usr.col_ident"), 180);
+            _userListView.Columns.Add(Loc.T("cfg.usr.col_shift"), 130);
+            _userListView.Columns.Add(Loc.T("cfg.usr.col_role"), 110);
+            _userListView.Columns.Add(Loc.T("cfg.usr.col_active"), 70);
             RefreshUserList();
             tab.Controls.Add(_userListView);
 
@@ -909,10 +1109,15 @@ namespace SecureDesktop.Forms
         {
             if (_userListView == null || _userRepo == null) return;
             _userListView.Items.Clear();
+
+            var shifts = _shiftRepo != null ? _shiftRepo.GetAllShifts() : new List<Shift>();
             foreach (var u in _userRepo.GetAllUsers())
             {
+                var shift = u.ShiftId.HasValue ? shifts.FirstOrDefault(s => s.Id == u.ShiftId.Value) : null;
+
                 var item = new ListViewItem(u.Id.ToString());
                 item.SubItems.Add(u.IdentificationNumber);
+                item.SubItems.Add(shift != null ? shift.Name : "—");
                 item.SubItems.Add(u.IsAdmin ? Loc.T("cfg.usr.role_admin") : Loc.T("cfg.usr.role_user"));
                 item.SubItems.Add(u.IsActive ? Loc.T("cfg.usr.yes") : Loc.T("cfg.usr.no"));
                 _userListView.Items.Add(item);
@@ -921,10 +1126,17 @@ namespace SecureDesktop.Forms
 
         private void AddUser(object sender, EventArgs e)
         {
+            var shifts = _shiftRepo != null ? _shiftRepo.GetAllShifts() : new List<Shift>();
+            if (shifts.Count == 0)
+            {
+                MessageBox.Show(Loc.T("cfg.usr.no_shifts"), Loc.T("common.info"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
             using (var dialog = new Form
             {
                 Text = Loc.T("cfg.usr.dlg_title"),
-                Size = new Size(400, 340),
+                Size = new Size(420, 360),
                 StartPosition = FormStartPosition.CenterParent,
                 BackColor = UiTheme.Bg,
                 Font = UiFonts.Body,
@@ -934,21 +1146,32 @@ namespace SecureDesktop.Forms
             })
             {
                 var idLabel = MakeFieldLabel(Loc.T("cfg.usr.dlg_ident"), 24, 24);
-                var idBox = MakeTextBox(24, 48, 336);
-                var passLabel = MakeFieldLabel(Loc.T("cfg.usr.dlg_pass"), 24, 92);
-                var passBox = MakeTextBox(24, 116, 336, password: true);
+                var idBox = MakeTextBox(24, 48, 356);
+
+                var shiftLabel = MakeFieldLabel(Loc.T("cfg.usr.dlg_shift"), 24, 92);
+                var shiftCombo = new ComboBox
+                {
+                    Location = new Point(24, 116),
+                    Size = new Size(356, 30),
+                    DropDownStyle = ComboBoxStyle.DropDownList,
+                    Font = UiFonts.BodyLarge,
+                    BackColor = UiTheme.Surface
+                };
+                foreach (var s in shifts) shiftCombo.Items.Add(s.Name);
+                shiftCombo.SelectedIndex = 0;
+
                 var adminCheck = new CheckBox
                 {
                     Text = Loc.T("cfg.usr.dlg_admin"),
                     Font = UiFonts.Body,
-                    Location = new Point(24, 168),
+                    Location = new Point(24, 162),
                     AutoSize = true,
                     FlatStyle = FlatStyle.Flat,
                     ForeColor = UiTheme.TextPrimary
                 };
 
-                var okBtn = RoundedButton.Primary(Loc.T("cfg.usr.dlg_add"), 120, 42);
-                okBtn.Location = new Point(120, 216);
+                var okBtn = RoundedButton.Primary(Loc.T("cfg.usr.dlg_add"), 130, 42);
+                okBtn.Location = new Point(120, 230);
                 okBtn.Click += (s, args) =>
                 {
                     if (string.IsNullOrWhiteSpace(idBox.Text))
@@ -956,9 +1179,9 @@ namespace SecureDesktop.Forms
                         MessageBox.Show(Loc.T("cfg.usr.err_empty_ident"), Loc.T("common.info"), MessageBoxButtons.OK, MessageBoxIcon.Information);
                         return;
                     }
-                    if (string.IsNullOrWhiteSpace(passBox.Text))
+                    if (shiftCombo.SelectedIndex < 0)
                     {
-                        MessageBox.Show(Loc.T("cfg.usr.err_empty_pass"), Loc.T("common.info"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        MessageBox.Show(Loc.T("cfg.usr.err_no_shift"), Loc.T("common.info"), MessageBoxButtons.OK, MessageBoxIcon.Information);
                         return;
                     }
                     if (_userRepo.GetByIdentificationNumber(idBox.Text) != null)
@@ -966,24 +1189,26 @@ namespace SecureDesktop.Forms
                         MessageBox.Show(Loc.T("cfg.usr.err_exists"), Loc.T("common.error"), MessageBoxButtons.OK, MessageBoxIcon.Error);
                         return;
                     }
-                    var salt = SecurityHelper.GenerateSalt();
+
+                    var selectedShift = shifts[shiftCombo.SelectedIndex];
                     _userRepo.AddUser(new User
                     {
                         IdentificationNumber = idBox.Text.Trim(),
-                        Salt = salt,
-                        PasswordHash = SecurityHelper.HashPassword(passBox.Text, salt),
+                        Salt = "",
+                        PasswordHash = "",
                         IsAdmin = adminCheck.Checked,
-                        IsActive = true
+                        IsActive = true,
+                        ShiftId = selectedShift.Id
                     });
                     RefreshUserList();
                     dialog.Close();
                 };
 
-                var cancelBtn = RoundedButton.Ghost(Loc.T("cfg.usr.dlg_cancel"), 108, 42);
-                cancelBtn.Location = new Point(252, 216);
+                var cancelBtn = RoundedButton.Ghost(Loc.T("cfg.usr.dlg_cancel"), 120, 42);
+                cancelBtn.Location = new Point(260, 230);
                 cancelBtn.Click += (s, args) => dialog.Close();
 
-                dialog.Controls.AddRange(new Control[] { idLabel, idBox, passLabel, passBox, adminCheck, okBtn, cancelBtn });
+                dialog.Controls.AddRange(new Control[] { idLabel, idBox, shiftLabel, shiftCombo, adminCheck, okBtn, cancelBtn });
                 dialog.ShowDialog(this);
             }
         }
@@ -1081,7 +1306,8 @@ namespace SecureDesktop.Forms
                     {
                         new Pattern
                         {
-                            Id = 1, Name = Loc.IsEnglish ? "Sample pattern" : "Przykładowy wzorzec",
+                            Id = 1,
+                            Name = Loc.IsEnglish ? "Sample pattern" : "Przykładowy wzorzec",
                             Description = Loc.IsEnglish ? "Click 'Capture from screen' to add your own" : "Kliknij 'Zaznacz z ekranu' aby dodać własny",
                             IsActive = false, CreatedAt = DateTime.Now,
                             MarginTop = 10, MarginBottom = 10, MarginLeft = 10, MarginRight = 10
