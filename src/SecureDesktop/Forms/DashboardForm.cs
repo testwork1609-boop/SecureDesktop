@@ -4,6 +4,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using SecureDesktop.Database;
 using SecureDesktop.Database.Repositories;
@@ -15,6 +16,14 @@ namespace SecureDesktop.Forms
 {
     public class DashboardForm : Form
     {
+        [DllImport("user32.dll")]
+        private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+        private const int SW_RESTORE = 9;
+
         private User _currentUser;
         private int _sessionId;
         private readonly DatabaseInitializer _db;
@@ -81,11 +90,18 @@ namespace SecureDesktop.Forms
                 var view = new ConfigurationView(_db, _currentUser);
                 view.CloseRequested += () => BeginInvoke(new Action(() =>
                 {
-                    MarkFirstRunCompleted();
+                    if (_isFirstRun) MarkFirstRunCompleted();
                     LoadStats();
                     ShowHome();
                 }));
-                view.DataSaved += () => BeginInvoke(new Action(LoadStats));
+                view.DataSaved += () => BeginInvoke(new Action(() =>
+                {
+                    // Po pierwszym udanym zapisie ustawień oznacz pierwszą
+                    // konfigurację jako zakończoną - żeby przy następnym
+                    // uruchomieniu NIE wyskakiwał ponownie komunikat.
+                    if (_isFirstRun) MarkFirstRunCompleted();
+                    LoadStats();
+                }));
                 ShowView(view, Loc.T("cfg.title"));
             }
             catch { }
@@ -121,6 +137,12 @@ namespace SecureDesktop.Forms
                     Visible = false,
                     ContextMenuStrip = _trayMenu
                 };
+
+                // Dwuklik na ikonkę w trayu - przywróć okno (jeśli nie zablokowane).
+                _trayIcon.DoubleClick += (s, e) =>
+                {
+                    if (!_lockService.IsLocked) RestoreFromTray();
+                };
             }
             catch { }
         }
@@ -149,10 +171,25 @@ namespace SecureDesktop.Forms
                 _isInTray = false;
                 if (_trayIcon != null)
                     _trayIcon.Visible = false;
+
                 this.ShowInTaskbar = true;
                 this.WindowState = FormWindowState.Normal;
                 this.Show();
+
+                // Win32 - niezawodne przywrócenie okna z paska zadań
+                // po Hide(). Samo .Show()/.Activate() czasem nie działa.
+                try
+                {
+                    if (this.IsHandleCreated)
+                    {
+                        ShowWindow(this.Handle, SW_RESTORE);
+                        SetForegroundWindow(this.Handle);
+                    }
+                }
+                catch { }
+
                 this.Activate();
+                this.BringToFront();
             }
             catch { }
         }
@@ -492,7 +529,14 @@ namespace SecureDesktop.Forms
                         LoadStats();
                         ShowHome();
                     }));
-                    view.DataSaved += () => BeginInvoke(new Action(LoadStats));
+                    view.DataSaved += () => BeginInvoke(new Action(() =>
+                    {
+                        // Po pierwszym udanym zapisie ustawień oznacz pierwszą
+                        // konfigurację jako zakończoną - żeby przy następnym
+                        // uruchomieniu NIE wyskakiwał ponownie komunikat.
+                        if (_isFirstRun) MarkFirstRunCompleted();
+                        LoadStats();
+                    }));
                     ShowView(view, Loc.T("cfg.title"));
                 };
                 sidebarPanel.Controls.Add(configBtn);
@@ -612,7 +656,6 @@ namespace SecureDesktop.Forms
             _lockInProgress = true;
             try
             {
-                // Do traya ZANIM pokażemy overlay, żeby dashboard nie migał.
                 HideToTray();
                 await System.Threading.Tasks.Task.Delay(500);
                 _lockService.LockAllScreens();
@@ -781,6 +824,27 @@ namespace SecureDesktop.Forms
         {
             if (_isFirstRun) MarkFirstRunCompleted();
             base.OnFormClosing(e);
+        }
+
+        /// <summary>
+        /// Gdy użytkownik kliknie ikonę w pasku zadań, a okno było
+        /// ukryte w trayu - przywróć je poprawnie przez Win32.
+        /// </summary>
+        protected override void WndProc(ref Message m)
+        {
+            const int WM_SYSCOMMAND = 0x0112;
+            const int SC_RESTORE = 0xF120;
+
+            if (m.Msg == WM_SYSCOMMAND && (m.WParam.ToInt32() & 0xFFF0) == SC_RESTORE)
+            {
+                if (_isInTray)
+                {
+                    RestoreFromTray();
+                    return;
+                }
+            }
+
+            base.WndProc(ref m);
         }
 
         protected override void Dispose(bool disposing)
