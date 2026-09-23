@@ -6,6 +6,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using SecureDesktop.Models;
+using SecureDesktop.Services;
 using SecureDesktop.Utils;
 
 namespace SecureDesktop.Forms
