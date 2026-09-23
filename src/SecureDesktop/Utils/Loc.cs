@@ -74,20 +74,20 @@ namespace SecureDesktop.Utils
             return s;
         }
 
-        // =========================== PL ===========================
         private static void BuildPolish()
         {
             var d = new Dictionary<string, string>();
 
             d["login.window_title"] = "SecureDesktop — Logowanie";
             d["login.subtitle"] = "Zaloguj się, aby kontynuować";
-            d["login.id"] = "Numer identyfikacyjny";
-            d["login.password"] = "Hasło";
+            d["login.id"] = "Numer identyfikacyjny (PIN)";
+            d["login.password"] = "Hasło zmiany";
             d["login.submit"] = "Zaloguj się";
             d["login.hint"] = "Domyślnie: admin / admin";
-            d["login.err.empty"] = "Podaj numer identyfikacyjny i hasło";
-            d["login.err.invalid"] = "Nieprawidłowy login lub hasło";
-            d["login.err.no_pass"] = "Konto nie ma ustawionego hasła";
+            d["login.err.empty"] = "Podaj PIN i hasło zmiany";
+            d["login.err.invalid"] = "Nieprawidłowy PIN lub hasło zmiany";
+            d["login.err.no_pass"] = "Zmiana nie ma ustawionego hasła";
+            d["login.err.no_shift"] = "Konto nie ma przypisanej zmiany";
             d["login.err.generic"] = "Błąd: ";
 
             d["common.ok"] = "OK";
@@ -132,14 +132,15 @@ namespace SecureDesktop.Utils
             d["cfg.tab.general"] = "Ogólne";
             d["cfg.tab.patterns"] = "Wzorce";
             d["cfg.tab.tips"] = "Wskazówki";
+            d["cfg.tab.shifts"] = "Zmiany";
             d["cfg.tab.checkpoint"] = "CheckPoint";
             d["cfg.tab.backup"] = "Backup";
             d["cfg.tab.users"] = "Użytkownicy";
             d["cfg.btn.save_all"] = "💾   Zapisz wszystkie ustawienia";
             d["cfg.btn.back"] = "Powrót do panelu";
 
-            d["cfg.gen.pass_label"] = "Nowe hasło administratora";
-            d["cfg.gen.pass_hint"] = "Pozostaw puste, aby nie zmieniać hasła.";
+            d["cfg.gen.pass_label"] = "Nowe hasło administratora (legacy)";
+            d["cfg.gen.pass_hint"] = "Pozostaw puste, aby nie zmieniać. Hasła zmian ustaw w zakładce Zmiany.";
             d["cfg.gen.autostart"] = "Uruchamiaj przy starcie Windows";
             d["cfg.gen.tray"] = "Minimalizuj do zasobnika systemowego";
 
@@ -188,6 +189,24 @@ namespace SecureDesktop.Utils
             d["cfg.tips.select_to_delete"] = "Zaznacz wskazówkę do usunięcia.";
             d["cfg.tips.del_confirm"] = "Czy na pewno usunąć zaznaczoną wskazówkę?";
 
+            d["cfg.shifts.title"] = "Zmiany — hasła logowania";
+            d["cfg.shifts.hint"] = "Każda zmiana ma własne hasło. Użytkownik loguje się przez swój PIN + hasło zmiany.";
+            d["cfg.shifts.btn_new"] = "➕   Nowa zmiana";
+            d["cfg.shifts.btn_del"] = "🗑   Usuń zaznaczoną";
+            d["cfg.shifts.editing_new"] = "Nowa zmiana";
+            d["cfg.shifts.editing_edit"] = "Edycja zmiany";
+            d["cfg.shifts.field_name"] = "Nazwa zmiany";
+            d["cfg.shifts.field_pass"] = "Hasło zmiany";
+            d["cfg.shifts.pass_hint"] = "Pozostaw puste, aby nie zmieniać hasła.";
+            d["cfg.shifts.btn_save"] = "💾   Zapisz zmianę";
+            d["cfg.shifts.btn_clear"] = "Wyczyść";
+            d["cfg.shifts.err_no_name"] = "Podaj nazwę zmiany.";
+            d["cfg.shifts.err_no_pass_new"] = "Podaj hasło dla nowej zmiany.";
+            d["cfg.shifts.saved"] = "Zmiana zapisana!";
+            d["cfg.shifts.select_to_delete"] = "Zaznacz zmianę do usunięcia.";
+            d["cfg.shifts.del_confirm"] = "Czy na pewno usunąć zaznaczoną zmianę?";
+            d["cfg.shifts.del_has_users"] = "Do tej zmiany są przypisani aktywni użytkownicy.";
+
             d["cfg.cp.path"] = "Ścieżka do pliku EXE";
             d["cfg.cp.args"] = "Parametry uruchomienia";
             d["cfg.cp.btn_test"] = "▶   Testuj uruchomienie";
@@ -202,6 +221,7 @@ namespace SecureDesktop.Utils
             d["cfg.usr.title"] = "Zarządzanie użytkownikami";
             d["cfg.usr.col_id"] = "ID";
             d["cfg.usr.col_ident"] = "Numer identyfikacyjny";
+            d["cfg.usr.col_shift"] = "Zmiana";
             d["cfg.usr.col_role"] = "Rola";
             d["cfg.usr.col_active"] = "Aktywny";
             d["cfg.usr.role_admin"] = "Administrator";
@@ -212,13 +232,13 @@ namespace SecureDesktop.Utils
             d["cfg.usr.btn_deactivate"] = "🗑   Dezaktywuj";
             d["cfg.usr.btn_toggle"] = "↺   Zmień rolę";
             d["cfg.usr.dlg_title"] = "Dodaj użytkownika";
-            d["cfg.usr.dlg_ident"] = "Numer identyfikacyjny";
-            d["cfg.usr.dlg_pass"] = "Hasło";
+            d["cfg.usr.dlg_ident"] = "Numer identyfikacyjny (PIN)";
+            d["cfg.usr.dlg_shift"] = "Zmiana";
             d["cfg.usr.dlg_admin"] = "Uprawnienia administratora";
             d["cfg.usr.dlg_add"] = "Dodaj";
             d["cfg.usr.dlg_cancel"] = "Anuluj";
             d["cfg.usr.err_empty_ident"] = "Wprowadź numer identyfikacyjny.";
-            d["cfg.usr.err_empty_pass"] = "Wprowadź hasło.";
+            d["cfg.usr.err_no_shift"] = "Wybierz zmianę.";
             d["cfg.usr.err_exists"] = "Użytkownik o takim numerze już istnieje.";
             d["cfg.usr.err_cant_del_admin"] = "Nie można usunąć domyślnego administratora.";
             d["cfg.usr.err_cant_change_admin"] = "Nie można zmienić roli domyślnego administratora.";
@@ -226,6 +246,7 @@ namespace SecureDesktop.Utils
             d["cfg.usr.select_role"] = "Zaznacz użytkownika.";
             d["cfg.usr.del_confirm"] = "Czy na pewno dezaktywować użytkownika {0}?";
             d["cfg.usr.role_changed"] = "Rola zmieniona na: {0}";
+            d["cfg.usr.no_shifts"] = "Brak zdefiniowanych zmian. Dodaj zmiany w Konfiguracja → Zmiany.";
 
             d["cfg.msg.saved"] = "Ustawienia zapisane!";
             d["cfg.msg.no_db"] = "Brak połączenia z bazą.";
@@ -245,7 +266,7 @@ namespace SecureDesktop.Utils
             d["hist.clear_err"] = "Błąd czyszczenia: ";
 
             d["lock.dlg_title"] = "Odblokuj ekran";
-            d["lock.dlg_prompt"] = "Wprowadź hasło, aby odblokować";
+            d["lock.dlg_prompt"] = "Wprowadź hasło zmiany, aby odblokować";
             d["lock.btn_unlock"] = "Odblokuj";
             d["lock.btn_cancel"] = "Anuluj";
             d["lock.err_wrong"] = "Nieprawidłowe hasło!";
@@ -256,20 +277,20 @@ namespace SecureDesktop.Utils
             _dict["pl"] = d;
         }
 
-        // =========================== EN ===========================
         private static void BuildEnglish()
         {
             var d = new Dictionary<string, string>();
 
             d["login.window_title"] = "SecureDesktop — Sign in";
             d["login.subtitle"] = "Sign in to continue";
-            d["login.id"] = "Identification number";
-            d["login.password"] = "Password";
+            d["login.id"] = "Identification number (PIN)";
+            d["login.password"] = "Shift password";
             d["login.submit"] = "Sign in";
             d["login.hint"] = "Default: admin / admin";
-            d["login.err.empty"] = "Please enter your ID and password";
-            d["login.err.invalid"] = "Invalid ID or password";
-            d["login.err.no_pass"] = "Account has no password set";
+            d["login.err.empty"] = "Please enter your PIN and shift password";
+            d["login.err.invalid"] = "Invalid PIN or shift password";
+            d["login.err.no_pass"] = "Shift has no password set";
+            d["login.err.no_shift"] = "Account has no shift assigned";
             d["login.err.generic"] = "Error: ";
 
             d["common.ok"] = "OK";
@@ -314,14 +335,15 @@ namespace SecureDesktop.Utils
             d["cfg.tab.general"] = "General";
             d["cfg.tab.patterns"] = "Patterns";
             d["cfg.tab.tips"] = "Tips";
+            d["cfg.tab.shifts"] = "Shifts";
             d["cfg.tab.checkpoint"] = "CheckPoint";
             d["cfg.tab.backup"] = "Backup";
             d["cfg.tab.users"] = "Users";
             d["cfg.btn.save_all"] = "💾   Save all settings";
             d["cfg.btn.back"] = "Back to dashboard";
 
-            d["cfg.gen.pass_label"] = "New administrator password";
-            d["cfg.gen.pass_hint"] = "Leave empty to keep current password.";
+            d["cfg.gen.pass_label"] = "New administrator password (legacy)";
+            d["cfg.gen.pass_hint"] = "Leave empty to keep current. Set shift passwords in the Shifts tab.";
             d["cfg.gen.autostart"] = "Run on Windows startup";
             d["cfg.gen.tray"] = "Minimize to system tray";
 
@@ -370,6 +392,24 @@ namespace SecureDesktop.Utils
             d["cfg.tips.select_to_delete"] = "Select a tip to delete.";
             d["cfg.tips.del_confirm"] = "Delete the selected tip?";
 
+            d["cfg.shifts.title"] = "Shifts — login passwords";
+            d["cfg.shifts.hint"] = "Each shift has its own password. Users log in with their PIN + shift password.";
+            d["cfg.shifts.btn_new"] = "➕   New shift";
+            d["cfg.shifts.btn_del"] = "🗑   Delete selected";
+            d["cfg.shifts.editing_new"] = "New shift";
+            d["cfg.shifts.editing_edit"] = "Editing shift";
+            d["cfg.shifts.field_name"] = "Shift name";
+            d["cfg.shifts.field_pass"] = "Shift password";
+            d["cfg.shifts.pass_hint"] = "Leave empty to keep current password.";
+            d["cfg.shifts.btn_save"] = "💾   Save shift";
+            d["cfg.shifts.btn_clear"] = "Clear";
+            d["cfg.shifts.err_no_name"] = "Enter shift name.";
+            d["cfg.shifts.err_no_pass_new"] = "Enter password for the new shift.";
+            d["cfg.shifts.saved"] = "Shift saved!";
+            d["cfg.shifts.select_to_delete"] = "Select a shift to delete.";
+            d["cfg.shifts.del_confirm"] = "Delete the selected shift?";
+            d["cfg.shifts.del_has_users"] = "There are active users assigned to this shift.";
+
             d["cfg.cp.path"] = "Path to EXE file";
             d["cfg.cp.args"] = "Launch arguments";
             d["cfg.cp.btn_test"] = "▶   Test launch";
@@ -384,6 +424,7 @@ namespace SecureDesktop.Utils
             d["cfg.usr.title"] = "User management";
             d["cfg.usr.col_id"] = "ID";
             d["cfg.usr.col_ident"] = "Identification number";
+            d["cfg.usr.col_shift"] = "Shift";
             d["cfg.usr.col_role"] = "Role";
             d["cfg.usr.col_active"] = "Active";
             d["cfg.usr.role_admin"] = "Administrator";
@@ -394,13 +435,13 @@ namespace SecureDesktop.Utils
             d["cfg.usr.btn_deactivate"] = "🗑   Deactivate";
             d["cfg.usr.btn_toggle"] = "↺   Change role";
             d["cfg.usr.dlg_title"] = "Add user";
-            d["cfg.usr.dlg_ident"] = "Identification number";
-            d["cfg.usr.dlg_pass"] = "Password";
+            d["cfg.usr.dlg_ident"] = "Identification number (PIN)";
+            d["cfg.usr.dlg_shift"] = "Shift";
             d["cfg.usr.dlg_admin"] = "Administrator privileges";
             d["cfg.usr.dlg_add"] = "Add";
             d["cfg.usr.dlg_cancel"] = "Cancel";
             d["cfg.usr.err_empty_ident"] = "Enter identification number.";
-            d["cfg.usr.err_empty_pass"] = "Enter password.";
+            d["cfg.usr.err_no_shift"] = "Choose a shift.";
             d["cfg.usr.err_exists"] = "User with that number already exists.";
             d["cfg.usr.err_cant_del_admin"] = "Cannot delete the default administrator.";
             d["cfg.usr.err_cant_change_admin"] = "Cannot change the default administrator's role.";
@@ -408,6 +449,7 @@ namespace SecureDesktop.Utils
             d["cfg.usr.select_role"] = "Select a user.";
             d["cfg.usr.del_confirm"] = "Deactivate user {0}?";
             d["cfg.usr.role_changed"] = "Role changed to: {0}";
+            d["cfg.usr.no_shifts"] = "No shifts defined. Add shifts in Settings → Shifts.";
 
             d["cfg.msg.saved"] = "Settings saved!";
             d["cfg.msg.no_db"] = "No database connection.";
@@ -427,7 +469,7 @@ namespace SecureDesktop.Utils
             d["hist.clear_err"] = "Clear error: ";
 
             d["lock.dlg_title"] = "Unlock screen";
-            d["lock.dlg_prompt"] = "Enter password to unlock";
+            d["lock.dlg_prompt"] = "Enter shift password to unlock";
             d["lock.btn_unlock"] = "Unlock";
             d["lock.btn_cancel"] = "Cancel";
             d["lock.err_wrong"] = "Incorrect password!";
