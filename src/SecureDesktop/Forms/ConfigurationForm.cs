@@ -1099,7 +1099,7 @@ namespace SecureDesktop.Forms
             };
             tab.Controls.Add(backupNowBtn);
 
-            var purgeNowBtn = RoundedButton.SoftRed(Loc.T("cfg.bk.btn_purge_now"), 260, 44);
+                       var purgeNowBtn = RoundedButton.SoftRed(Loc.T("cfg.bk.btn_purge_now"), 260, 44);
             purgeNowBtn.Location = new Point(276, y);
             purgeNowBtn.Click += (s, ev) =>
             {
@@ -1119,6 +1119,26 @@ namespace SecureDesktop.Forms
 
                     var svc = new Services.BackupService();
                     int deleted = svc.PurgeOldBackups(folder, days);
+
+                    // === Log zdarzenia do dziennika ===
+                    if (deleted > 0)
+                    {
+                        try
+                        {
+                            new EventLogRepository(_db).Create(new EventLog
+                            {
+                                UserId = _currentUser != null ? (int?)_currentUser.Id : null,
+                                IdentificationNumber = _currentUser != null
+                                    ? _currentUser.IdentificationNumber
+                                    : "SYSTEM",
+                                OperationName = "BackupPurge",
+                                Result = "Success",
+                                Severity = "Info",
+                                Description = Loc.T("log.backup_purge_manual", deleted)
+                            });
+                        }
+                        catch { }
+                    }
 
                     if (deleted > 0)
                         MessageBox.Show(string.Format(Loc.T("cfg.bk.purge_done"), deleted),
