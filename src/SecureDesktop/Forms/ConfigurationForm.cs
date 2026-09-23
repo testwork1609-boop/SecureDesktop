@@ -1082,9 +1082,10 @@ namespace SecureDesktop.Forms
                 Font = UiFonts.Body
             };
             _userListView.Columns.Add(Loc.T("cfg.usr.col_id"), 40);
-            _userListView.Columns.Add(Loc.T("cfg.usr.col_ident"), 180);
-            _userListView.Columns.Add(Loc.T("cfg.usr.col_shift"), 130);
-            _userListView.Columns.Add(Loc.T("cfg.usr.col_role"), 110);
+            _userListView.Columns.Add(Loc.T("cfg.usr.col_display"), 160);
+            _userListView.Columns.Add(Loc.T("cfg.usr.col_pin"), 130);
+            _userListView.Columns.Add(Loc.T("cfg.usr.col_shift"), 120);
+            _userListView.Columns.Add(Loc.T("cfg.usr.col_role"), 100);
             _userListView.Columns.Add(Loc.T("cfg.usr.col_active"), 70);
             RefreshUserList();
             tab.Controls.Add(_userListView);
@@ -1103,6 +1104,16 @@ namespace SecureDesktop.Forms
             toggleAdminBtn.Location = new Point(580, 124);
             toggleAdminBtn.Click += ToggleUserRole;
             tab.Controls.Add(toggleAdminBtn);
+
+            var importBtn = RoundedButton.SoftGreen(Loc.T("cfg.usr.btn_import"), 180, 40);
+            importBtn.Location = new Point(580, 186);
+            importBtn.Click += ImportUsersFromXlsx;
+            tab.Controls.Add(importBtn);
+
+            var exportBtn = RoundedButton.SoftBlue(Loc.T("cfg.usr.btn_export"), 180, 40);
+            exportBtn.Location = new Point(580, 234);
+            exportBtn.Click += ExportUsersToXlsx;
+            tab.Controls.Add(exportBtn);
         }
 
         private void RefreshUserList()
@@ -1114,8 +1125,10 @@ namespace SecureDesktop.Forms
             foreach (var u in _userRepo.GetAllUsers())
             {
                 var shift = u.ShiftId.HasValue ? shifts.FirstOrDefault(s => s.Id == u.ShiftId.Value) : null;
+                string display = !string.IsNullOrWhiteSpace(u.DisplayName) ? u.DisplayName : u.IdentificationNumber;
 
                 var item = new ListViewItem(u.Id.ToString());
+                item.SubItems.Add(display);
                 item.SubItems.Add(u.IdentificationNumber);
                 item.SubItems.Add(shift != null ? shift.Name : "—");
                 item.SubItems.Add(u.IsAdmin ? Loc.T("cfg.usr.role_admin") : Loc.T("cfg.usr.role_user"));
@@ -1258,6 +1271,75 @@ namespace SecureDesktop.Forms
             RefreshUserList();
             MessageBox.Show(Loc.T("cfg.usr.role_changed", (user.IsAdmin ? Loc.T("cfg.usr.role_admin") : Loc.T("cfg.usr.role_user"))),
                 Loc.T("common.success"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+        // ============== IMPORT / EXPORT XLSX ==============
+
+        private void ImportUsersFromXlsx(object sender, EventArgs e)
+        {
+            string filePath = null;
+            using (var dlg = new OpenFileDialog())
+            {
+                dlg.Title = Loc.T("cfg.usr.import_dlg_title");
+                dlg.Filter = Loc.T("cfg.usr.import_filter");
+                if (dlg.ShowDialog(this) != DialogResult.OK) return;
+                filePath = dlg.FileName;
+            }
+
+            Services.ImportResult res = null;
+            try
+            {
+                res = Services.UserExcelService.ImportFromXlsx(filePath, _db);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(Loc.T("common.error") + ": " + ex.Message,
+                    Loc.T("common.error"), MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            RefreshUserList();
+            var h = DataSaved;
+            if (h != null) h();
+
+            string msg = string.Format(Loc.T("cfg.usr.import_done"), res.Added, res.Updated, res.Skipped);
+
+            if (res.Errors != null && res.Errors.Count > 0)
+            {
+                string errors = string.Join("\n", res.Errors.Take(20));
+                if (res.Errors.Count > 20) errors += "\n... (+" + (res.Errors.Count - 20) + ")";
+                MessageBox.Show(msg + string.Format(Loc.T("cfg.usr.import_errors"), errors),
+                    Loc.T("cfg.usr.import_err_title"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            else
+            {
+                MessageBox.Show(msg, Loc.T("common.success"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+        }
+
+        private void ExportUsersToXlsx(object sender, EventArgs e)
+        {
+            string filePath = null;
+            using (var dlg = new SaveFileDialog())
+            {
+                dlg.Title = Loc.T("cfg.usr.export_dlg_title");
+                dlg.Filter = Loc.T("cfg.usr.import_filter");
+                dlg.FileName = "users_" + DateTime.Now.ToString("yyyy-MM-dd") + ".xlsx";
+                if (dlg.ShowDialog(this) != DialogResult.OK) return;
+                filePath = dlg.FileName;
+            }
+
+            try
+            {
+                var res = Services.UserExcelService.ExportToXlsx(filePath, _db);
+                MessageBox.Show(string.Format(Loc.T("cfg.usr.export_done"), res.Written, res.Path),
+                    Loc.T("common.success"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(Loc.T("common.error") + ": " + ex.Message,
+                    Loc.T("common.error"), MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         // ============== DANE ==============
