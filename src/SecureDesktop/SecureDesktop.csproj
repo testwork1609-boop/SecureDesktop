@@ -43,11 +43,13 @@
     <Compile Include="Models\Session.cs" />
     <Compile Include="Models\EventLog.cs" />
     <Compile Include="Models\Tip.cs" />
+    <Compile Include="Models\Shift.cs" />
     <Compile Include="Database\DatabaseInitializer.cs" />
     <Compile Include="Database\Repositories\UserRepository.cs" />
     <Compile Include="Database\Repositories\SessionRepository.cs" />
     <Compile Include="Database\Repositories\PatternRepository.cs" />
     <Compile Include="Database\Repositories\EventLogRepository.cs" />
+    <Compile Include="Database\Repositories\ShiftRepository.cs" />
     <Compile Include="Services\PatternRecognitionService.cs" />
     <Compile Include="Services\ScreenLockService.cs" />
     <Compile Include="Services\BackupService.cs" />
@@ -61,7 +63,7 @@
     <Compile Include="Utils\SecurityHelper.cs" />
     <Compile Include="Utils\UiFonts.cs" />
     <Compile Include="Utils\UiTheme.cs" />
-    <Compile Include="Utils\Loc.cs" /> 
+    <Compile Include="Utils\Loc.cs" />
     <Compile Include="Core\SecurityManager.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
