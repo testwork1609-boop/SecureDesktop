@@ -12,18 +12,25 @@ namespace SecureDesktop.Forms
     {
         private readonly DatabaseInitializer _db;
         private readonly EventLogRepository _eventRepo;
+        private readonly User _currentUser;
         private ListBox _eventList;
 
         public event Action CloseRequested;
 
-        public EventHistoryView(DatabaseInitializer db)
+        public EventHistoryView(DatabaseInitializer db, User currentUser = null)
         {
             _db = db;
+            _currentUser = currentUser;
             _eventRepo = new EventLogRepository(_db);
             this.BackColor = UiTheme.Bg;
             this.Dock = DockStyle.Fill;
             InitializeComponent();
             LoadEvents();
+        }
+
+        private bool CanClearHistory()
+        {
+            return _currentUser != null && _currentUser.IsHeadAdmin;
         }
 
         private void InitializeComponent()
@@ -53,17 +60,19 @@ namespace SecureDesktop.Forms
             var refreshBtn = RoundedButton.Primary(Loc.T("hist.btn_refresh"), 140, 42);
             refreshBtn.Location = new Point(0, 12);
             refreshBtn.Click += (s, e) => LoadEvents();
+            bottomPanel.Controls.Add(refreshBtn);
 
-            var clearBtn = RoundedButton.SoftRed(Loc.T("hist.btn_clear"), 200, 42);
-            clearBtn.Location = new Point(152, 12);
-            clearBtn.Click += OnClearAll;
+            if (CanClearHistory())
+            {
+                var clearBtn = RoundedButton.SoftRed(Loc.T("hist.btn_clear"), 200, 42);
+                clearBtn.Location = new Point(152, 12);
+                clearBtn.Click += OnClearAll;
+                bottomPanel.Controls.Add(clearBtn);
+            }
 
             var backBtn = RoundedButton.Ghost(Loc.T("hist.btn_back"), 180, 42);
-            backBtn.Location = new Point(364, 12);
+            backBtn.Location = new Point(CanClearHistory() ? 364 : 152, 12);
             backBtn.Click += (s, e) => { var h = CloseRequested; if (h != null) h(); };
-
-            bottomPanel.Controls.Add(refreshBtn);
-            bottomPanel.Controls.Add(clearBtn);
             bottomPanel.Controls.Add(backBtn);
 
             _eventList = new ListBox
@@ -146,6 +155,13 @@ namespace SecureDesktop.Forms
 
         private void OnClearAll(object sender, EventArgs e)
         {
+            if (!CanClearHistory())
+            {
+                MessageBox.Show(Loc.T("hist.clear_forbidden"), Loc.T("common.info"),
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
             if (MessageBox.Show(Loc.T("hist.clear_confirm"), Loc.T("common.confirm"),
                 MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
 
