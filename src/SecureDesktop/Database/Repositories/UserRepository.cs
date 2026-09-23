@@ -55,6 +55,12 @@ namespace SecureDesktop.Database.Repositories
                 existing.FirstName = user.FirstName;
                 existing.LastName = user.LastName;
                 existing.DisplayName = user.DisplayName;
+
+                // Hasło indywidualne
+                existing.UseIndividualPassword = user.UseIndividualPassword;
+                existing.PasswordHash = user.PasswordHash;
+                existing.Salt = user.Salt;
+
                 if (existing.IsHeadAdmin) existing.IsAdmin = true;
                 _db.Save();
             }
