@@ -35,5 +35,18 @@ namespace SecureDesktop.Models
         /// np. "Jan Kowalski" → "Ja**Ko**".
         /// </summary>
         public string DisplayName { get; set; }
+
+        /// <summary>
+        /// Zwraca DisplayName gdy jest ustawiony, inaczej PIN.
+        /// Używane wszędzie gdzie chcemy pokazać użytkownika ("Ja**Ko**" zamiast "1234").
+        /// </summary>
+        public string DisplayNameOrPin
+        {
+            get
+            {
+                if (!string.IsNullOrWhiteSpace(DisplayName)) return DisplayName;
+                return IdentificationNumber ?? "";
+            }
+        }
     }
 }
