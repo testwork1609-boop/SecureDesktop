@@ -220,6 +220,8 @@ namespace SecureDesktop.Utils
 
             d["cfg.usr.title"] = "Zarządzanie użytkownikami";
             d["cfg.usr.col_id"] = "ID";
+            d["cfg.usr.col_display"] = "Użytkownik";
+            d["cfg.usr.col_pin"] = "PIN";
             d["cfg.usr.col_ident"] = "Numer identyfikacyjny";
             d["cfg.usr.col_shift"] = "Zmiana";
             d["cfg.usr.col_role"] = "Rola";
@@ -231,6 +233,8 @@ namespace SecureDesktop.Utils
             d["cfg.usr.btn_add"] = "➕   Dodaj";
             d["cfg.usr.btn_deactivate"] = "🗑   Dezaktywuj";
             d["cfg.usr.btn_toggle"] = "↺   Zmień rolę";
+            d["cfg.usr.btn_import"] = "📥   Import z XLSX";
+            d["cfg.usr.btn_export"] = "📤   Eksport do XLSX";
             d["cfg.usr.dlg_title"] = "Dodaj użytkownika";
             d["cfg.usr.dlg_ident"] = "Numer identyfikacyjny (PIN)";
             d["cfg.usr.dlg_shift"] = "Zmiana";
@@ -247,6 +251,13 @@ namespace SecureDesktop.Utils
             d["cfg.usr.del_confirm"] = "Czy na pewno dezaktywować użytkownika {0}?";
             d["cfg.usr.role_changed"] = "Rola zmieniona na: {0}";
             d["cfg.usr.no_shifts"] = "Brak zdefiniowanych zmian. Dodaj zmiany w Konfiguracja → Zmiany.";
+            d["cfg.usr.import_dlg_title"] = "Wybierz plik XLSX do importu";
+            d["cfg.usr.export_dlg_title"] = "Zapisz użytkowników do pliku XLSX";
+            d["cfg.usr.import_filter"] = "Pliki Excel|*.xlsx";
+            d["cfg.usr.import_done"] = "Import zakończony.\nDodano: {0}\nZaktualizowano: {1}\nPominięto: {2}";
+            d["cfg.usr.import_errors"] = "\n\nBłędy:\n{0}";
+            d["cfg.usr.import_err_title"] = "Import — błędy";
+            d["cfg.usr.export_done"] = "Wyeksportowano {0} użytkowników do:\n{1}";
 
             d["cfg.msg.saved"] = "Ustawienia zapisane!";
             d["cfg.msg.no_db"] = "Brak połączenia z bazą.";
@@ -423,6 +434,8 @@ namespace SecureDesktop.Utils
 
             d["cfg.usr.title"] = "User management";
             d["cfg.usr.col_id"] = "ID";
+            d["cfg.usr.col_display"] = "User";
+            d["cfg.usr.col_pin"] = "PIN";
             d["cfg.usr.col_ident"] = "Identification number";
             d["cfg.usr.col_shift"] = "Shift";
             d["cfg.usr.col_role"] = "Role";
@@ -434,6 +447,8 @@ namespace SecureDesktop.Utils
             d["cfg.usr.btn_add"] = "➕   Add";
             d["cfg.usr.btn_deactivate"] = "🗑   Deactivate";
             d["cfg.usr.btn_toggle"] = "↺   Change role";
+            d["cfg.usr.btn_import"] = "📥   Import from XLSX";
+            d["cfg.usr.btn_export"] = "📤   Export to XLSX";
             d["cfg.usr.dlg_title"] = "Add user";
             d["cfg.usr.dlg_ident"] = "Identification number (PIN)";
             d["cfg.usr.dlg_shift"] = "Shift";
@@ -450,6 +465,13 @@ namespace SecureDesktop.Utils
             d["cfg.usr.del_confirm"] = "Deactivate user {0}?";
             d["cfg.usr.role_changed"] = "Role changed to: {0}";
             d["cfg.usr.no_shifts"] = "No shifts defined. Add shifts in Settings → Shifts.";
+            d["cfg.usr.import_dlg_title"] = "Select XLSX file to import";
+            d["cfg.usr.export_dlg_title"] = "Save users to XLSX file";
+            d["cfg.usr.import_filter"] = "Excel files|*.xlsx";
+            d["cfg.usr.import_done"] = "Import finished.\nAdded: {0}\nUpdated: {1}\nSkipped: {2}";
+            d["cfg.usr.import_errors"] = "\n\nErrors:\n{0}";
+            d["cfg.usr.import_err_title"] = "Import — errors";
+            d["cfg.usr.export_done"] = "Exported {0} users to:\n{1}";
 
             d["cfg.msg.saved"] = "Settings saved!";
             d["cfg.msg.no_db"] = "No database connection.";
