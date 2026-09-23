@@ -170,7 +170,6 @@ namespace SecureDesktop.Forms
             this.ForeColor = UiTheme.TextPrimary;
             this.DoubleBuffered = true;
 
-            // === Header ===
             var headerPanel = new Panel { Dock = DockStyle.Top, Height = 72, BackColor = UiTheme.Surface };
             headerPanel.Paint += (s, e) =>
             {
@@ -212,10 +211,13 @@ namespace SecureDesktop.Forms
             };
             headerPanel.Controls.Add(_viewTitleLabel);
 
-            // Header user label — teraz DisplayName (np. "Ja**Ko**") zamiast PIN-u.
+            string roleSuffix = _currentUser.IsHeadAdmin
+                ? "  •  " + Loc.T("dash.user_headadmin")
+                : (_currentUser.IsAdmin ? "  •  " + Loc.T("dash.user_admin") : "  •  " + Loc.T("dash.user_user"));
+
             _userLabel = new Label
             {
-                Text = _currentUser.DisplayNameOrPin + "  •  " + (_currentUser.IsAdmin ? Loc.T("dash.user_admin") : Loc.T("dash.user_user")),
+                Text = _currentUser.DisplayNameOrPin + roleSuffix,
                 Font = UiFonts.Body,
                 AutoSize = true,
                 ForeColor = UiTheme.TextSecondary,
@@ -225,7 +227,6 @@ namespace SecureDesktop.Forms
             headerPanel.Controls.Add(_userLabel);
             headerPanel.Resize += (s, e) => _userLabel.Location = new Point(headerPanel.Width - _userLabel.Width - 32, 28);
 
-            // === Sidebar ===
             var sidebarPanel = new Panel { Dock = DockStyle.Left, Width = 250, BackColor = UiTheme.Surface };
             sidebarPanel.Paint += (s, e) =>
             {
@@ -254,7 +255,6 @@ namespace SecureDesktop.Forms
             checkpointBtn.Click += OnCheckpoint;
             y += 56;
 
-            // === BACKUP — widoczny dla wszystkich. Dla zwykłego usera bursztynowy. ===
             var backupBtn = CreateBackupSidebarButton(y);
             backupBtn.Click += OnBackupNow;
             y += 48;
@@ -265,7 +265,6 @@ namespace SecureDesktop.Forms
             sidebarPanel.Controls.Add(checkpointBtn);
             sidebarPanel.Controls.Add(backupBtn);
 
-            // === Sekcja admina ===
             if (_currentUser.IsAdmin)
             {
                 sidebarPanel.Controls.Add(new Panel { Location = new Point(20, y), Size = new Size(210, 1), BackColor = UiTheme.Border });
@@ -285,7 +284,7 @@ namespace SecureDesktop.Forms
                 var configBtn = CreateSidebarButton("⚙", Loc.T("dash.sb.config"), y);
                 configBtn.Click += (s, e) =>
                 {
-                    var view = new ConfigurationView(_db);
+                    var view = new ConfigurationView(_db, _currentUser);
                     view.CloseRequested += () => BeginInvoke(new Action(() => { LoadStats(); ShowHome(); }));
                     view.DataSaved += () => BeginInvoke(new Action(LoadStats));
                     ShowView(view, Loc.T("cfg.title"));
@@ -296,14 +295,13 @@ namespace SecureDesktop.Forms
                 var historyBtn = CreateSidebarButton("📋", Loc.T("dash.sb.history"), y);
                 historyBtn.Click += (s, e) =>
                 {
-                    var view = new EventHistoryView(_db);
+                    var view = new EventHistoryView(_db, _currentUser);
                     view.CloseRequested += () => BeginInvoke(new Action(ShowHome));
                     ShowView(view, Loc.T("hist.title"));
                 };
                 sidebarPanel.Controls.Add(historyBtn);
             }
 
-            // === Logout ===
             var logoutHost = new Panel { Dock = DockStyle.Bottom, Height = 66, BackColor = UiTheme.Surface, Padding = new Padding(16, 10, 16, 10) };
             var logoutBtn = new RoundedButton
             {
@@ -417,10 +415,7 @@ namespace SecureDesktop.Forms
                 MessageBox.Show(Loc.T("dash.msg.err") + ex.Message, Loc.T("common.error"),
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
-            finally
-            {
-                _lockInProgress = false;
-            }
+            finally { _lockInProgress = false; }
         }
 
         private async void OnLockWithPatterns(object sender, EventArgs e)
@@ -452,10 +447,7 @@ namespace SecureDesktop.Forms
                 MessageBox.Show(Loc.T("dash.msg.err") + ex.Message, Loc.T("common.error"),
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
-            finally
-            {
-                _lockInProgress = false;
-            }
+            finally { _lockInProgress = false; }
         }
 
         private void OnCheckpoint(object sender, EventArgs e)
@@ -485,14 +477,10 @@ namespace SecureDesktop.Forms
             }
         }
 
-        // === BACKUP ===
-        // Zawsze pyta użytkownika o plik. Tworzy folder
-        // {BackupPath}/{yyyy-MM-dd_HH-mm-ss}_{PIN}/{nazwa_pliku}.
         private void OnBackupNow(object sender, EventArgs e)
         {
             try
             {
-                // 1) Folder docelowy z konfiguracji.
                 string backupFolder = "Backup";
                 try
                 {
@@ -506,7 +494,6 @@ namespace SecureDesktop.Forms
                 }
                 catch { }
 
-                // 2) Wybór pliku przez użytkownika.
                 string sourcePath = null;
                 using (var dlg = new OpenFileDialog())
                 {
@@ -524,11 +511,9 @@ namespace SecureDesktop.Forms
                     return;
                 }
 
-                // 3) Utwórz backup w folderze z PIN-em użytkownika.
                 var svc = new BackupService();
                 string destPath = svc.CreateUserBackup(sourcePath, backupFolder, _currentUser.IdentificationNumber);
 
-                // 4) Zdarzenie do dziennika (żeby admin widział w raporcie).
                 try
                 {
                     new EventLogRepository(_db).Create(new EventLog
@@ -543,7 +528,6 @@ namespace SecureDesktop.Forms
                 }
                 catch { }
 
-                // 5) Odśwież home (żeby "Ostatni backup" się zaktualizował).
                 ShowHome();
 
                 MessageBox.Show(
@@ -562,7 +546,6 @@ namespace SecureDesktop.Forms
         {
             try
             {
-                // Zapisz do dziennika czy w tej sesji była kopia zapasowa.
                 bool backupDone = HasBackupInThisSession();
 
                 new EventLogRepository(_db).Create(new EventLog
@@ -593,8 +576,6 @@ namespace SecureDesktop.Forms
         }
     }
 
-    // ============== HOME VIEW ==============
-
     internal class DashboardHomeView : UserControl
     {
         private static readonly Color Amber = Color.FromArgb(245, 158, 11);
@@ -607,7 +588,6 @@ namespace SecureDesktop.Forms
             this.BackColor = UiTheme.Bg;
             this.Dock = DockStyle.Fill;
 
-            // === Welcome card ===
             var welcomeCard = new Panel
             {
                 Location = new Point(0, 0),
@@ -617,7 +597,6 @@ namespace SecureDesktop.Forms
             };
             UiTheme.MakeCard(welcomeCard, 12);
 
-            // Powitanie — używamy DisplayName (np. "Ja**Ko**") jeśli istnieje.
             welcomeCard.Controls.Add(new Label
             {
                 Text = Loc.T("dash.home.greeting", user.DisplayNameOrPin),
@@ -663,7 +642,6 @@ namespace SecureDesktop.Forms
             }
             else
             {
-                // === Bursztynowa karta backupu ===
                 var backupCard = new Panel
                 {
                     Location = new Point(0, nextTop),
@@ -755,7 +733,6 @@ namespace SecureDesktop.Forms
                 nextTop = 372;
             }
 
-            // === Tips card ===
             var tipCard = new Panel
             {
                 Location = new Point(0, nextTop),
