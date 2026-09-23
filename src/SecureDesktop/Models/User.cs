@@ -12,5 +12,13 @@ namespace SecureDesktop.Models
         public DateTime CreatedAt { get; set; }
         public DateTime? LastLoginAt { get; set; }
         public bool IsActive { get; set; } = true;
+
+        /// <summary>
+        /// Id zmiany, do której należy użytkownik. Hasło logowania pobierane
+        /// jest z tej zmiany (Shift.PasswordHash + Shift.Salt).
+        /// Null = konto bez zmiany (fallback: legacy AdminPassword z Settings
+        /// dla admina).
+        /// </summary>
+        public int? ShiftId { get; set; }
     }
 }
