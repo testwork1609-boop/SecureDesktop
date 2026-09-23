@@ -25,10 +25,15 @@ namespace SecureDesktop.Database.Repositories
             return _db.GetData().Users.ToList();
         }
 
+        public User GetById(int id)
+        {
+            return _db.GetData().Users.FirstOrDefault(u => u.Id == id);
+        }
+
         public void AddUser(User user)
         {
             var data = _db.GetData();
-            user.Id = data.Users.Count > 0 ? data.Users.Max(u => u.Id) + 1 : 1;
+            user.Id = data.NextUserId++;
             user.CreatedAt = DateTime.Now;
             user.IsActive = true;
             data.Users.Add(user);
@@ -44,6 +49,10 @@ namespace SecureDesktop.Database.Repositories
                 existing.IdentificationNumber = user.IdentificationNumber;
                 existing.IsAdmin = user.IsAdmin;
                 existing.IsActive = user.IsActive;
+                existing.ShiftId = user.ShiftId;
+                existing.FirstName = user.FirstName;
+                existing.LastName = user.LastName;
+                existing.DisplayName = user.DisplayName;
                 _db.Save();
             }
         }
