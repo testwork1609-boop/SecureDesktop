@@ -1161,7 +1161,7 @@ namespace SecureDesktop.Forms
 
         // ============== UŻYTKOWNICY ==============
 
-        private void BuildUsersTab(TabPage tab)
+               private void BuildUsersTab(TabPage tab)
         {
             tab.Controls.Add(new Label
             {
@@ -1209,18 +1209,16 @@ namespace SecureDesktop.Forms
             deleteBtn.Click += DeleteUser;
             tab.Controls.Add(deleteBtn);
 
-            var toggleAdminBtn = RoundedButton.Ghost(Loc.T("cfg.usr.btn_toggle"), 180, 40);
-            toggleAdminBtn.Location = new Point(580, 172);
-            toggleAdminBtn.Click += ToggleUserRole;
-            tab.Controls.Add(toggleAdminBtn);
+            // Uwaga: przycisk "Zmień rolę" (ToggleUserRole) został usunięty —
+            // zmiana roli odbywa się w dialogu edycji użytkownika.
 
             var importBtn = RoundedButton.SoftGreen(Loc.T("cfg.usr.btn_import"), 180, 40);
-            importBtn.Location = new Point(580, 234);
+            importBtn.Location = new Point(580, 186);
             importBtn.Click += ImportUsersFromXlsx;
             tab.Controls.Add(importBtn);
 
             var exportBtn = RoundedButton.SoftBlue(Loc.T("cfg.usr.btn_export"), 180, 40);
-            exportBtn.Location = new Point(580, 282);
+            exportBtn.Location = new Point(580, 234);
             exportBtn.Click += ExportUsersToXlsx;
             tab.Controls.Add(exportBtn);
         }
