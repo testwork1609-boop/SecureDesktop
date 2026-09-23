@@ -447,34 +447,43 @@ namespace SecureDesktop.Services
             return result;
         }
 
-        private unsafe double ComputeNCC(byte* ptr, int stride, int offsetX, int offsetY, CachedPattern pattern)
+                private unsafe double ComputeNCC(byte* ptr, int stride, int offsetX, int offsetY, CachedPattern pattern)
         {
+            // Porównanie RGB piksel-po-pikselu z tolerancją per-kanał.
+            // Dla każdego punktu sprawdzamy, czy R, G i B mieszczą się
+            // w tolerancji. Score = % trafień (0..1).
+            //
+            // Zalety nad NCC i szarością:
+            //  - Dla idealnego dopasowania (identyczne piksele) -> 1.0
+            //  - Dla fałszywego (inny odcień/kolor) -> niski score
+            //  - Dyskryminacja oparta na kolorach, nie tylko na jasności
+
+            const int tolR = 30;   // tolerancja kanału R (0-255)
+            const int tolG = 30;   // tolerancja kanału G
+            const int tolB = 30;   // tolerancja kanału B
+
             int n = pattern.PointX.Length;
-            double sumS = 0, sumSqS = 0, sumProd = 0;
-            double tMean = pattern.Mean;
+            int good = 0;
 
             for (int i = 0; i < n; i++)
             {
                 int px = offsetX + pattern.PointX[i];
                 int py = offsetY + pattern.PointY[i];
                 byte* pixel = ptr + (long)py * stride + (px * 3);
-                double gv = 0.299 * pixel[2] + 0.587 * pixel[1] + 0.114 * pixel[0];
 
-                sumS += gv;
-                sumSqS += gv * gv;
-                sumProd += gv * pattern.PointGray[i];
+                int b = pixel[0];
+                int g = pixel[1];
+                int r = pixel[2];
+
+                int dr = r - pattern.PointR[i]; if (dr < 0) dr = -dr;
+                int dg = g - pattern.PointG[i]; if (dg < 0) dg = -dg;
+                int db = b - pattern.PointB[i]; if (db < 0) db = -db;
+
+                if (dr <= tolR && dg <= tolG && db <= tolB)
+                    good++;
             }
 
-            double meanS = sumS / n;
-            double varS = sumSqS / n - meanS * meanS;
-            if (varS <= 1e-4) return 0;
-
-            double numerator = sumProd / n - meanS * tMean;
-            double denom = Math.Sqrt(varS) * pattern.StdDev;
-            if (denom <= 1e-6) return 0;
-
-            double ncc = numerator / denom;
-            return ncc < 0 ? 0 : ncc;
+            return (double)good / n;
         }
 
         private static Rectangle Inflate(Rectangle r, int size, Size screen)
