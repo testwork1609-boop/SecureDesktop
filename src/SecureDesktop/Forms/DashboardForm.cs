@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.IO;
 using System.Linq;
 using System.Windows.Forms;
@@ -70,7 +71,23 @@ namespace SecureDesktop.Forms
             catch { }
         }
 
-            private bool VerifyCurrentUserPassword(string password)
+        private DateTime? GetLastBackupTime()
+        {
+            try
+            {
+                var data = _db.GetData();
+                if (data == null || data.EventLogs == null) return null;
+                var last = data.EventLogs
+                    .Where(e => string.Equals(e.OperationName, "Backup", StringComparison.OrdinalIgnoreCase)
+                             && string.Equals(e.Result, "Success", StringComparison.OrdinalIgnoreCase))
+                    .OrderByDescending(e => e.Timestamp)
+                    .FirstOrDefault();
+                return last == null ? (DateTime?)null : last.Timestamp;
+            }
+            catch { return null; }
+        }
+
+        private bool VerifyCurrentUserPassword(string password)
         {
             try
             {
@@ -78,7 +95,6 @@ namespace SecureDesktop.Forms
                 var data = _db.GetData();
                 if (data == null) return false;
 
-                // 1) Preferowane: hasło zmiany przypisanej do zalogowanego użytkownika.
                 if (_currentUser.ShiftId.HasValue && data.Shifts != null)
                 {
                     var shift = data.Shifts.FirstOrDefault(s => s.Id == _currentUser.ShiftId.Value);
@@ -90,7 +106,6 @@ namespace SecureDesktop.Forms
                     }
                 }
 
-                // 2) Fallback: legacy AdminPassword w Settings (dla admina).
                 if (_currentUser.IsAdmin && data.Settings != null)
                 {
                     string legacy;
@@ -138,6 +153,7 @@ namespace SecureDesktop.Forms
             this.ForeColor = UiTheme.TextPrimary;
             this.DoubleBuffered = true;
 
+            // === Header ===
             var headerPanel = new Panel { Dock = DockStyle.Top, Height = 72, BackColor = UiTheme.Surface };
             headerPanel.Paint += (s, e) =>
             {
@@ -148,7 +164,7 @@ namespace SecureDesktop.Forms
             var logoMark = new Panel { Location = new Point(24, 20), Size = new Size(32, 32), BackColor = Color.Transparent };
             logoMark.Paint += (s, e) =>
             {
-                e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
                 using (var brush = new SolidBrush(UiTheme.Primary)) e.Graphics.FillEllipse(brush, 0, 0, 32, 32);
                 using (var brush = new SolidBrush(Color.White))
                 {
@@ -191,6 +207,7 @@ namespace SecureDesktop.Forms
             headerPanel.Controls.Add(_userLabel);
             headerPanel.Resize += (s, e) => _userLabel.Location = new Point(headerPanel.Width - _userLabel.Width - 32, 28);
 
+            // === Sidebar ===
             var sidebarPanel = new Panel { Dock = DockStyle.Left, Width = 250, BackColor = UiTheme.Surface };
             sidebarPanel.Paint += (s, e) =>
             {
@@ -219,13 +236,24 @@ namespace SecureDesktop.Forms
             checkpointBtn.Click += OnCheckpoint;
             y += 56;
 
+            // === BACKUP — widoczny dla WSZYSTKICH ===
+            // Dla zwykłego użytkownika bursztynowy (rzuca się w oczy).
+            var backupBtn = CreateBackupSidebarButton(y);
+            backupBtn.Click += OnBackupNow;
+            y += 48;
+
             sidebarPanel.Controls.Add(homeBtn);
             sidebarPanel.Controls.Add(lockAllBtn);
             sidebarPanel.Controls.Add(lockPatternBtn);
             sidebarPanel.Controls.Add(checkpointBtn);
+            sidebarPanel.Controls.Add(backupBtn);
 
+            // === Sekcja administratora (tylko dla admina) ===
             if (_currentUser.IsAdmin)
             {
+                sidebarPanel.Controls.Add(new Panel { Location = new Point(20, y), Size = new Size(210, 1), BackColor = UiTheme.Border });
+                y += 16;
+
                 sidebarPanel.Controls.Add(new Label
                 {
                     Text = Loc.T("dash.sb.section_admin"),
@@ -256,13 +284,9 @@ namespace SecureDesktop.Forms
                     ShowView(view, Loc.T("hist.title"));
                 };
                 sidebarPanel.Controls.Add(historyBtn);
-                y += 48;
-
-                var backupBtn = CreateSidebarButton("💾", Loc.T("dash.sb.backup"), y);
-                backupBtn.Click += OnBackupNow;
-                sidebarPanel.Controls.Add(backupBtn);
             }
 
+            // === Logout (dół) ===
             var logoutHost = new Panel { Dock = DockStyle.Bottom, Height = 66, BackColor = UiTheme.Surface, Padding = new Padding(16, 10, 16, 10) };
             var logoutBtn = new RoundedButton
             {
@@ -281,6 +305,7 @@ namespace SecureDesktop.Forms
             logoutHost.Controls.Add(logoutBtn);
             sidebarPanel.Controls.Add(logoutHost);
 
+            // === Content host ===
             _contentHost = new Panel { Dock = DockStyle.Fill, BackColor = UiTheme.Bg, Padding = new Padding(28) };
 
             this.Controls.Add(_contentHost);
@@ -306,6 +331,33 @@ namespace SecureDesktop.Forms
             };
         }
 
+        private RoundedButton CreateBackupSidebarButton(int yPos)
+        {
+            // Bursztynowe kolory - dla zwykłego użytkownika, żeby backup
+            // rzucał się w oczy i przypominał o wykonaniu przed pracą.
+            var amberSoft = Color.FromArgb(254, 243, 199);
+            var amberSoftHover = Color.FromArgb(253, 230, 138);
+            var amberPressed = Color.FromArgb(252, 211, 77);
+            var amberText = Color.FromArgb(180, 83, 9);
+
+            bool highlight = !_currentUser.IsAdmin;
+
+            return new RoundedButton
+            {
+                Text = "💾   " + Loc.T("dash.sb.backup"),
+                Location = new Point(16, yPos),
+                Size = new Size(218, 44),
+                CornerRadius = 8,
+                NormalColor = highlight ? amberSoft : UiTheme.Surface,
+                HoverColor = highlight ? amberSoftHover : UiTheme.SurfaceAlt,
+                PressedColor = highlight ? amberPressed : UiTheme.Border,
+                ForeColor = highlight ? amberText : UiTheme.TextSecondary,
+                Font = highlight ? UiFonts.BodyBold : UiFonts.Body,
+                TextAlign = ContentAlignment.MiddleLeft,
+                ButtonPadding = new Padding(14, 0, 8, 0)
+            };
+        }
+
         private void ShowView(UserControl view, string title)
         {
             _contentHost.SuspendLayout();
@@ -322,6 +374,7 @@ namespace SecureDesktop.Forms
         {
             LoadStats();
             List<Tip> tips;
+            DateTime? lastBackup;
             try
             {
                 var data = _db.GetData();
@@ -331,7 +384,9 @@ namespace SecureDesktop.Forms
             }
             catch { tips = new List<Tip>(); }
 
-            var home = new DashboardHomeView(_currentUser, _totalPatterns, _activePatterns, _totalEvents, tips);
+            lastBackup = GetLastBackupTime();
+
+            var home = new DashboardHomeView(_currentUser, _totalPatterns, _activePatterns, _totalEvents, tips, lastBackup, OnBackupNow);
             ShowView(home, Loc.T("dash.view_home"));
         }
 
@@ -422,16 +477,64 @@ namespace SecureDesktop.Forms
         {
             try
             {
-                var sourcePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
-                if (!File.Exists(sourcePath))
+                var data = _db.GetData();
+                string sourcePath = null;
+
+                // 1) Priorytet: plik monitorowany z konfiguracji.
+                if (data != null && data.Settings != null)
+                {
+                    string mf;
+                    if (data.Settings.TryGetValue("MonitoredFile", out mf) &&
+                        !string.IsNullOrWhiteSpace(mf) && File.Exists(mf))
+                    {
+                        sourcePath = mf;
+                    }
+                }
+
+                // 2) Fallback: baza danych.
+                if (sourcePath == null)
+                {
+                    var dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Database", "database.json");
+                    if (File.Exists(dbPath)) sourcePath = dbPath;
+                }
+
+                if (sourcePath == null)
                 {
                     MessageBox.Show(Loc.T("dash.msg.no_db"), Loc.T("common.info"),
                         MessageBoxButtons.OK, MessageBoxIcon.Information);
                     return;
                 }
-                new BackupService().CreateBackup(sourcePath, "Backup");
-                MessageBox.Show(Loc.T("dash.msg.backup_done"), Loc.T("common.success"),
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+                string backupFolder = "Backup";
+                if (data != null && data.Settings != null)
+                {
+                    string bp;
+                    if (data.Settings.TryGetValue("BackupPath", out bp) && !string.IsNullOrWhiteSpace(bp))
+                        backupFolder = bp;
+                }
+
+                var backupService = new BackupService();
+                string result = backupService.CreateBackup(sourcePath, backupFolder);
+
+                // Zapisz event do historii (żeby "ostatni backup" działał).
+                try
+                {
+                    new EventLogRepository(_db).Create(new EventLog
+                    {
+                        UserId = _currentUser.Id,
+                        IdentificationNumber = _currentUser.IdentificationNumber,
+                        OperationName = "Backup",
+                        Result = "Success",
+                        Description = "Backup pliku: " + sourcePath + " -> " + result
+                    });
+                }
+                catch { }
+
+                // Odśwież widok, żeby pokazać nowy "ostatni backup".
+                ShowHome();
+
+                MessageBox.Show(Loc.T("dash.msg.backup_done") + "\n\n" + result,
+                    Loc.T("common.success"), MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
             {
@@ -467,13 +570,21 @@ namespace SecureDesktop.Forms
         }
     }
 
+    // ============== HOME VIEW ==============
+
     internal class DashboardHomeView : UserControl
     {
-        public DashboardHomeView(User user, int totalPatterns, int activePatterns, int totalEvents, List<Tip> tips)
+        private static readonly Color Amber = Color.FromArgb(245, 158, 11);
+        private static readonly Color AmberSoft = Color.FromArgb(254, 243, 199);
+        private static readonly Color AmberText = Color.FromArgb(146, 64, 14);
+
+        public DashboardHomeView(User user, int totalPatterns, int activePatterns, int totalEvents,
+                                 List<Tip> tips, DateTime? lastBackup, EventHandler onBackupClick)
         {
             this.BackColor = UiTheme.Bg;
             this.Dock = DockStyle.Fill;
 
+            // === Welcome card ===
             var welcomeCard = new Panel
             {
                 Location = new Point(0, 0),
@@ -503,13 +614,14 @@ namespace SecureDesktop.Forms
             });
             this.Controls.Add(welcomeCard);
 
-            int tipCardTop = 144;
+            int nextTop = 144;
 
             if (user.IsAdmin)
             {
+                // === Stats dla admina ===
                 var statsRow = new Panel
                 {
-                    Location = new Point(0, 144),
+                    Location = new Point(0, nextTop),
                     Size = new Size(760, 130),
                     BackColor = UiTheme.Bg,
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
@@ -524,13 +636,114 @@ namespace SecureDesktop.Forms
 
                 statsRow.Controls.Add(c1); statsRow.Controls.Add(c2); statsRow.Controls.Add(c3);
                 this.Controls.Add(statsRow);
-                tipCardTop = 296;
+                nextTop = 296;
+            }
+            else
+            {
+                // === Bursztynowa karta backupu dla zwykłego użytkownika ===
+                var backupCard = new Panel
+                {
+                    Location = new Point(0, nextTop),
+                    Size = new Size(760, 210),
+                    BackColor = UiTheme.Bg,
+                    Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
+                };
+                UiTheme.MakeCard(backupCard, 12);
+
+                // Bursztynowe tło - nakładamy po MakeCard
+                backupCard.Paint += (s, e) =>
+                {
+                    e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                    using (var path = UiTheme.RoundedPath(new Rectangle(0, 0, backupCard.Width - 1, backupCard.Height - 1), 12))
+                    using (var brush = new SolidBrush(AmberSoft))
+                        e.Graphics.FillPath(brush, path);
+                    using (var path = UiTheme.RoundedPath(new Rectangle(0, 0, backupCard.Width - 1, backupCard.Height - 1), 12))
+                    using (var pen = new Pen(Color.FromArgb(252, 211, 77), 1))
+                        e.Graphics.DrawPath(pen, path);
+                };
+                backupCard.Invalidate();
+
+                // Ikona
+                backupCard.Controls.Add(new Label
+                {
+                    Text = "💾",
+                    Font = new Font("Segoe UI", 28),
+                    Location = new Point(24, 20),
+                    Size = new Size(56, 56),
+                    TextAlign = ContentAlignment.MiddleCenter,
+                    BackColor = Color.Transparent
+                });
+
+                // Tytuł
+                backupCard.Controls.Add(new Label
+                {
+                    Text = Loc.IsEnglish
+                        ? "RUN A BACKUP BEFORE YOU START WORK"
+                        : "WYKONAJ BACKUP PRZED ROZPOCZĘCIEM PRACY",
+                    Font = UiFonts.H3,
+                    Location = new Point(92, 26),
+                    AutoSize = true,
+                    ForeColor = AmberText,
+                    BackColor = Color.Transparent
+                });
+
+                // Opis
+                backupCard.Controls.Add(new Label
+                {
+                    Text = Loc.IsEnglish
+                        ? "It's recommended to create a backup of the monitored file before starting work.\nClick the button below to create a copy now."
+                        : "Zalecamy wykonanie kopii zapasowej monitorowanego pliku przed rozpoczęciem pracy.\nKliknij przycisk poniżej, aby teraz utworzyć kopię.",
+                    Font = UiFonts.Body,
+                    Location = new Point(92, 60),
+                    Size = new Size(640, 60),
+                    ForeColor = AmberText,
+                    BackColor = Color.Transparent
+                });
+
+                // Ostatni backup
+                string lastBackupText = lastBackup.HasValue
+                    ? (Loc.IsEnglish
+                        ? "Last backup: " + lastBackup.Value.ToString("yyyy-MM-dd HH:mm")
+                        : "Ostatni backup: " + lastBackup.Value.ToString("yyyy-MM-dd HH:mm"))
+                    : (Loc.IsEnglish
+                        ? "No backups have been made yet."
+                        : "Nie wykonano jeszcze żadnego backupu.");
+
+                backupCard.Controls.Add(new Label
+                {
+                    Text = lastBackupText,
+                    Font = UiFonts.CaptionBold,
+                    Location = new Point(92, 118),
+                    AutoSize = true,
+                    ForeColor = lastBackup.HasValue ? UiTheme.PrimarySoftText : UiTheme.Danger,
+                    BackColor = Color.Transparent
+                });
+
+                // Przycisk - bursztynowy, wyróżniony
+                var btnBackup = new RoundedButton
+                {
+                    Text = "💾   " + (Loc.IsEnglish ? "Run backup now" : "Wykonaj backup teraz"),
+                    Location = new Point(92, 148),
+                    Size = new Size(260, 44),
+                    CornerRadius = 10,
+                    NormalColor = Amber,
+                    HoverColor = Color.FromArgb(217, 119, 6),
+                    PressedColor = Color.FromArgb(180, 83, 9),
+                    ForeColor = Color.White,
+                    Font = UiFonts.BodyBold
+                };
+                btnBackup.Click += (s, e) => { if (onBackupClick != null) onBackupClick(s, e); };
+                backupCard.Controls.Add(btnBackup);
+
+                this.Controls.Add(backupCard);
+                nextTop = 372;
             }
 
+            // === Tips card ===
             var tipCard = new Panel
             {
-                Location = new Point(0, tipCardTop),
-                Size = new Size(760, 320),
+                Location = new Point(0, nextTop),
+                Size = new Size(760, Math.Max(180, 600 - nextTop)),
                 BackColor = UiTheme.Bg,
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom
             };
