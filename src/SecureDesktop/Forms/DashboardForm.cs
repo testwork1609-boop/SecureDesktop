@@ -104,7 +104,7 @@ namespace SecureDesktop.Forms
             catch { return false; }
         }
 
-        private bool VerifyCurrentUserPassword(string password)
+                private bool VerifyCurrentUserPassword(string password)
         {
             try
             {
@@ -112,6 +112,17 @@ namespace SecureDesktop.Forms
                 var data = _db.GetData();
                 if (data == null) return false;
 
+                // 1) Hasło indywidualne (jeśli włączone).
+                if (_currentUser.UseIndividualPassword &&
+                    !string.IsNullOrEmpty(_currentUser.PasswordHash) &&
+                    !string.IsNullOrEmpty(_currentUser.Salt))
+                {
+                    var hashInd = SecurityHelper.HashPassword(password, _currentUser.Salt);
+                    if (string.Equals(hashInd, _currentUser.PasswordHash, StringComparison.Ordinal))
+                        return true;
+                }
+
+                // 2) Hasło zmiany.
                 if (_currentUser.ShiftId.HasValue && data.Shifts != null)
                 {
                     var shift = data.Shifts.FirstOrDefault(s => s.Id == _currentUser.ShiftId.Value);
@@ -123,6 +134,7 @@ namespace SecureDesktop.Forms
                     }
                 }
 
+                // 3) Fallback: legacy AdminPassword.
                 if (_currentUser.IsAdmin && data.Settings != null)
                 {
                     string legacy;
