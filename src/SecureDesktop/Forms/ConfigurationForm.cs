@@ -1087,6 +1087,7 @@ namespace SecureDesktop.Forms
             _userListView.Columns.Add(Loc.T("cfg.usr.col_shift"), 120);
             _userListView.Columns.Add(Loc.T("cfg.usr.col_role"), 100);
             _userListView.Columns.Add(Loc.T("cfg.usr.col_active"), 70);
+            _userListView.DoubleClick += (s, e) => EditUser(s, e);
             RefreshUserList();
             tab.Controls.Add(_userListView);
 
@@ -1095,23 +1096,28 @@ namespace SecureDesktop.Forms
             addBtn.Click += AddUser;
             tab.Controls.Add(addBtn);
 
+            var editBtn = RoundedButton.SoftGreen(Loc.T("cfg.usr.btn_edit"), 180, 40);
+            editBtn.Location = new Point(580, 76);
+            editBtn.Click += EditUser;
+            tab.Controls.Add(editBtn);
+
             var deleteBtn = RoundedButton.SoftRed(Loc.T("cfg.usr.btn_deactivate"), 180, 40);
-            deleteBtn.Location = new Point(580, 76);
+            deleteBtn.Location = new Point(580, 124);
             deleteBtn.Click += DeleteUser;
             tab.Controls.Add(deleteBtn);
 
             var toggleAdminBtn = RoundedButton.Ghost(Loc.T("cfg.usr.btn_toggle"), 180, 40);
-            toggleAdminBtn.Location = new Point(580, 124);
+            toggleAdminBtn.Location = new Point(580, 172);
             toggleAdminBtn.Click += ToggleUserRole;
             tab.Controls.Add(toggleAdminBtn);
 
             var importBtn = RoundedButton.SoftGreen(Loc.T("cfg.usr.btn_import"), 180, 40);
-            importBtn.Location = new Point(580, 186);
+            importBtn.Location = new Point(580, 234);
             importBtn.Click += ImportUsersFromXlsx;
             tab.Controls.Add(importBtn);
 
             var exportBtn = RoundedButton.SoftBlue(Loc.T("cfg.usr.btn_export"), 180, 40);
-            exportBtn.Location = new Point(580, 234);
+            exportBtn.Location = new Point(580, 282);
             exportBtn.Click += ExportUsersToXlsx;
             tab.Controls.Add(exportBtn);
         }
@@ -1222,6 +1228,168 @@ namespace SecureDesktop.Forms
                 cancelBtn.Click += (s, args) => dialog.Close();
 
                 dialog.Controls.AddRange(new Control[] { idLabel, idBox, shiftLabel, shiftCombo, adminCheck, okBtn, cancelBtn });
+                dialog.ShowDialog(this);
+            }
+        }
+
+        // ============== EDYCJA UŻYTKOWNIKA ==============
+
+        private void EditUser(object sender, EventArgs e)
+        {
+            if (_userListView.SelectedItems.Count == 0)
+            {
+                MessageBox.Show(Loc.T("cfg.usr.select_role"), Loc.T("common.info"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            int userId = int.Parse(_userListView.SelectedItems[0].Text);
+            var user = _userRepo.GetById(userId);
+            if (user == null) return;
+
+            var shifts = _shiftRepo != null ? _shiftRepo.GetAllShifts() : new List<Shift>();
+            if (shifts.Count == 0)
+            {
+                MessageBox.Show(Loc.T("cfg.usr.no_shifts"), Loc.T("common.info"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            bool isDefaultAdmin = string.Equals(user.IdentificationNumber, "admin", StringComparison.OrdinalIgnoreCase);
+
+            using (var dialog = new Form
+            {
+                Text = Loc.T("cfg.usr.edit_dlg_title"),
+                Size = new Size(420, 380),
+                StartPosition = FormStartPosition.CenterParent,
+                BackColor = UiTheme.Bg,
+                Font = UiFonts.Body,
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                MaximizeBox = false,
+                MinimizeBox = false
+            })
+            {
+                var idLabel = MakeFieldLabel(Loc.T("cfg.usr.dlg_ident"), 24, 24);
+                var idBox = MakeTextBox(24, 48, 356);
+                idBox.Text = user.IdentificationNumber ?? "";
+                idBox.ReadOnly = isDefaultAdmin;
+                if (isDefaultAdmin)
+                    idBox.BackColor = UiTheme.SurfaceAlt;
+                dialog.Controls.Add(idLabel);
+                dialog.Controls.Add(idBox);
+
+                var shiftLabel = MakeFieldLabel(Loc.T("cfg.usr.dlg_shift"), 24, 92);
+                var shiftCombo = new ComboBox
+                {
+                    Location = new Point(24, 116),
+                    Size = new Size(356, 30),
+                    DropDownStyle = ComboBoxStyle.DropDownList,
+                    Font = UiFonts.BodyLarge,
+                    BackColor = UiTheme.Surface
+                };
+                foreach (var s in shifts) shiftCombo.Items.Add(s.Name);
+                if (user.ShiftId.HasValue)
+                {
+                    int idx = shifts.FindIndex(s => s.Id == user.ShiftId.Value);
+                    if (idx >= 0) shiftCombo.SelectedIndex = idx;
+                    else shiftCombo.SelectedIndex = 0;
+                }
+                else shiftCombo.SelectedIndex = 0;
+                dialog.Controls.Add(shiftLabel);
+                dialog.Controls.Add(shiftCombo);
+
+                var adminCheck = new CheckBox
+                {
+                    Text = Loc.T("cfg.usr.dlg_admin"),
+                    Font = UiFonts.Body,
+                    Location = new Point(24, 162),
+                    AutoSize = true,
+                    FlatStyle = FlatStyle.Flat,
+                    ForeColor = UiTheme.TextPrimary,
+                    Checked = user.IsAdmin,
+                    Enabled = !isDefaultAdmin
+                };
+                dialog.Controls.Add(adminCheck);
+
+                var activeCheck = new CheckBox
+                {
+                    Text = Loc.T("cfg.usr.active"),
+                    Font = UiFonts.Body,
+                    Location = new Point(24, 194),
+                    AutoSize = true,
+                    FlatStyle = FlatStyle.Flat,
+                    ForeColor = UiTheme.TextPrimary,
+                    Checked = user.IsActive,
+                    Enabled = !isDefaultAdmin
+                };
+                dialog.Controls.Add(activeCheck);
+
+                if (isDefaultAdmin)
+                {
+                    var lockInfo = new Label
+                    {
+                        Text = Loc.T("cfg.usr.edit_admin_locked"),
+                        Font = UiFonts.Small,
+                        ForeColor = UiTheme.TextMuted,
+                        Location = new Point(24, 226),
+                        AutoSize = true
+                    };
+                    dialog.Controls.Add(lockInfo);
+                }
+
+                var saveBtn = RoundedButton.Primary(Loc.T("cfg.usr.dlg_save"), 130, 42);
+                saveBtn.Location = new Point(120, 258);
+                saveBtn.Click += (s, args) =>
+                {
+                    string newPin = (idBox.Text ?? "").Trim();
+                    if (string.IsNullOrWhiteSpace(newPin))
+                    {
+                        MessageBox.Show(Loc.T("cfg.usr.err_empty_ident"), Loc.T("common.info"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        return;
+                    }
+                    if (shiftCombo.SelectedIndex < 0)
+                    {
+                        MessageBox.Show(Loc.T("cfg.usr.err_no_shift"), Loc.T("common.info"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        return;
+                    }
+
+                    // Unikalność PIN (poza samym sobą).
+                    if (!string.Equals(newPin, user.IdentificationNumber, StringComparison.Ordinal))
+                    {
+                        var clash = _userRepo.GetAllUsers()
+                            .FirstOrDefault(u => u.Id != user.Id &&
+                                                 string.Equals(u.IdentificationNumber, newPin, StringComparison.Ordinal));
+                        if (clash != null)
+                        {
+                            MessageBox.Show(Loc.T("cfg.usr.edit_err_exists"), Loc.T("common.error"),
+                                MessageBoxButtons.OK, MessageBoxIcon.Error);
+                            return;
+                        }
+                    }
+
+                    var selectedShift = shifts[shiftCombo.SelectedIndex];
+
+                    user.IdentificationNumber = newPin;
+                    user.ShiftId = selectedShift.Id;
+                    if (!isDefaultAdmin)
+                    {
+                        user.IsAdmin = adminCheck.Checked;
+                        user.IsActive = activeCheck.Checked;
+                    }
+
+                    _userRepo.UpdateUser(user);
+                    RefreshUserList();
+                    var h = DataSaved;
+                    if (h != null) h();
+                    dialog.Close();
+                };
+
+                var cancelBtn = RoundedButton.Ghost(Loc.T("cfg.usr.dlg_cancel"), 120, 42);
+                cancelBtn.Location = new Point(260, 258);
+                cancelBtn.Click += (s, args) => dialog.Close();
+
+                dialog.Controls.Add(saveBtn);
+                dialog.Controls.Add(cancelBtn);
+
+                dialog.AcceptButton = null;
                 dialog.ShowDialog(this);
             }
         }
