@@ -90,6 +90,13 @@ namespace SecureDesktop.Utils
             d["login.err.no_shift"] = "Konto nie ma przypisanej zmiany";
             d["login.err.generic"] = "Błąd: ";
 
+            d["lock.confirm_all_title"] = "Zablokować cały ekran?";
+            d["lock.confirm_all_msg"] = "Ekran zostanie zablokowany. Aby go odblokować, trzeba będzie podać dane logowania (PIN i hasło).";
+            d["lock.confirm_pattern_title"] = "Zablokować ekran z patternem?";
+            d["lock.confirm_pattern_msg"] = "Program zacznie wyszukiwać zapisane wzorce na ekranie. Gdy użytkownik je odsłoni, ekran zostanie automatycznie odblokowany.";
+            d["lock.confirm_yes"] = "Tak, zablokuj";
+            d["lock.confirm_no"] = "Anuluj";
+
             d["firstrun.title"] = "Pierwsza konfiguracja";
             d["firstrun.message"] = "To jest pierwsza konfiguracja programu SecureDesktop.\n\nZa chwilę przejdziesz do panelu konfiguracji, gdzie ustawisz hasła zmian, wzorce blokady, użytkowników i kopie zapasowe.\n\nPo zakończeniu kliknij \"Powrót do panelu\".";
 
@@ -350,6 +357,13 @@ namespace SecureDesktop.Utils
             d["login.err.no_pass"] = "Shift has no password set";
             d["login.err.no_shift"] = "Account has no shift assigned";
             d["login.err.generic"] = "Error: ";
+
+            d["lock.confirm_all_title"] = "Lock the entire screen?";
+            d["lock.confirm_all_msg"] = "The screen will be locked. To unlock it, you will need to enter your credentials (PIN and password).";
+            d["lock.confirm_pattern_title"] = "Lock screen with pattern?";
+            d["lock.confirm_pattern_msg"] = "The application will start searching for saved patterns on the screen. When the user reveals them, the screen will unlock automatically.";
+            d["lock.confirm_yes"] = "Yes, lock";
+            d["lock.confirm_no"] = "Cancel";
 
             d["firstrun.title"] = "First-time setup";
             d["firstrun.message"] = "This is the first-time setup of SecureDesktop.\n\nYou will be redirected to the settings panel to configure shift passwords, lock patterns, users and backups.\n\nWhen done, click \"Back to dashboard\".";
