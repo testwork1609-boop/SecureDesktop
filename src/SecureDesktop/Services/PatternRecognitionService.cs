@@ -98,6 +98,7 @@ namespace SecureDesktop.Services
                                 " punkty=" + cached.PointX.Length +
                                 " avgW=" + cached.AvgWeight.ToString("F2") +
                                 " maxW=" + cached.MaxWeight.ToString("F2") +
+                                " std=" + cached.StdDev.ToString("F2") +
                                 " threshold=" + cached.Threshold.ToString("F2"));
                         }
                         catch (Exception ex)
@@ -443,18 +444,24 @@ namespace SecureDesktop.Services
 
         /// <summary>
         /// Porównanie RGB piksel-po-pikselu z tolerancją per-kanał,
-        /// z WAŻENIEM pikseli lokalną wariancją wzorca.
+        /// z KWADRATOWYM ważeniem pikseli lokalną wariancją wzorca.
         ///
         /// Piksele o wysokiej wariancji (ikona, krawędzie, detale) mają
-        /// wyższą wagę niż jednolite tło. Dzięki temu wzorce z dużym
-        /// tłem (np. tapeta) nie są fałszywie dopasowywane do innych
-        /// fragmentów tego samego tła.
+        /// dużo wyższą wagę niż jednolite tło. Dzięki temu wzorce
+        /// zawierające dużo jednolitego tła nie są fałszywie dopasowywane
+        /// do innych fragmentów tego samego tła.
+        ///
+        /// Waga: 1.0 + std²/50, gdzie std to lokalne odchylenie jasności.
+        ///  - std = 0  → 1.0   (jednolite tło)
+        ///  - std = 10 → 3.0
+        ///  - std = 20 → 9.0
+        ///  - std = 40 → 33.0  (ikona, krawędź)
         /// </summary>
         private unsafe double ComputeScore(byte* ptr, int stride, int offsetX, int offsetY, CachedPattern pattern)
         {
-            const int tolR = 30;
-            const int tolG = 30;
-            const int tolB = 30;
+            const int tolR = 35;
+            const int tolG = 35;
+            const int tolB = 35;
 
             int n = pattern.PointX.Length;
             if (n == 0) return 0;
@@ -596,8 +603,8 @@ namespace SecureDesktop.Services
         public byte[] PointB;
 
         /// <summary>
-        /// Waga każdego punktu wzorca - proporcjonalna do lokalnej wariancji
-        /// jasności w bitmapie wzorca. Piksele z ikon/krawędzi mają wysoką wagę,
+        /// Waga każdego punktu wzorca - proporcjonalna do KWADRATU lokalnej
+        /// wariancji jasności. Piksele ikon/krawędzi dostają bardzo wysoką wagę,
         /// piksele jednolitego tła - niską.
         /// </summary>
         public double[] PointWeight;
@@ -630,8 +637,10 @@ namespace SecureDesktop.Services
                 if (Width > 1024 || Height > 1024)
                     throw new InvalidOperationException("Za duży (" + Width + "x" + Height + ")");
 
+                // Gęstsze próbkowanie: 1000 punktów zamiast 400.
+                // Więcej punktów = więcej sygnału z ikon i detali.
                 int totalPixels = Width * Height;
-                const int targetPoints = 400;
+                const int targetPoints = 1000;
                 int step = (int)Math.Round(Math.Sqrt((double)totalPixels / targetPoints));
                 if (step < 1) step = 1;
 
@@ -655,7 +664,6 @@ namespace SecureDesktop.Services
                         byte* p = (byte*)data.Scan0;
                         int stride = data.Stride;
 
-                        // Promień okolicy do obliczenia lokalnej wariancji.
                         const int radius = 3;
 
                         for (int y = 0; y < Height; y += step)
@@ -670,11 +678,11 @@ namespace SecureDesktop.Services
                                 // Lokalna wariancja jasności w okolicy 7x7.
                                 double sum = 0, sumSq = 0;
                                 int cnt = 0;
-                                for (int dy = -radius; dy <= radius; dy += 2)
+                                for (int dy = -radius; dy <= radius; dy++)
                                 {
                                     int ny = y + dy;
                                     if (ny < 0 || ny >= Height) continue;
-                                    for (int dx = -radius; dx <= radius; dx += 2)
+                                    for (int dx = -radius; dx <= radius; dx++)
                                     {
                                         int nx = x + dx;
                                         if (nx < 0 || nx >= Width) continue;
@@ -695,10 +703,16 @@ namespace SecureDesktop.Services
                                 }
                                 double localStd = Math.Sqrt(localVar);
 
-                                // Waga: minimum 1.0, plus 3 * std jasności.
-                                // Piksel o std=20 ma wagę ~4x wyższą niż tło std=0.
-                                double w = 1.0 + 3.0 * Math.Min(localStd, 60.0) / 20.0;
-                                if (w < 1.0) w = 1.0;
+                                // KWADRATOWE ważenie: w = 1 + std²/50
+                                //  - std = 0  → 1.0
+                                //  - std = 10 → 3.0
+                                //  - std = 20 → 9.0
+                                //  - std = 40 → 33.0
+                                // Piksele ikon mają dziesiątki razy większą wagę
+                                // niż jednolite tło, więc nawet jeśli tło pasuje
+                                // wszędzie, wynik zależy głównie od ikon.
+                                double stdCapped = Math.Min(localStd, 80.0);
+                                double w = 1.0 + (stdCapped * stdCapped) / 50.0;
 
                                 xs.Add(x);
                                 ys.Add(y);
