@@ -16,19 +16,15 @@ namespace SecureDesktop.Services
         private const int RequiredConsecutiveMisses = 4;
         private const int PositionJitterPx = 8;
 
-        // Histereza progowa: gdy pattern jest już widoczny, używamy
-        // niższego progu (threshold * ten współczynnik), żeby drobne
-        // fluktuacje pikseli nie powodowały fałszywego "lost" i przeskoku.
+        // Histereza progowa - gdy pattern jest widoczny, używamy niższego progu.
         private const double HysteresisFactor = 0.80;
 
-        // Fallback pełny skan: dopiero gdy score w oknie spadnie poniżej
-        // threshold * ten współczynnik (bardzo słabo).
+        // Fallback pełny skan - gdy score w oknie jest BARDZO niski.
         private const double FullScanFactor = 0.50;
 
-        // Ochrona przed dużymi skokami: gdy pełny skan znalazł coś dalej
-        // niż tyle pikseli, wymagamy score_new >= score_old + JumpScoreBonus.
-        private const int JumpGuardPx = 100;
-        private const double JumpScoreBonus = 0.10;
+        // Wymóg specyficzności: TOP-1 musi być wyższy od TOP-2 (w innym
+        // miejscu) o tyle, żeby pattern został uznany za znaleziony.
+        private const double SpecificityGap = 0.15;
 
         private readonly double _defaultMatchThreshold;
         private readonly int _intervalMs;
@@ -90,26 +86,20 @@ namespace SecureDesktop.Services
                 _lastLocations.Clear();
                 _lastScores.Clear();
                 Log("=== START PatternRecognitionService ===");
-                Log("VirtualScreen = " + SystemInformation.VirtualScreen);
 
                 if (patterns != null)
                 {
                     foreach (var p in patterns)
                     {
                         if (p == null) continue;
-                        if (!p.IsActive) { Log("'" + p.Name + "': nieaktywny - pomijam"); continue; }
-                        if (p.ImageData == null || p.ImageData.Length == 0)
-                        {
-                            Log("'" + p.Name + "': brak ImageData - pomijam");
-                            continue;
-                        }
+                        if (!p.IsActive) continue;
+                        if (p.ImageData == null || p.ImageData.Length == 0) continue;
 
                         try
                         {
                             var cached = new CachedPattern(p, _defaultMatchThreshold);
                             _patterns.Add(cached);
                             Log("'" + p.Name + "': OK " + cached.Width + "x" + cached.Height +
-                                " punkty=" + cached.PointX.Length +
                                 " threshold=" + cached.Threshold.ToString("F2"));
                         }
                         catch (Exception ex)
@@ -172,8 +162,6 @@ namespace SecureDesktop.Services
             bool hasPrev = _lastLocations.TryGetValue(key, out prev);
             bool alreadyReportedFound = _reportedFound.ContainsKey(key) && _reportedFound[key];
 
-            // Histereza progowa: gdy pattern jest już widoczny, używamy
-            // niższego progu - fluktuacje pikseli nie powodują przeskoków.
             double effectiveThreshold = alreadyReportedFound
                 ? pattern.Threshold * HysteresisFactor
                 : pattern.Threshold;
@@ -184,42 +172,12 @@ namespace SecureDesktop.Services
 
             MatchResult match = FindBestMatch(screen, pattern, searchArea, effectiveThreshold);
 
-            // Fallback pełny skan - TYLKO gdy score w oknie jest BARDZO niski.
             if (!match.Found && hasPrev && pattern.LastScore < pattern.Threshold * FullScanFactor)
             {
-                Log("'" + key + "': okno słabe (best=" + pattern.LastScore.ToString("F3") +
-                    " < " + (pattern.Threshold * FullScanFactor).ToString("F3") +
-                    "), pełny skan");
-
-                MatchResult fullMatch = FindBestMatch(screen, pattern,
+                Log("'" + key + "': okno słabe, pełny skan");
+                match = FindBestMatch(screen, pattern,
                     new Rectangle(0, 0, screen.Width, screen.Height),
                     pattern.Threshold);
-
-                // Ochrona przed dużymi skokami.
-                if (fullMatch.Found && alreadyReportedFound)
-                {
-                    int dx = Math.Abs(prev.X - fullMatch.X);
-                    int dy = Math.Abs(prev.Y - fullMatch.Y);
-                    if (dx > JumpGuardPx || dy > JumpGuardPx)
-                    {
-                        double prevScore = _lastScores.ContainsKey(key) ? _lastScores[key] : 0;
-                        if (fullMatch.Score < prevScore + JumpScoreBonus)
-                        {
-                            Log("'" + key + "': ODRZUCAM skok (dx=" + dx + " dy=" + dy +
-                                " new=" + fullMatch.Score.ToString("F3") +
-                                " prev=" + prevScore.ToString("F3") + ")");
-                            fullMatch = MatchResult.NotFound;
-                        }
-                        else
-                        {
-                            Log("'" + key + "': akceptuję skok (dx=" + dx + " dy=" + dy +
-                                " new=" + fullMatch.Score.ToString("F3") +
-                                " prev=" + prevScore.ToString("F3") + ")");
-                        }
-                    }
-                }
-
-                match = fullMatch;
             }
 
             if (!_bestEver.ContainsKey(key) || pattern.LastScore > _bestEver[key])
@@ -233,7 +191,7 @@ namespace SecureDesktop.Services
                 int m = _missStreak.ContainsKey(key) ? _missStreak[key] : 0;
                 Log("DIAG '" + key + "': best=" + pattern.LastScore.ToString("F3") +
                     " max_ever=" + _bestEver[key].ToString("F3") +
-                    " eff_thr=" + effectiveThreshold.ToString("F2") +
+                    " eff=" + effectiveThreshold.ToString("F2") +
                     " found=" + match.Found + " hit=" + h + " miss=" + m);
                 _lastDiagLog[key] = DateTime.Now;
             }
@@ -306,7 +264,7 @@ namespace SecureDesktop.Services
                     _lastScores.Remove(key);
                     _reportedFound[key] = false;
 
-                    Log("'" + key + "': ZGUBIONO (po " + missCount + " miss)");
+                    Log("'" + key + "': ZGUBIONO");
                     var h = PatternLost;
                     if (h != null) h(this, new PatternLostEventArgs { Pattern = pattern.Source });
                 }
@@ -362,6 +320,11 @@ namespace SecureDesktop.Services
             finally { screen.UnlockBits(data); }
         }
 
+        /// <summary>
+        /// Znajduje najlepsze dopasowanie z wymogiem specyficzności:
+        /// TOP-1 musi być istotnie wyższy od TOP-2 (w innym miejscu),
+        /// inaczej pattern uznajemy za niespecyficzny i zwracamy NotFound.
+        /// </summary>
         internal unsafe MatchResult FindBestMatchInArea(BitmapData data, Rectangle searchArea, CachedPattern pattern, double threshold)
         {
             byte* ptr = (byte*)data.Scan0;
@@ -371,59 +334,95 @@ namespace SecureDesktop.Services
             int maxY = searchArea.Height - pattern.Height;
             if (maxX < 0 || maxY < 0) return MatchResult.NotFound;
 
-            if (maxX == 0 && maxY == 0)
-            {
-                double s = ComputeScore(ptr, stride, 0, 0, pattern);
-                pattern.LastScore = s;
-                if (s >= threshold)
-                    return new MatchResult { Found = true, X = searchArea.X, Y = searchArea.Y, Score = s };
-                return MatchResult.NotFound;
-            }
-
             int minDim = Math.Min(pattern.Width, pattern.Height);
             int coarseStep = minDim <= 16 ? 2 : Math.Max(4, minDim / 8);
 
+            double candidateFloor = threshold * 0.5;
+
             int numRows = (maxY / coarseStep) + 1;
-            var rowScore = new double[numRows];
-            var rowX = new int[numRows];
-            var rowY = new int[numRows];
+            var rowCandidates = new List<CandidatePoint>[numRows];
 
             Parallel.For(0, numRows, ri =>
             {
                 int y = ri * coarseStep;
                 if (y > maxY) y = maxY;
 
-                double localBest = -1;
-                int localX = 0;
+                var local = new List<CandidatePoint>(8);
                 for (int x = 0; x <= maxX; x += coarseStep)
                 {
                     double s = ComputeScore(ptr, stride, x, y, pattern);
-                    if (s > localBest) { localBest = s; localX = x; }
+                    if (s >= candidateFloor)
+                        local.Add(new CandidatePoint { X = x, Y = y, Score = s });
                 }
-                rowScore[ri] = localBest;
-                rowX[ri] = localX;
-                rowY[ri] = y;
+                rowCandidates[ri] = local;
             });
 
-            double coarseBest = -1;
-            int cbX = 0, cbY = 0;
+            // Zbierz wszystkich kandydatów powyżej candidateFloor.
+            var all = new List<CandidatePoint>();
             for (int i = 0; i < numRows; i++)
+                if (rowCandidates[i] != null && rowCandidates[i].Count > 0)
+                    all.AddRange(rowCandidates[i]);
+
+            if (all.Count == 0)
             {
-                if (rowScore[i] > coarseBest)
+                pattern.LastScore = 0;
+                return MatchResult.NotFound;
+            }
+
+            // Sortuj malejąco.
+            all.Sort((a, b) => b.Score.CompareTo(a.Score));
+
+            // Refine wokół TOP-1.
+            CandidatePoint top1 = all[0];
+            int bx, by;
+            double bestScore = RefineAround(ptr, stride, top1.X, top1.Y, maxX, maxY, pattern, out bx, out by);
+
+            // Znajdź TOP-2 oddalony o co najmniej pattern.Width/Height.
+            CandidatePoint top2 = null;
+            double secondScore = 0;
+            for (int i = 1; i < all.Count; i++)
+            {
+                int dx = Math.Abs(all[i].X - top1.X);
+                int dy = Math.Abs(all[i].Y - top1.Y);
+                if (dx >= pattern.Width || dy >= pattern.Height)
                 {
-                    coarseBest = rowScore[i];
-                    cbX = rowX[i];
-                    cbY = rowY[i];
+                    top2 = all[i];
+                    int bx2, by2;
+                    secondScore = RefineAround(ptr, stride, top2.X, top2.Y, maxX, maxY, pattern, out bx2, out by2);
+                    break;
                 }
             }
 
-            int r0x = Math.Max(0, cbX - coarseStep);
-            int r1x = Math.Min(maxX, cbX + coarseStep);
-            int r0y = Math.Max(0, cbY - coarseStep);
-            int r1y = Math.Min(maxY, cbY + coarseStep);
+            pattern.LastScore = bestScore;
+
+            if (bestScore < threshold)
+                return MatchResult.NotFound;
+
+            // Wymóg specyficzności: TOP-1 musi być istotnie wyższy od TOP-2.
+            if (top2 != null && (bestScore - secondScore) < SpecificityGap)
+            {
+                // Pattern niespecyficzny - wiele miejsc pasuje podobnie.
+                return MatchResult.NotFound;
+            }
+
+            return new MatchResult { Found = true, X = searchArea.X + bx, Y = searchArea.Y + by, Score = bestScore };
+        }
+
+        private unsafe double RefineAround(byte* ptr, int stride, int cx, int cy,
+            int maxX, int maxY, CachedPattern pattern, out int bestX, out int bestY)
+        {
+            int minDim = Math.Min(pattern.Width, pattern.Height);
+            int radius = Math.Max(4, minDim / 8);
+
+            int r0x = Math.Max(0, cx - radius);
+            int r1x = Math.Min(maxX, cx + radius);
+            int r0y = Math.Max(0, cy - radius);
+            int r1y = Math.Min(maxY, cy + radius);
 
             double bestScore = 0;
-            int bestX = cbX, bestY = cbY;
+            bestX = cx;
+            bestY = cy;
+
             for (int y = r0y; y <= r1y; y++)
                 for (int x = r0x; x <= r1x; x++)
                 {
@@ -431,11 +430,14 @@ namespace SecureDesktop.Services
                     if (s > bestScore) { bestScore = s; bestX = x; bestY = y; }
                 }
 
-            pattern.LastScore = bestScore;
+            return bestScore;
+        }
 
-            if (bestScore >= threshold)
-                return new MatchResult { Found = true, X = searchArea.X + bestX, Y = searchArea.Y + bestY, Score = bestScore };
-            return MatchResult.NotFound;
+        private struct CandidatePoint
+        {
+            public int X;
+            public int Y;
+            public double Score;
         }
 
         private unsafe List<PatternCandidate> FindTopCandidates(BitmapData data, Rectangle searchArea,
@@ -490,10 +492,6 @@ namespace SecureDesktop.Services
             return result;
         }
 
-        /// <summary>
-        /// Porównanie RGB piksel-po-pikselu z tolerancją per-kanał.
-        /// Bez ważenia - score = % pikseli wzorca, których kolory się zgadzają.
-        /// </summary>
         private unsafe double ComputeScore(byte* ptr, int stride, int offsetX, int offsetY, CachedPattern pattern)
         {
             const int tolR = 30;
