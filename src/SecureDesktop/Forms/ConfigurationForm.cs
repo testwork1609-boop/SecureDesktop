@@ -839,12 +839,11 @@ namespace SecureDesktop.Forms
                 return;
             }
 
-            double gap12 = result.Score - result.SecondScore;
-            string verdict;
-            if (result.Found && gap12 >= 0.15) verdict = Loc.T("cfg.pat.verdict_good");
-            else if (result.Found && gap12 >= 0.05) verdict = Loc.T("cfg.pat.verdict_ok");
-            else if (result.Found) verdict = Loc.T("cfg.pat.verdict_weak");
-            else if (result.Score >= 0.6) verdict = Loc.T("cfg.pat.verdict_similar");
+             string verdict;
+            if (result.Score >= 0.90) verdict = Loc.T("cfg.pat.verdict_good");
+            else if (result.Score >= 0.75) verdict = Loc.T("cfg.pat.verdict_ok");
+            else if (result.Score >= 0.55) verdict = Loc.T("cfg.pat.verdict_weak");
+            else if (result.Score >= 0.40) verdict = Loc.T("cfg.pat.verdict_similar");
             else verdict = Loc.T("cfg.pat.verdict_notvisible");
 
             string headerLine = Loc.T("cfg.pat.test_header", pattern.Name, result.PatternWidth, result.PatternHeight, result.StdDev.ToString("F1"));
