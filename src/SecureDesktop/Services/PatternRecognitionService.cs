@@ -16,6 +16,20 @@ namespace SecureDesktop.Services
         private const int RequiredConsecutiveMisses = 4;
         private const int PositionJitterPx = 8;
 
+        // Histereza progowa: gdy pattern jest już widoczny, używamy
+        // niższego progu (threshold * ten współczynnik), żeby drobne
+        // fluktuacje pikseli nie powodowały fałszywego "lost" i przeskoku.
+        private const double HysteresisFactor = 0.80;
+
+        // Fallback pełny skan: dopiero gdy score w oknie spadnie poniżej
+        // threshold * ten współczynnik (bardzo słabo).
+        private const double FullScanFactor = 0.50;
+
+        // Ochrona przed dużymi skokami: gdy pełny skan znalazł coś dalej
+        // niż tyle pikseli, wymagamy score_new >= score_old + JumpScoreBonus.
+        private const int JumpGuardPx = 100;
+        private const double JumpScoreBonus = 0.10;
+
         private readonly double _defaultMatchThreshold;
         private readonly int _intervalMs;
         private CancellationTokenSource _cts;
@@ -156,18 +170,56 @@ namespace SecureDesktop.Services
 
             Rectangle prev;
             bool hasPrev = _lastLocations.TryGetValue(key, out prev);
+            bool alreadyReportedFound = _reportedFound.ContainsKey(key) && _reportedFound[key];
+
+            // Histereza progowa: gdy pattern jest już widoczny, używamy
+            // niższego progu - fluktuacje pikseli nie powodują przeskoków.
+            double effectiveThreshold = alreadyReportedFound
+                ? pattern.Threshold * HysteresisFactor
+                : pattern.Threshold;
 
             Rectangle searchArea = hasPrev
-                ? Inflate(prev, 150, screen.Size)
+                ? Inflate(prev, 100, screen.Size)
                 : new Rectangle(0, 0, screen.Width, screen.Height);
 
-            MatchResult match = FindBestMatch(screen, pattern, searchArea);
+            MatchResult match = FindBestMatch(screen, pattern, searchArea, effectiveThreshold);
 
-            if (!match.Found && hasPrev)
+            // Fallback pełny skan - TYLKO gdy score w oknie jest BARDZO niski.
+            if (!match.Found && hasPrev && pattern.LastScore < pattern.Threshold * FullScanFactor)
             {
-                Log("'" + key + "': nie znaleziono w oknie (best=" + pattern.LastScore.ToString("F3") + "), pełny skan");
-                match = FindBestMatch(screen, pattern,
-                    new Rectangle(0, 0, screen.Width, screen.Height));
+                Log("'" + key + "': okno słabe (best=" + pattern.LastScore.ToString("F3") +
+                    " < " + (pattern.Threshold * FullScanFactor).ToString("F3") +
+                    "), pełny skan");
+
+                MatchResult fullMatch = FindBestMatch(screen, pattern,
+                    new Rectangle(0, 0, screen.Width, screen.Height),
+                    pattern.Threshold);
+
+                // Ochrona przed dużymi skokami.
+                if (fullMatch.Found && alreadyReportedFound)
+                {
+                    int dx = Math.Abs(prev.X - fullMatch.X);
+                    int dy = Math.Abs(prev.Y - fullMatch.Y);
+                    if (dx > JumpGuardPx || dy > JumpGuardPx)
+                    {
+                        double prevScore = _lastScores.ContainsKey(key) ? _lastScores[key] : 0;
+                        if (fullMatch.Score < prevScore + JumpScoreBonus)
+                        {
+                            Log("'" + key + "': ODRZUCAM skok (dx=" + dx + " dy=" + dy +
+                                " new=" + fullMatch.Score.ToString("F3") +
+                                " prev=" + prevScore.ToString("F3") + ")");
+                            fullMatch = MatchResult.NotFound;
+                        }
+                        else
+                        {
+                            Log("'" + key + "': akceptuję skok (dx=" + dx + " dy=" + dy +
+                                " new=" + fullMatch.Score.ToString("F3") +
+                                " prev=" + prevScore.ToString("F3") + ")");
+                        }
+                    }
+                }
+
+                match = fullMatch;
             }
 
             if (!_bestEver.ContainsKey(key) || pattern.LastScore > _bestEver[key])
@@ -181,14 +233,13 @@ namespace SecureDesktop.Services
                 int m = _missStreak.ContainsKey(key) ? _missStreak[key] : 0;
                 Log("DIAG '" + key + "': best=" + pattern.LastScore.ToString("F3") +
                     " max_ever=" + _bestEver[key].ToString("F3") +
-                    " threshold=" + pattern.Threshold.ToString("F2") +
+                    " eff_thr=" + effectiveThreshold.ToString("F2") +
                     " found=" + match.Found + " hit=" + h + " miss=" + m);
                 _lastDiagLog[key] = DateTime.Now;
             }
 
             int hitCount = _hitStreak.ContainsKey(key) ? _hitStreak[key] : 0;
             int missCount = _missStreak.ContainsKey(key) ? _missStreak[key] : 0;
-            bool alreadyReportedFound = _reportedFound.ContainsKey(key) && _reportedFound[key];
 
             if (match.Found)
             {
@@ -301,17 +352,17 @@ namespace SecureDesktop.Services
             catch (Exception ex) { Log("CaptureScreen: " + ex.Message); return null; }
         }
 
-        private MatchResult FindBestMatch(Bitmap screen, CachedPattern pattern, Rectangle searchArea)
+        private MatchResult FindBestMatch(Bitmap screen, CachedPattern pattern, Rectangle searchArea, double threshold)
         {
             if (searchArea.Width < pattern.Width || searchArea.Height < pattern.Height)
                 return MatchResult.NotFound;
 
             BitmapData data = screen.LockBits(searchArea, ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
-            try { return FindBestMatchInArea(data, searchArea, pattern); }
+            try { return FindBestMatchInArea(data, searchArea, pattern, threshold); }
             finally { screen.UnlockBits(data); }
         }
 
-        internal unsafe MatchResult FindBestMatchInArea(BitmapData data, Rectangle searchArea, CachedPattern pattern)
+        internal unsafe MatchResult FindBestMatchInArea(BitmapData data, Rectangle searchArea, CachedPattern pattern, double threshold)
         {
             byte* ptr = (byte*)data.Scan0;
             int stride = data.Stride;
@@ -324,7 +375,7 @@ namespace SecureDesktop.Services
             {
                 double s = ComputeScore(ptr, stride, 0, 0, pattern);
                 pattern.LastScore = s;
-                if (s >= pattern.Threshold)
+                if (s >= threshold)
                     return new MatchResult { Found = true, X = searchArea.X, Y = searchArea.Y, Score = s };
                 return MatchResult.NotFound;
             }
@@ -382,7 +433,7 @@ namespace SecureDesktop.Services
 
             pattern.LastScore = bestScore;
 
-            if (bestScore >= pattern.Threshold)
+            if (bestScore >= threshold)
                 return new MatchResult { Found = true, X = searchArea.X + bestX, Y = searchArea.Y + bestY, Score = bestScore };
             return MatchResult.NotFound;
         }
@@ -442,7 +493,6 @@ namespace SecureDesktop.Services
         /// <summary>
         /// Porównanie RGB piksel-po-pikselu z tolerancją per-kanał.
         /// Bez ważenia - score = % pikseli wzorca, których kolory się zgadzają.
-        /// Proste, przewidywalne, niezawodne.
         /// </summary>
         private unsafe double ComputeScore(byte* ptr, int stride, int offsetX, int offsetY, CachedPattern pattern)
         {
