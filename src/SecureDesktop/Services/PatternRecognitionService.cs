@@ -16,9 +16,17 @@ namespace SecureDesktop.Services
         private const int RequiredConsecutiveMisses = 4;
         private const int PositionJitterPx = 8;
 
+        // Histereza progowa - gdy pattern jest widoczny, używamy niższego progu.
         private const double HysteresisFactor = 0.80;
+
+        // Fallback pełny skan - gdy score w oknie jest BARDZO niski.
         private const double FullScanFactor = 0.50;
-        private const double SpecificityGap = 0.15;
+
+        // Próg "małego ruchu" - do tylu pikseli akceptujemy przesunięcie.
+        private const int SmallMovePx = 30;
+
+        // Duży skok jest akceptowany tylko gdy score nowy >= score stary + ten bonus.
+        private const double BigJumpScoreBonus = 0.15;
 
         private readonly double _defaultMatchThreshold;
         private readonly int _intervalMs;
@@ -198,52 +206,46 @@ namespace SecureDesktop.Services
                 hitCount++;
                 missCount = 0;
 
-                if (!alreadyReportedFound && hitCount >= RequiredConsecutiveHits)
+                // === Decyzja: zapisać pozycję czy zignorować skok ===
+                if (!alreadyReportedFound)
                 {
-                    var newRect = new Rectangle(match.X, match.Y, pattern.Width, pattern.Height);
-                    _lastLocations[key] = newRect;
-                    _lastScores[key] = match.Score;
-                    _reportedFound[key] = true;
-
-                    var absLocation = new Rectangle(
-                        newRect.X + _captureOrigin.X,
-                        newRect.Y + _captureOrigin.Y,
-                        newRect.Width,
-                        newRect.Height);
-
-                    Log("'" + key + "': ZNALEZIONO @ (" + match.X + "," + match.Y + ") score=" + match.Score.ToString("F3"));
-                    var h = PatternFound;
-                    if (h != null) h(this, new PatternFoundEventArgs
+                    // Pierwsze wykrycie - zapisz pozycję.
+                    if (hitCount >= RequiredConsecutiveHits)
                     {
-                        Pattern = pattern.Source,
-                        Location = absLocation,
-                        Confidence = match.Score
-                    });
+                        UpdatePositionAndReport(key, pattern, match);
+                        _reportedFound[key] = true;
+                    }
                 }
-                else if (alreadyReportedFound)
+                else
                 {
                     int dx = Math.Abs(prev.X - match.X);
                     int dy = Math.Abs(prev.Y - match.Y);
 
-                    if (dx > PositionJitterPx || dy > PositionJitterPx)
+                    if (dx <= PositionJitterPx && dy <= PositionJitterPx)
                     {
-                        var newRect = new Rectangle(match.X, match.Y, pattern.Width, pattern.Height);
-                        _lastLocations[key] = newRect;
-                        _lastScores[key] = match.Score;
-
-                        var absLocation = new Rectangle(
-                            newRect.X + _captureOrigin.X,
-                            newRect.Y + _captureOrigin.Y,
-                            newRect.Width,
-                            newRect.Height);
-
-                        var h = PatternFound;
-                        if (h != null) h(this, new PatternFoundEventArgs
+                        // Brak ruchu - nic nie rób.
+                    }
+                    else if (dx <= SmallMovePx && dy <= SmallMovePx)
+                    {
+                        // Mały ruch - zaktualizuj pozycję.
+                        UpdatePositionAndReport(key, pattern, match);
+                    }
+                    else
+                    {
+                        // Duży skok - akceptuj TYLKO gdy score znacznie lepszy.
+                        double prevScore = _lastScores.ContainsKey(key) ? _lastScores[key] : 0;
+                        if (match.Score >= prevScore + BigJumpScoreBonus)
                         {
-                            Pattern = pattern.Source,
-                            Location = absLocation,
-                            Confidence = match.Score
-                        });
+                            Log("'" + key + "': akceptuję skok dx=" + dx + " dy=" + dy +
+                                " score " + prevScore.ToString("F3") + " -> " + match.Score.ToString("F3"));
+                            UpdatePositionAndReport(key, pattern, match);
+                        }
+                        else
+                        {
+                            Log("'" + key + "': ODRZUCAM skok dx=" + dx + " dy=" + dy +
+                                " score " + prevScore.ToString("F3") + " -> " + match.Score.ToString("F3"));
+                            // Pozycja pozostaje bez zmian - pattern nadal "znaleziony".
+                        }
                     }
                 }
             }
@@ -266,6 +268,27 @@ namespace SecureDesktop.Services
 
             _hitStreak[key] = hitCount;
             _missStreak[key] = missCount;
+        }
+
+        private void UpdatePositionAndReport(string key, CachedPattern pattern, MatchResult match)
+        {
+            var newRect = new Rectangle(match.X, match.Y, pattern.Width, pattern.Height);
+            _lastLocations[key] = newRect;
+            _lastScores[key] = match.Score;
+
+            var absLocation = new Rectangle(
+                newRect.X + _captureOrigin.X,
+                newRect.Y + _captureOrigin.Y,
+                newRect.Width,
+                newRect.Height);
+
+            var h = PatternFound;
+            if (h != null) h(this, new PatternFoundEventArgs
+            {
+                Pattern = pattern.Source,
+                Location = absLocation,
+                Confidence = match.Score
+            });
         }
 
         public void Stop()
@@ -326,89 +349,47 @@ namespace SecureDesktop.Services
             int minDim = Math.Min(pattern.Width, pattern.Height);
             int coarseStep = minDim <= 16 ? 2 : Math.Max(4, minDim / 8);
 
-            double candidateFloor = threshold * 0.5;
-
             int numRows = (maxY / coarseStep) + 1;
-            var rowCandidates = new List<CandidatePoint>[numRows];
+            var rowScore = new double[numRows];
+            var rowX = new int[numRows];
+            var rowY = new int[numRows];
 
             Parallel.For(0, numRows, ri =>
             {
                 int y = ri * coarseStep;
                 if (y > maxY) y = maxY;
 
-                var local = new List<CandidatePoint>(8);
+                double localBest = -1;
+                int localX = 0;
                 for (int x = 0; x <= maxX; x += coarseStep)
                 {
                     double s = ComputeScore(ptr, stride, x, y, pattern);
-                    if (s >= candidateFloor)
-                        local.Add(new CandidatePoint { X = x, Y = y, Score = s });
+                    if (s > localBest) { localBest = s; localX = x; }
                 }
-                rowCandidates[ri] = local;
+                rowScore[ri] = localBest;
+                rowX[ri] = localX;
+                rowY[ri] = y;
             });
 
-            var all = new List<CandidatePoint>();
+            double coarseBest = -1;
+            int cbX = 0, cbY = 0;
             for (int i = 0; i < numRows; i++)
             {
-                if (rowCandidates[i] != null && rowCandidates[i].Count > 0)
-                    all.AddRange(rowCandidates[i]);
-            }
-
-            if (all.Count == 0)
-            {
-                pattern.LastScore = 0;
-                return MatchResult.NotFound;
-            }
-
-            all.Sort((a, b) => b.Score.CompareTo(a.Score));
-
-            CandidatePoint top1 = all[0];
-            int bx, by;
-            double bestScore = RefineAround(ptr, stride, top1.X, top1.Y, maxX, maxY, pattern, out bx, out by);
-
-            bool hasTop2 = false;
-            double secondScore = 0;
-            for (int i = 1; i < all.Count; i++)
-            {
-                int dx = Math.Abs(all[i].X - top1.X);
-                int dy = Math.Abs(all[i].Y - top1.Y);
-                if (dx >= pattern.Width || dy >= pattern.Height)
+                if (rowScore[i] > coarseBest)
                 {
-                    CandidatePoint top2 = all[i];
-                    int bx2, by2;
-                    secondScore = RefineAround(ptr, stride, top2.X, top2.Y, maxX, maxY, pattern, out bx2, out by2);
-                    hasTop2 = true;
-                    break;
+                    coarseBest = rowScore[i];
+                    cbX = rowX[i];
+                    cbY = rowY[i];
                 }
             }
 
-            pattern.LastScore = bestScore;
-
-            if (bestScore < threshold)
-                return MatchResult.NotFound;
-
-            if (hasTop2 && (bestScore - secondScore) < SpecificityGap)
-            {
-                return MatchResult.NotFound;
-            }
-
-            return new MatchResult { Found = true, X = searchArea.X + bx, Y = searchArea.Y + by, Score = bestScore };
-        }
-
-        private unsafe double RefineAround(byte* ptr, int stride, int cx, int cy,
-            int maxX, int maxY, CachedPattern pattern, out int bestX, out int bestY)
-        {
-            int minDim = Math.Min(pattern.Width, pattern.Height);
-            int radius = Math.Max(4, minDim / 8);
-
-            int r0x = Math.Max(0, cx - radius);
-            int r1x = Math.Min(maxX, cx + radius);
-            int r0y = Math.Max(0, cy - radius);
-            int r1y = Math.Min(maxY, cy + radius);
+            int r0x = Math.Max(0, cbX - coarseStep);
+            int r1x = Math.Min(maxX, cbX + coarseStep);
+            int r0y = Math.Max(0, cbY - coarseStep);
+            int r1y = Math.Min(maxY, cbY + coarseStep);
 
             double bestScore = 0;
-            bestX = cx;
-            bestY = cy;
-
+            int bestX = cbX, bestY = cbY;
             for (int y = r0y; y <= r1y; y++)
                 for (int x = r0x; x <= r1x; x++)
                 {
@@ -416,14 +397,11 @@ namespace SecureDesktop.Services
                     if (s > bestScore) { bestScore = s; bestX = x; bestY = y; }
                 }
 
-            return bestScore;
-        }
+            pattern.LastScore = bestScore;
 
-        private struct CandidatePoint
-        {
-            public int X;
-            public int Y;
-            public double Score;
+            if (bestScore >= threshold)
+                return new MatchResult { Found = true, X = searchArea.X + bestX, Y = searchArea.Y + bestY, Score = bestScore };
+            return MatchResult.NotFound;
         }
 
         private unsafe List<PatternCandidate> FindTopCandidates(BitmapData data, Rectangle searchArea,
