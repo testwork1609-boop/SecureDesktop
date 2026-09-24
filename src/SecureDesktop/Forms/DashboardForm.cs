@@ -653,6 +653,17 @@ namespace SecureDesktop.Forms
         private async void OnLockAllScreens(object sender, EventArgs e)
         {
             if (_lockInProgress) return;
+
+            // Pytanie o potwierdzenie
+            bool confirmed = WarningDialog.Confirm(
+                this,
+                Loc.T("lock.confirm_all_title"),
+                Loc.T("lock.confirm_all_msg"),
+                Loc.T("lock.confirm_yes"),
+                Loc.T("lock.confirm_no"));
+
+            if (!confirmed) return;
+
             _lockInProgress = true;
             try
             {
@@ -672,6 +683,17 @@ namespace SecureDesktop.Forms
         private async void OnLockWithPatterns(object sender, EventArgs e)
         {
             if (_lockInProgress) return;
+
+            // Pytanie o potwierdzenie
+            bool confirmed = WarningDialog.Confirm(
+                this,
+                Loc.T("lock.confirm_pattern_title"),
+                Loc.T("lock.confirm_pattern_msg"),
+                Loc.T("lock.confirm_yes"),
+                Loc.T("lock.confirm_no"));
+
+            if (!confirmed) return;
+
             _lockInProgress = true;
             try
             {
