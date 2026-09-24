@@ -12,14 +12,8 @@ namespace SecureDesktop.Services
 {
     public class PatternRecognitionService : IDisposable
     {
-        // Ile kolejnych klatek "found" wymagane, żeby uznać pattern za znaleziony.
         private const int RequiredConsecutiveHits = 2;
-
-        // Ile kolejnych klatek "miss" wymagane, żeby uznać pattern za zgubiony.
         private const int RequiredConsecutiveMisses = 4;
-
-        // Anti-jitter: minimalna zmiana pozycji (w px), żeby uznać że pattern
-        // faktycznie się przesunął.
         private const int PositionJitterPx = 8;
 
         private readonly double _defaultMatchThreshold;
@@ -102,7 +96,8 @@ namespace SecureDesktop.Services
                             _patterns.Add(cached);
                             Log("'" + p.Name + "': OK " + cached.Width + "x" + cached.Height +
                                 " punkty=" + cached.PointX.Length +
-                                " std=" + cached.StdDev.ToString("F2") +
+                                " avgW=" + cached.AvgWeight.ToString("F2") +
+                                " maxW=" + cached.MaxWeight.ToString("F2") +
                                 " threshold=" + cached.Threshold.ToString("F2"));
                         }
                         catch (Exception ex)
@@ -447,14 +442,13 @@ namespace SecureDesktop.Services
         }
 
         /// <summary>
-        /// Porównanie RGB piksel-po-pikselu z tolerancją per-kanał.
-        /// Dla każdego punktu wzorca sprawdzamy, czy R, G i B w screenie
-        /// mieszczą się w tolerancji. Score = % trafień (0..1).
+        /// Porównanie RGB piksel-po-pikselu z tolerancją per-kanał,
+        /// z WAŻENIEM pikseli lokalną wariancją wzorca.
         ///
-        /// Zalety nad NCC i porównaniem jasności:
-        ///  - Dla idealnego dopasowania (identyczne piksele) -> 1.0
-        ///  - Dla fałszywego (inny odcień/kolor) -> niski score
-        ///  - Dyskryminacja oparta na kolorach, nie tylko na jasności
+        /// Piksele o wysokiej wariancji (ikona, krawędzie, detale) mają
+        /// wyższą wagę niż jednolite tło. Dzięki temu wzorce z dużym
+        /// tłem (np. tapeta) nie są fałszywie dopasowywane do innych
+        /// fragmentów tego samego tła.
         /// </summary>
         private unsafe double ComputeScore(byte* ptr, int stride, int offsetX, int offsetY, CachedPattern pattern)
         {
@@ -465,7 +459,8 @@ namespace SecureDesktop.Services
             int n = pattern.PointX.Length;
             if (n == 0) return 0;
 
-            int good = 0;
+            double sumW = 0;
+            double hitW = 0;
 
             for (int i = 0; i < n; i++)
             {
@@ -481,11 +476,14 @@ namespace SecureDesktop.Services
                 int dg = g - pattern.PointG[i]; if (dg < 0) dg = -dg;
                 int db = b - pattern.PointB[i]; if (db < 0) db = -db;
 
+                double w = pattern.PointWeight[i];
+                sumW += w;
+
                 if (dr <= tolR && dg <= tolG && db <= tolB)
-                    good++;
+                    hitW += w;
             }
 
-            return (double)good / n;
+            return sumW > 0 ? (hitW / sumW) : 0;
         }
 
         private static Rectangle Inflate(Rectangle r, int size, Size screen)
@@ -593,13 +591,21 @@ namespace SecureDesktop.Services
         public int[] PointY;
         public double[] PointGray;
 
-        // Kolory R/G/B dla porównania RGB.
         public byte[] PointR;
         public byte[] PointG;
         public byte[] PointB;
 
+        /// <summary>
+        /// Waga każdego punktu wzorca - proporcjonalna do lokalnej wariancji
+        /// jasności w bitmapie wzorca. Piksele z ikon/krawędzi mają wysoką wagę,
+        /// piksele jednolitego tła - niską.
+        /// </summary>
+        public double[] PointWeight;
+
         public double Mean;
         public double StdDev;
+        public double AvgWeight;
+        public double MaxWeight;
         public double Threshold;
         public double LastScore;
 
@@ -635,6 +641,7 @@ namespace SecureDesktop.Services
                 var rs = new List<byte>();
                 var ggs = new List<byte>();
                 var bs = new List<byte>();
+                var ws = new List<double>();
 
                 BitmapData data = bmp.LockBits(
                     new Rectangle(0, 0, Width, Height),
@@ -647,6 +654,10 @@ namespace SecureDesktop.Services
                     {
                         byte* p = (byte*)data.Scan0;
                         int stride = data.Stride;
+
+                        // Promień okolicy do obliczenia lokalnej wariancji.
+                        const int radius = 3;
+
                         for (int y = 0; y < Height; y += step)
                             for (int x = 0; x < Width; x += step)
                             {
@@ -655,12 +666,47 @@ namespace SecureDesktop.Services
                                 byte g = pixel[1];
                                 byte r = pixel[2];
                                 double gv = 0.299 * r + 0.587 * g + 0.114 * b;
+
+                                // Lokalna wariancja jasności w okolicy 7x7.
+                                double sum = 0, sumSq = 0;
+                                int cnt = 0;
+                                for (int dy = -radius; dy <= radius; dy += 2)
+                                {
+                                    int ny = y + dy;
+                                    if (ny < 0 || ny >= Height) continue;
+                                    for (int dx = -radius; dx <= radius; dx += 2)
+                                    {
+                                        int nx = x + dx;
+                                        if (nx < 0 || nx >= Width) continue;
+                                        byte* np = p + (long)ny * stride + (nx * 3);
+                                        double ngv = 0.299 * np[2] + 0.587 * np[1] + 0.114 * np[0];
+                                        sum += ngv;
+                                        sumSq += ngv * ngv;
+                                        cnt++;
+                                    }
+                                }
+
+                                double localVar = 0;
+                                if (cnt > 1)
+                                {
+                                    double m = sum / cnt;
+                                    localVar = sumSq / cnt - m * m;
+                                    if (localVar < 0) localVar = 0;
+                                }
+                                double localStd = Math.Sqrt(localVar);
+
+                                // Waga: minimum 1.0, plus 3 * std jasności.
+                                // Piksel o std=20 ma wagę ~4x wyższą niż tło std=0.
+                                double w = 1.0 + 3.0 * Math.Min(localStd, 60.0) / 20.0;
+                                if (w < 1.0) w = 1.0;
+
                                 xs.Add(x);
                                 ys.Add(y);
                                 gs.Add(gv);
                                 rs.Add(r);
                                 ggs.Add(g);
                                 bs.Add(b);
+                                ws.Add(w);
                             }
                     }
                 }
@@ -672,18 +718,23 @@ namespace SecureDesktop.Services
                 PointR = rs.ToArray();
                 PointG = ggs.ToArray();
                 PointB = bs.ToArray();
+                PointWeight = ws.ToArray();
 
                 int n = PointGray.Length;
-                double sum = 0, sumSq = 0;
+                double sumG = 0, sumSqG = 0, sumW = 0, maxW = 0;
                 for (int i = 0; i < n; i++)
                 {
-                    sum += PointGray[i];
-                    sumSq += PointGray[i] * PointGray[i];
+                    sumG += PointGray[i];
+                    sumSqG += PointGray[i] * PointGray[i];
+                    sumW += PointWeight[i];
+                    if (PointWeight[i] > maxW) maxW = PointWeight[i];
                 }
 
-                Mean = sum / n;
-                double variance = sumSq / n - Mean * Mean;
+                Mean = sumG / n;
+                double variance = sumSqG / n - Mean * Mean;
                 StdDev = Math.Sqrt(Math.Max(0.01, variance));
+                AvgWeight = sumW / n;
+                MaxWeight = maxW;
             }
         }
 
