@@ -377,8 +377,9 @@ namespace SecureDesktop.Services
             int bx, by;
             double bestScore = RefineAround(ptr, stride, top1.X, top1.Y, maxX, maxY, pattern, out bx, out by);
 
-            // Znajdź TOP-2 oddalony o co najmniej pattern.Width/Height.
-            CandidatePoint top2 = null;
+       
+                // Znajdź TOP-2 oddalony o co najmniej pattern.Width/Height.
+            bool hasTop2 = false;
             double secondScore = 0;
             for (int i = 1; i < all.Count; i++)
             {
@@ -386,9 +387,10 @@ namespace SecureDesktop.Services
                 int dy = Math.Abs(all[i].Y - top1.Y);
                 if (dx >= pattern.Width || dy >= pattern.Height)
                 {
-                    top2 = all[i];
+                    var top2 = all[i];
                     int bx2, by2;
                     secondScore = RefineAround(ptr, stride, top2.X, top2.Y, maxX, maxY, pattern, out bx2, out by2);
+                    hasTop2 = true;
                     break;
                 }
             }
@@ -399,14 +401,13 @@ namespace SecureDesktop.Services
                 return MatchResult.NotFound;
 
             // Wymóg specyficzności: TOP-1 musi być istotnie wyższy od TOP-2.
-            if (top2 != null && (bestScore - secondScore) < SpecificityGap)
+            if (hasTop2 && (bestScore - secondScore) < SpecificityGap)
             {
                 // Pattern niespecyficzny - wiele miejsc pasuje podobnie.
                 return MatchResult.NotFound;
             }
 
             return new MatchResult { Found = true, X = searchArea.X + bx, Y = searchArea.Y + by, Score = bestScore };
-        }
 
         private unsafe double RefineAround(byte* ptr, int stride, int cx, int cy,
             int maxX, int maxY, CachedPattern pattern, out int bestX, out int bestY)
