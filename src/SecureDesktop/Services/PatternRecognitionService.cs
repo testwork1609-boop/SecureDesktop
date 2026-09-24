@@ -16,17 +16,13 @@ namespace SecureDesktop.Services
         private const int RequiredConsecutiveMisses = 4;
         private const int PositionJitterPx = 8;
 
-        // Histereza progowa - gdy pattern jest widoczny, używamy niższego progu.
         private const double HysteresisFactor = 0.80;
-
-        // Fallback pełny skan - gdy score w oknie jest BARDZO niski.
         private const double FullScanFactor = 0.50;
 
-        // Próg "małego ruchu" - do tylu pikseli akceptujemy przesunięcie.
-        private const int SmallMovePx = 30;
-
-        // Duży skok jest akceptowany tylko gdy score nowy >= score stary + ten bonus.
-        private const double BigJumpScoreBonus = 0.15;
+        // Próg zostaje niekwestionowany, jeśli najlepszy wynik jest bardzo wysoki -
+        // wtedy nawet przy podobnym drugim kandydacie ufamy trafieniu.
+        private const double SpecificityGap = 0.15;
+        private const double SpecificityBypassScore = 0.95;
 
         private readonly double _defaultMatchThreshold;
         private readonly int _intervalMs;
@@ -102,7 +98,8 @@ namespace SecureDesktop.Services
                             var cached = new CachedPattern(p, _defaultMatchThreshold);
                             _patterns.Add(cached);
                             Log("'" + p.Name + "': OK " + cached.Width + "x" + cached.Height +
-                                " threshold=" + cached.Threshold.ToString("F2"));
+                                " threshold=" + cached.Threshold.ToString("F2") +
+                                " sample_points=" + cached.PointX.Length);
                         }
                         catch (Exception ex)
                         {
@@ -206,46 +203,52 @@ namespace SecureDesktop.Services
                 hitCount++;
                 missCount = 0;
 
-                // === Decyzja: zapisać pozycję czy zignorować skok ===
-                if (!alreadyReportedFound)
+                if (!alreadyReportedFound && hitCount >= RequiredConsecutiveHits)
                 {
-                    // Pierwsze wykrycie - zapisz pozycję.
-                    if (hitCount >= RequiredConsecutiveHits)
+                    var newRect = new Rectangle(match.X, match.Y, pattern.Width, pattern.Height);
+                    _lastLocations[key] = newRect;
+                    _lastScores[key] = match.Score;
+                    _reportedFound[key] = true;
+
+                    var absLocation = new Rectangle(
+                        newRect.X + _captureOrigin.X,
+                        newRect.Y + _captureOrigin.Y,
+                        newRect.Width,
+                        newRect.Height);
+
+                    Log("'" + key + "': ZNALEZIONO @ (" + match.X + "," + match.Y + ") score=" + match.Score.ToString("F3"));
+                    var h = PatternFound;
+                    if (h != null) h(this, new PatternFoundEventArgs
                     {
-                        UpdatePositionAndReport(key, pattern, match);
-                        _reportedFound[key] = true;
-                    }
+                        Pattern = pattern.Source,
+                        Location = absLocation,
+                        Confidence = match.Score
+                    });
                 }
-                else
+                else if (alreadyReportedFound)
                 {
                     int dx = Math.Abs(prev.X - match.X);
                     int dy = Math.Abs(prev.Y - match.Y);
 
-                    if (dx <= PositionJitterPx && dy <= PositionJitterPx)
+                    if (dx > PositionJitterPx || dy > PositionJitterPx)
                     {
-                        // Brak ruchu - nic nie rób.
-                    }
-                    else if (dx <= SmallMovePx && dy <= SmallMovePx)
-                    {
-                        // Mały ruch - zaktualizuj pozycję.
-                        UpdatePositionAndReport(key, pattern, match);
-                    }
-                    else
-                    {
-                        // Duży skok - akceptuj TYLKO gdy score znacznie lepszy.
-                        double prevScore = _lastScores.ContainsKey(key) ? _lastScores[key] : 0;
-                        if (match.Score >= prevScore + BigJumpScoreBonus)
+                        var newRect = new Rectangle(match.X, match.Y, pattern.Width, pattern.Height);
+                        _lastLocations[key] = newRect;
+                        _lastScores[key] = match.Score;
+
+                        var absLocation = new Rectangle(
+                            newRect.X + _captureOrigin.X,
+                            newRect.Y + _captureOrigin.Y,
+                            newRect.Width,
+                            newRect.Height);
+
+                        var h = PatternFound;
+                        if (h != null) h(this, new PatternFoundEventArgs
                         {
-                            Log("'" + key + "': akceptuję skok dx=" + dx + " dy=" + dy +
-                                " score " + prevScore.ToString("F3") + " -> " + match.Score.ToString("F3"));
-                            UpdatePositionAndReport(key, pattern, match);
-                        }
-                        else
-                        {
-                            Log("'" + key + "': ODRZUCAM skok dx=" + dx + " dy=" + dy +
-                                " score " + prevScore.ToString("F3") + " -> " + match.Score.ToString("F3"));
-                            // Pozycja pozostaje bez zmian - pattern nadal "znaleziony".
-                        }
+                            Pattern = pattern.Source,
+                            Location = absLocation,
+                            Confidence = match.Score
+                        });
                     }
                 }
             }
@@ -268,27 +271,6 @@ namespace SecureDesktop.Services
 
             _hitStreak[key] = hitCount;
             _missStreak[key] = missCount;
-        }
-
-        private void UpdatePositionAndReport(string key, CachedPattern pattern, MatchResult match)
-        {
-            var newRect = new Rectangle(match.X, match.Y, pattern.Width, pattern.Height);
-            _lastLocations[key] = newRect;
-            _lastScores[key] = match.Score;
-
-            var absLocation = new Rectangle(
-                newRect.X + _captureOrigin.X,
-                newRect.Y + _captureOrigin.Y,
-                newRect.Width,
-                newRect.Height);
-
-            var h = PatternFound;
-            if (h != null) h(this, new PatternFoundEventArgs
-            {
-                Pattern = pattern.Source,
-                Location = absLocation,
-                Confidence = match.Score
-            });
         }
 
         public void Stop()
@@ -337,6 +319,20 @@ namespace SecureDesktop.Services
             finally { screen.UnlockBits(data); }
         }
 
+        // UWAGA (poprawka): coarseStep był wcześniej zbyt duży dla większych wzorców
+        // (np. minDim/8 => krok 25px dla wzorca 200x200). Ponieważ ComputeScore jest
+        // funkcją "ostrą" (binarny próg tolerancji koloru na punkt), wynik dopasowania
+        // potrafi gwałtownie spaść już przy przesunięciu o kilka pikseli. Efekt:
+        // żaden punkt siatki nie trafiał blisko prawdziwego dopasowania i albo
+        // wzorzec nie był znajdywany wcale, albo RefineAround dopracowywał przypadkowe,
+        // błędne miejsce. Krok jest teraz znacznie mniejszy.
+        private static int ComputeCoarseStep(int minDim)
+        {
+            if (minDim <= 16) return 1;
+            if (minDim <= 64) return 2;
+            return Math.Max(2, Math.Min(4, minDim / 20));
+        }
+
         internal unsafe MatchResult FindBestMatchInArea(BitmapData data, Rectangle searchArea, CachedPattern pattern, double threshold)
         {
             byte* ptr = (byte*)data.Scan0;
@@ -347,49 +343,94 @@ namespace SecureDesktop.Services
             if (maxX < 0 || maxY < 0) return MatchResult.NotFound;
 
             int minDim = Math.Min(pattern.Width, pattern.Height);
-            int coarseStep = minDim <= 16 ? 2 : Math.Max(4, minDim / 8);
+            int coarseStep = ComputeCoarseStep(minDim);
+
+            double candidateFloor = threshold * 0.5;
 
             int numRows = (maxY / coarseStep) + 1;
-            var rowScore = new double[numRows];
-            var rowX = new int[numRows];
-            var rowY = new int[numRows];
+            var rowCandidates = new List<CandidatePoint>[numRows];
 
             Parallel.For(0, numRows, ri =>
             {
                 int y = ri * coarseStep;
                 if (y > maxY) y = maxY;
 
-                double localBest = -1;
-                int localX = 0;
+                var local = new List<CandidatePoint>(8);
                 for (int x = 0; x <= maxX; x += coarseStep)
                 {
                     double s = ComputeScore(ptr, stride, x, y, pattern);
-                    if (s > localBest) { localBest = s; localX = x; }
+                    if (s >= candidateFloor)
+                        local.Add(new CandidatePoint { X = x, Y = y, Score = s });
                 }
-                rowScore[ri] = localBest;
-                rowX[ri] = localX;
-                rowY[ri] = y;
+                rowCandidates[ri] = local;
             });
 
-            double coarseBest = -1;
-            int cbX = 0, cbY = 0;
+            var all = new List<CandidatePoint>();
             for (int i = 0; i < numRows; i++)
             {
-                if (rowScore[i] > coarseBest)
+                if (rowCandidates[i] != null && rowCandidates[i].Count > 0)
+                    all.AddRange(rowCandidates[i]);
+            }
+
+            if (all.Count == 0)
+            {
+                pattern.LastScore = 0;
+                return MatchResult.NotFound;
+            }
+
+            all.Sort((a, b) => b.Score.CompareTo(a.Score));
+
+            CandidatePoint top1 = all[0];
+            int bx, by;
+            double bestScore = RefineAround(ptr, stride, top1.X, top1.Y, maxX, maxY, pattern, out bx, out by);
+
+            bool hasTop2 = false;
+            double secondScore = 0;
+            for (int i = 1; i < all.Count; i++)
+            {
+                int dx = Math.Abs(all[i].X - top1.X);
+                int dy = Math.Abs(all[i].Y - top1.Y);
+                if (dx >= pattern.Width || dy >= pattern.Height)
                 {
-                    coarseBest = rowScore[i];
-                    cbX = rowX[i];
-                    cbY = rowY[i];
+                    CandidatePoint top2 = all[i];
+                    int bx2, by2;
+                    secondScore = RefineAround(ptr, stride, top2.X, top2.Y, maxX, maxY, pattern, out bx2, out by2);
+                    hasTop2 = true;
+                    break;
                 }
             }
 
-            int r0x = Math.Max(0, cbX - coarseStep);
-            int r1x = Math.Min(maxX, cbX + coarseStep);
-            int r0y = Math.Max(0, cbY - coarseStep);
-            int r1y = Math.Min(maxY, cbY + coarseStep);
+            pattern.LastScore = bestScore;
+
+            if (bestScore < threshold)
+                return MatchResult.NotFound;
+
+            // UWAGA (poprawka): jeśli bestScore jest bardzo wysoki, ufamy mu nawet gdy
+            // istnieje podobny drugi kandydat (np. dwie identyczne ikony na ekranie) -
+            // wcześniej taki przypadek był całkowicie odrzucany mimo świetnego dopasowania.
+            if (hasTop2 && bestScore < SpecificityBypassScore && (bestScore - secondScore) < SpecificityGap)
+            {
+                return MatchResult.NotFound;
+            }
+
+            return new MatchResult { Found = true, X = searchArea.X + bx, Y = searchArea.Y + by, Score = bestScore };
+        }
+
+        private unsafe double RefineAround(byte* ptr, int stride, int cx, int cy,
+            int maxX, int maxY, CachedPattern pattern, out int bestX, out int bestY)
+        {
+            int minDim = Math.Min(pattern.Width, pattern.Height);
+            int radius = Math.Max(4, minDim / 8);
+
+            int r0x = Math.Max(0, cx - radius);
+            int r1x = Math.Min(maxX, cx + radius);
+            int r0y = Math.Max(0, cy - radius);
+            int r1y = Math.Min(maxY, cy + radius);
 
             double bestScore = 0;
-            int bestX = cbX, bestY = cbY;
+            bestX = cx;
+            bestY = cy;
+
             for (int y = r0y; y <= r1y; y++)
                 for (int x = r0x; x <= r1x; x++)
                 {
@@ -397,11 +438,14 @@ namespace SecureDesktop.Services
                     if (s > bestScore) { bestScore = s; bestX = x; bestY = y; }
                 }
 
-            pattern.LastScore = bestScore;
+            return bestScore;
+        }
 
-            if (bestScore >= threshold)
-                return new MatchResult { Found = true, X = searchArea.X + bestX, Y = searchArea.Y + bestY, Score = bestScore };
-            return MatchResult.NotFound;
+        private struct CandidatePoint
+        {
+            public int X;
+            public int Y;
+            public double Score;
         }
 
         private unsafe List<PatternCandidate> FindTopCandidates(BitmapData data, Rectangle searchArea,
@@ -416,7 +460,7 @@ namespace SecureDesktop.Services
             if (maxX < 0 || maxY < 0) return result;
 
             int minDim = Math.Min(pattern.Width, pattern.Height);
-            int coarseStep = Math.Max(4, minDim / 8);
+            int coarseStep = ComputeCoarseStep(minDim);
 
             var candidates = new List<PatternCandidate>();
 
@@ -586,6 +630,10 @@ namespace SecureDesktop.Services
 
     internal class CachedPattern : IDisposable
     {
+        // Próg alfa, poniżej którego piksel wzorca uznajemy za przezroczysty
+        // i pomijamy go przy próbkowaniu (patrz konstruktor).
+        private const byte AlphaVisibleThreshold = 200;
+
         public Pattern Source;
         public int Width;
         public int Height;
@@ -612,59 +660,125 @@ namespace SecureDesktop.Services
                 throw new InvalidOperationException("Brak ImageData");
 
             using (MemoryStream ms = new MemoryStream(pattern.ImageData))
-            using (Bitmap bmp = new Bitmap(ms))
+            using (Bitmap srcBmp = new Bitmap(ms))
             {
-                Width = bmp.Width;
-                Height = bmp.Height;
+                Width = srcBmp.Width;
+                Height = srcBmp.Height;
 
                 if (Width < 4 || Height < 4)
                     throw new InvalidOperationException("Za mały (" + Width + "x" + Height + ")");
                 if (Width > 1024 || Height > 1024)
                     throw new InvalidOperationException("Za duży (" + Width + "x" + Height + ")");
 
-                int totalPixels = Width * Height;
-                const int targetPoints = 400;
-                int step = (int)Math.Round(Math.Sqrt((double)totalPixels / targetPoints));
-                if (step < 1) step = 1;
-
-                var xs = new List<int>();
-                var ys = new List<int>();
-                var rs = new List<byte>();
-                var ggs = new List<byte>();
-                var bs = new List<byte>();
-
-                BitmapData data = bmp.LockBits(
-                    new Rectangle(0, 0, Width, Height),
-                    ImageLockMode.ReadOnly,
-                    PixelFormat.Format24bppRgb);
-
-                try
+                // UWAGA (poprawka): wcześniej wzorzec był odczytywany bezpośrednio jako
+                // Format24bppRgb. Jeśli oryginalny plik (np. PNG) ma kanał alfa,
+                // GDI+ przy takiej konwersji sam decyduje jak "spłaszczyć" przezroczyste
+                // piksele - zwykle kompozytując je na czarnym tle - a wiele enkoderów
+                // zostawia w pełni przezroczystych pikselach zupełnie dowolne wartości RGB
+                // ("śmieciowe" kolory spod maski). Efekt: część próbek wzorca miała
+                // losowe/czarne kolory, które nigdy nie pasowały do prawdziwego tła na
+                // ekranie, co zaniżało wynik dopasowania nawet w idealnym miejscu.
+                //
+                // Teraz: wczytujemy oryginał jako 32bppArgb i pomijamy przy próbkowaniu
+                // piksele, które są w znacznym stopniu przezroczyste.
+                using (Bitmap argbBmp = new Bitmap(Width, Height, PixelFormat.Format32bppArgb))
                 {
-                    unsafe
+                    using (Graphics g = Graphics.FromImage(argbBmp))
                     {
-                        byte* p = (byte*)data.Scan0;
-                        int stride = data.Stride;
-                        for (int y = 0; y < Height; y += step)
-                            for (int x = 0; x < Width; x += step)
-                            {
-                                byte* pixel = p + (long)y * stride + (x * 3);
-                                xs.Add(x);
-                                ys.Add(y);
-                                bs.Add(pixel[0]);
-                                ggs.Add(pixel[1]);
-                                rs.Add(pixel[2]);
-                            }
+                        g.Clear(Color.Transparent);
+                        g.DrawImage(srcBmp, 0, 0, Width, Height);
                     }
-                }
-                finally { bmp.UnlockBits(data); }
 
-                PointX = xs.ToArray();
-                PointY = ys.ToArray();
-                PointR = rs.ToArray();
-                PointG = ggs.ToArray();
-                PointB = bs.ToArray();
+                    int totalPixels = Width * Height;
+                    const int targetPoints = 400;
+                    int step = (int)Math.Round(Math.Sqrt((double)totalPixels / targetPoints));
+                    if (step < 1) step = 1;
+
+                    var xs = new List<int>();
+                    var ys = new List<int>();
+                    var rs = new List<byte>();
+                    var ggs = new List<byte>();
+                    var bs = new List<byte>();
+
+                    BitmapData data = argbBmp.LockBits(
+                        new Rectangle(0, 0, Width, Height),
+                        ImageLockMode.ReadOnly,
+                        PixelFormat.Format32bppArgb);
+
+                    try
+                    {
+                        unsafe
+                        {
+                            byte* p = (byte*)data.Scan0;
+                            int stride = data.Stride;
+                            for (int y = 0; y < Height; y += step)
+                                for (int x = 0; x < Width; x += step)
+                                {
+                                    byte* pixel = p + (long)y * stride + (x * 4);
+                                    byte b = pixel[0];
+                                    byte g = pixel[1];
+                                    byte r = pixel[2];
+                                    byte a = pixel[3];
+
+                                    if (a < AlphaVisibleThreshold)
+                                        continue; // pomijamy przezroczyste / półprzezroczyste punkty
+
+                                    xs.Add(x);
+                                    ys.Add(y);
+                                    bs.Add(b);
+                                    ggs.Add(g);
+                                    rs.Add(r);
+                                }
+                        }
+                    }
+                    finally { argbBmp.UnlockBits(data); }
+
+                    // Jeśli po odfiltrowaniu przezroczystości zostało zbyt mało punktów
+                    // (np. wzorzec bez kanału alfa, ale też prawie pusty obraz),
+                    // spróbuj ponownie bez filtrowania alfy, żeby nie zostać bez próbek.
+                    if (xs.Count < 8)
+                    {
+                        xs.Clear(); ys.Clear(); rs.Clear(); ggs.Clear(); bs.Clear();
+                        unsafe
+                        {
+                            byte* p = (byte*)data.Scan0;
+                        }
+                        BitmapData data2 = argbBmp.LockBits(
+                            new Rectangle(0, 0, Width, Height),
+                            ImageLockMode.ReadOnly,
+                            PixelFormat.Format32bppArgb);
+                        try
+                        {
+                            unsafe
+                            {
+                                byte* p = (byte*)data2.Scan0;
+                                int stride = data2.Stride;
+                                for (int y = 0; y < Height; y += step)
+                                    for (int x = 0; x < Width; x += step)
+                                    {
+                                        byte* pixel = p + (long)y * stride + (x * 4);
+                                        xs.Add(x);
+                                        ys.Add(y);
+                                        bs.Add(pixel[0]);
+                                        ggs.Add(pixel[1]);
+                                        rs.Add(pixel[2]);
+                                    }
+                            }
+                        }
+                        finally { argbBmp.UnlockBits(data2); }
+                    }
+
+                    PointX = xs.ToArray();
+                    PointY = ys.ToArray();
+                    PointR = rs.ToArray();
+                    PointG = ggs.ToArray();
+                    PointB = bs.ToArray();
+                }
 
                 int n = PointR.Length;
+                if (n == 0)
+                    throw new InvalidOperationException("Brak widocznych punktów próbki (wzorzec w całości przezroczysty?)");
+
                 double sumG = 0, sumSqG = 0;
                 for (int i = 0; i < n; i++)
                 {
