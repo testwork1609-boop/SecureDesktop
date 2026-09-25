@@ -82,6 +82,21 @@ namespace SecureDesktop
                     Loc.T("firstrun.title"),
                     MessageBoxButtons.OK, MessageBoxIcon.Information);
 
+                // === KLUCZOWE: zapisz flagę OD RAZU, jeszcze przed otwarciem
+                // Dashboardu. Dzięki temu nawet jeśli użytkownik zamknie program
+                // w dowolnym momencie (nawet bez zapisania ustawień), komunikat
+                // nie pojawi się ponownie przy następnym uruchomieniu. ===
+                try
+                {
+                    var data = _globalDb.GetData();
+                    if (data != null && data.Settings != null)
+                    {
+                        data.Settings["FirstRunCompleted"] = "true";
+                        _globalDb.Save();
+                    }
+                }
+                catch { }
+
                 RunFirstTimeSetup();
             }
 
@@ -113,9 +128,7 @@ namespace SecureDesktop
         }
 
         /// <summary>
-        /// Pierwsze uruchomienie: auto-login jako admin, otwarcie panelu
-        /// konfiguracji. Po kliknięciu "Powrót do panelu" flaga zostaje
-        /// ustawiona i użytkownik przechodzi do normalnego panelu głównego.
+        /// Pierwsze uruchomienie: auto-login jako admin, otwarcie panelu konfiguracji.
         /// </summary>
         private static void RunFirstTimeSetup()
         {
@@ -128,7 +141,6 @@ namespace SecureDesktop
                     u.IdentificationNumber == "admin" && u.IsActive);
                 if (admin == null) return;
 
-                // Utwórz sesję dla admina
                 int sessionId = 0;
                 try
                 {
