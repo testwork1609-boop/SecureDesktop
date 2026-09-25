@@ -28,8 +28,8 @@ namespace SecureDesktop.Forms
         private int _sessionId;
         private readonly DatabaseInitializer _db;
         private readonly ScreenLockService _lockService;
-        private readonly DateTime _sessionStartTime;
-        private readonly bool _isFirstRun;
+        private DateTime _sessionStartTime;
+        private bool _isFirstRun;
 
         private int _totalPatterns = 0;
         private int _activePatterns = 0;
@@ -96,9 +96,6 @@ namespace SecureDesktop.Forms
                 }));
                 view.DataSaved += () => BeginInvoke(new Action(() =>
                 {
-                    // Po pierwszym udanym zapisie ustawień oznacz pierwszą
-                    // konfigurację jako zakończoną - żeby przy następnym
-                    // uruchomieniu NIE wyskakiwał ponownie komunikat.
                     if (_isFirstRun) MarkFirstRunCompleted();
                     LoadStats();
                 }));
@@ -138,7 +135,6 @@ namespace SecureDesktop.Forms
                     ContextMenuStrip = _trayMenu
                 };
 
-                // Dwuklik na ikonkę w trayu - przywróć okno (jeśli nie zablokowane).
                 _trayIcon.DoubleClick += (s, e) =>
                 {
                     if (!_lockService.IsLocked) RestoreFromTray();
@@ -176,8 +172,6 @@ namespace SecureDesktop.Forms
                 this.WindowState = FormWindowState.Normal;
                 this.Show();
 
-                // Win32 - niezawodne przywrócenie okna z paska zadań
-                // po Hide(). Samo .Show()/.Activate() czasem nie działa.
                 try
                 {
                     if (this.IsHandleCreated)
@@ -311,7 +305,6 @@ namespace SecureDesktop.Forms
         private void OnScreenUnlockedByUser(User unlockedBy)
         {
             if (unlockedBy == null) return;
-            if (_currentUser != null && unlockedBy.Id == _currentUser.Id) return;
 
             try
             {
@@ -326,10 +319,22 @@ namespace SecureDesktop.Forms
             {
                 if (this.IsDisposed) return;
 
+                bool sameUser = _currentUser != null && newUser != null && newUser.Id == _currentUser.Id;
+
+                if (sameUser)
+                {
+                    // Ten sam user - tylko upewnij się że wszystko jest odświeżone.
+                    RefreshUserLabel();
+                    return;
+                }
+
                 try { new SessionRepository(_db).EndSession(_sessionId); } catch { }
 
                 var oldPin = _currentUser != null ? _currentUser.IdentificationNumber : "—";
                 _currentUser = newUser;
+
+                // Reset czasu sesji i statystyk backupu dla nowej sesji.
+                _sessionStartTime = DateTime.Now;
 
                 try
                 {
@@ -359,7 +364,9 @@ namespace SecureDesktop.Forms
                 }
                 catch { }
 
-                UpdateUserLabelText();
+                // === KLUCZOWE: przebuduj CAŁY UI na podstawie nowego usera ===
+                RebuildUIForNewUser();
+
                 LoadStats();
                 ShowHome();
             }
@@ -369,7 +376,36 @@ namespace SecureDesktop.Forms
             }
         }
 
-        private void UpdateUserLabelText()
+        /// <summary>
+        /// Niszczy wszystkie kontrolki formy i buduje je od nowa na podstawie
+        /// aktualnego _currentUser. Dzięki temu sidebar (przyciski admina) i
+        /// header (label roli) są zgodne z nowym użytkownikiem.
+        /// </summary>
+        private void RebuildUIForNewUser()
+        {
+            this.SuspendLayout();
+
+            // Usuń wszystkie kontrolki z formy (tray icon nie jest w Controls,
+            // więc zostaje nietknięty).
+            while (this.Controls.Count > 0)
+            {
+                var c = this.Controls[0];
+                this.Controls.RemoveAt(0);
+                try { c.Dispose(); } catch { }
+            }
+
+            // Wyzeruj referencje do kontrolek które były trzymane w polach.
+            _contentHost = null;
+            _viewTitleLabel = null;
+            _userLabel = null;
+
+            // Zbuduj od nowa.
+            InitializeComponent();
+
+            this.ResumeLayout();
+        }
+
+        private void RefreshUserLabel()
         {
             if (_userLabel == null || _currentUser == null) return;
             string roleSuffix = _currentUser.IsHeadAdmin
@@ -461,7 +497,7 @@ namespace SecureDesktop.Forms
                 BackColor = Color.Transparent,
                 Anchor = AnchorStyles.Top | AnchorStyles.Right
             };
-            UpdateUserLabelText();
+            RefreshUserLabel();
             headerPanel.Controls.Add(_userLabel);
             headerPanel.Resize += (s, e) => _userLabel.Location = new Point(headerPanel.Width - _userLabel.Width - 32, 28);
 
@@ -503,7 +539,8 @@ namespace SecureDesktop.Forms
             sidebarPanel.Controls.Add(checkpointBtn);
             sidebarPanel.Controls.Add(backupBtn);
 
-            if (_currentUser.IsAdmin)
+            // Sekcja admina - widoczna TYLKO dla aktualnego użytkownika-admina.
+            if (_currentUser != null && _currentUser.IsAdmin)
             {
                 sidebarPanel.Controls.Add(new Panel { Location = new Point(20, y), Size = new Size(210, 1), BackColor = UiTheme.Border });
                 y += 16;
@@ -531,9 +568,6 @@ namespace SecureDesktop.Forms
                     }));
                     view.DataSaved += () => BeginInvoke(new Action(() =>
                     {
-                        // Po pierwszym udanym zapisie ustawień oznacz pierwszą
-                        // konfigurację jako zakończoną - żeby przy następnym
-                        // uruchomieniu NIE wyskakiwał ponownie komunikat.
                         if (_isFirstRun) MarkFirstRunCompleted();
                         LoadStats();
                     }));
@@ -602,7 +636,7 @@ namespace SecureDesktop.Forms
             var amberPressed = Color.FromArgb(252, 211, 77);
             var amberText = Color.FromArgb(180, 83, 9);
 
-            bool highlight = !_currentUser.IsAdmin;
+            bool highlight = _currentUser == null || !_currentUser.IsAdmin;
 
             return new RoundedButton
             {
@@ -629,7 +663,7 @@ namespace SecureDesktop.Forms
             view.Dock = DockStyle.Fill;
             _contentHost.Controls.Add(view);
             _contentHost.ResumeLayout();
-            _viewTitleLabel.Text = title;
+            if (_viewTitleLabel != null) _viewTitleLabel.Text = title;
         }
 
         private void ShowHome()
@@ -654,7 +688,6 @@ namespace SecureDesktop.Forms
         {
             if (_lockInProgress) return;
 
-            // Pytanie o potwierdzenie
             bool confirmed = WarningDialog.Confirm(
                 this,
                 Loc.T("lock.confirm_all_title"),
@@ -684,7 +717,6 @@ namespace SecureDesktop.Forms
         {
             if (_lockInProgress) return;
 
-            // Pytanie o potwierdzenie
             bool confirmed = WarningDialog.Confirm(
                 this,
                 Loc.T("lock.confirm_pattern_title"),
@@ -848,10 +880,6 @@ namespace SecureDesktop.Forms
             base.OnFormClosing(e);
         }
 
-        /// <summary>
-        /// Gdy użytkownik kliknie ikonę w pasku zadań, a okno było
-        /// ukryte w trayu - przywróć je poprawnie przez Win32.
-        /// </summary>
         protected override void WndProc(ref Message m)
         {
             const int WM_SYSCOMMAND = 0x0112;
